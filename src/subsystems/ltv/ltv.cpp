@@ -32,9 +32,8 @@ LTVPathFollower::LTVPathFollower(Chassis& chassis, pros::MotorGroup& leftMotors,
       leftMotors(leftMotors),
       rightMotors(rightMotors),
       controller(config) {
-    // 4" wheel: circumference = pi * 4 * 0.0254 = 0.3191858 m. rpm_to_mps = (rpm / 60) * circumference
-    // For 200 RPM, 1 RPM = (0.3191858 / 60) = 0.00531976 m/s
-    double wheelDiameterMeters = 4.0 * INCH_TO_METER;
+    // 3.25" wheel: circumference = pi * 3.25 * 0.0254 = 0.259339 m
+    double wheelDiameterMeters = 3.25 * INCH_TO_METER;
     rpm_to_mps_factor = (M_PI * wheelDiameterMeters) / 60.0f;
 }
 
