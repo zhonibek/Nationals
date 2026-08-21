@@ -72,8 +72,33 @@ DrivetrainVoltages VelocityController::update(double v_cmd, double w_cmd, double
     double fb_left = (config.KP_straight * err_left) + (config.KI_straight * left_integral);
     double fb_right = (config.KP_straight * err_right) + (config.KI_straight * right_integral);
 
-    double total_left = clamp(ff_left + fb_left, -config.max_voltage, config.max_voltage);
-    double total_right = clamp(ff_right + fb_right, -config.max_voltage, config.max_voltage);
+    double total_left = ff_left + fb_left;
+    double total_right = ff_right + fb_right;
+
+    // 4. Active Traction Control System (TCS)
+    // Prevents explosive tire spinout on slick foam tiles when accelerating hard
+    if (config.enableTCS) {
+        // Left wheel slip check
+        if (std::abs(v_left_target) > 0.3) {
+            double slipLeft = std::abs(err_left) / std::abs(v_left_target);
+            if (slipLeft > config.maxSlipRatio && (total_left * v_left_target > 0)) {
+                // Throttle back voltage to maintain static friction
+                double tcsScale = std::clamp(1.0 - (slipLeft - config.maxSlipRatio) * 1.5, 0.4, 1.0);
+                total_left *= tcsScale;
+            }
+        }
+        // Right wheel slip check
+        if (std::abs(v_right_target) > 0.3) {
+            double slipRight = std::abs(err_right) / std::abs(v_right_target);
+            if (slipRight > config.maxSlipRatio && (total_right * v_right_target > 0)) {
+                double tcsScale = std::clamp(1.0 - (slipRight - config.maxSlipRatio) * 1.5, 0.4, 1.0);
+                total_right *= tcsScale;
+            }
+        }
+    }
+
+    total_left = clamp(total_left, -config.max_voltage, config.max_voltage);
+    total_right = clamp(total_right, -config.max_voltage, config.max_voltage);
 
     return { total_left, total_right };
 }

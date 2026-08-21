@@ -17,6 +17,8 @@ struct VelocityControllerConfig {
     double KI_straight = 0.0;  // Velocity error integral gain
     double max_voltage = 12.0; // Maximum voltage limit (V)
     double trackWidthMeters = 0.2667; // 10.5 inches in meters
+    bool enableTCS = true;     // Active Traction Control System (Anti-Slip)
+    double maxSlipRatio = 0.18; // Maximum allowable slip ratio before torque intervention
 };
 
 /**

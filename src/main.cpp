@@ -1,5 +1,8 @@
 #include "main.h"
 #include "lemlib/api.hpp" // IWYU pragma: keep
+#include "subsystems/flc/FuzzyLogic.hpp"
+#include "subsystems/ekf/EKF.hpp"
+#include "subsystems/trajectory/QuinticSpline.hpp"
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -34,7 +37,7 @@ lemlib::Drivetrain drivetrain(&leftMotors, // left motor group
                               2.0f);
 
 // ============================================================================
-// 2. Motion Controller Configurations (PID + LQR)
+// 2. Motion Controller Configurations (PID + LQR + FLC + EKF)
 // ============================================================================
 
 // Lateral PID Controller
@@ -101,7 +104,7 @@ lemlib::Chassis chassis(drivetrain, linearController, angularController, lateral
                         &throttleCurve, &steerCurve);
 
 // ============================================================================
-// 3. Subsystem Integrations: LTV Path Follower & Watchdogs
+// 3. Subsystem Integrations: LTV, EKF, FLC, TCS & Watchdogs
 // ============================================================================
 
 VelocityControllerConfig velConfig {.kV = 6.2,
@@ -112,9 +115,18 @@ VelocityControllerConfig velConfig {.kV = 6.2,
                                     .KP_straight = 2.0,
                                     .KI_straight = 0.0,
                                     .max_voltage = 12.0,
-                                    .trackWidthMeters = TRACK_WIDTH_INCHES * lemlib::INCH_TO_METER};
+                                    .trackWidthMeters = TRACK_WIDTH_INCHES * lemlib::INCH_TO_METER,
+                                    .enableTCS = true,
+                                    .maxSlipRatio = 0.18};
 
 lemlib::LTVPathFollower ltvFollower(chassis, leftMotors, rightMotors, velConfig);
+
+// 5-State Extended Kalman Filter instance
+lemlib::RobotEKF robotEKF(lemlib::Pose(0, 0, 0));
+
+// Fuzzy Logic Adaptive Controllers
+lemlib::FuzzyLogicController lateralFLC(24.0, 40.0);
+lemlib::FuzzyLogicController angularFLC(90.0, 180.0);
 
 lemlib::MotorMonitor
     motorMonitor(controller, {{"LeftDrive", &leftMotors}, {"RightDrive", &rightMotors}, {"Intake", &intakeMotors}});
@@ -257,6 +269,35 @@ void testFeedforwardCharacterization() {
     controller.rumble("-");
 }
 
+/**
+ * @brief TEST 6: Smooth Jerk-Limited Quintic Spline S-Curve Generation
+ * Computes a C^2 continuous 5th-order polynomial trajectory on-the-fly and tracks with LTV + TCS.
+ */
+void testQuinticSpline() {
+    std::cout << "\n=== GENERATING JERK-LIMITED QUINTIC SPLINE TRAJECTORY ===" << std::endl;
+    controller.print(0, 0, "Gen Spline 5th...");
+    chassis.setPose(0, 0, 0);
+
+    lemlib::QuinticSplineGenerator::SplineWaypoints params {
+        .start = lemlib::Pose(0, 0, 0),
+        .end = lemlib::Pose(20.0, 40.0, 45.0),
+        .startVel = 0.0,
+        .endVel = 0.0,
+        .maxVel = 1.0,
+        .maxAccel = 1.8,
+        .maxJerk = 3.5
+    };
+
+    auto trajectory = lemlib::QuinticSplineGenerator::generateTrajectory(params, 0.01);
+    std::cout << "Generated " << trajectory.size() << " trajectory states. Executing..." << std::endl;
+
+    ltvFollower.followTrajectory(trajectory, {.log = true});
+    ltvFollower.waitUntilDone();
+
+    controller.print(0, 0, "Spline Done!       ");
+    controller.rumble(".");
+}
+
 // ============================================================================
 // 5. Lifecycle Functions
 // ============================================================================
@@ -268,16 +309,30 @@ void initialize() {
     // Start background health watchdog
     motorMonitor.startTask(500);
 
-    // Brain LCD telemetry task
-    pros::Task screenTask([&]() {
+    // EKF Fusion & Brain LCD telemetry task (100 Hz)
+    pros::Task sensorFusionTask([&]() {
+        uint32_t lastTime = pros::millis();
         while (true) {
-            pros::lcd::print(0, "X: %6.2f in", chassis.getPose().x);
-            pros::lcd::print(1, "Y: %6.2f in", chassis.getPose().y);
-            pros::lcd::print(2, "Theta: %6.2f deg", chassis.getPose().theta);
-            pros::lcd::print(3, "Mode: %s",
-                             chassis.getMotionControllerType() == lemlib::MotionControllerType::LQR ? "LQR (Optimal)"
-                                                                                                    : "PID (Classic)");
-            pros::delay(50);
+            uint32_t now = pros::millis();
+            double dt = (now - lastTime) / 1000.0;
+            lastTime = now;
+
+            // 1. EKF Kinematic Predict
+            robotEKF.predict(dt);
+
+            // 2. Fuse Odometry Pose
+            lemlib::Pose rawPose = chassis.getPose(true);
+            robotEKF.updatePose(rawPose.x * lemlib::INCH_TO_METER,
+                                rawPose.y * lemlib::INCH_TO_METER,
+                                rawPose.theta);
+
+            // 3. Telemetry on Brain LCD
+            lemlib::Pose fusedPose = robotEKF.getPose();
+            pros::lcd::print(0, "EKF X: %5.1f in | Odom: %5.1f", fusedPose.x, rawPose.x);
+            pros::lcd::print(1, "EKF Y: %5.1f in | Odom: %5.1f", fusedPose.y, rawPose.y);
+            pros::lcd::print(2, "EKF Th: %5.1f deg", fusedPose.theta);
+            pros::lcd::print(3, "TCS: ACTIVE | FLC: ON");
+            pros::delay(10);
         }
     });
 }
@@ -291,13 +346,9 @@ void competition_initialize() {}
 // ============================================================================
 
 void autonomous() {
-    // Select which test to run during Autonomous, or run your match routine:
-
-    // Default: 24-inch Linear Drive with LQR
+    // Default: Run smooth Quintic Spline trajectory or LQR drive
     chassis.useLQR();
     testLinearDrive(24.0f);
-
-    // Turn 90 degrees with LQR
     testAngularTurn(90.0f);
 }
 
@@ -318,6 +369,9 @@ void opcontrol() {
 
         // --- BUTTON UP: Run LTV S-Curve Trajectory Test ---
         if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_UP)) { testLTVTrajectory(); }
+
+        // --- BUTTON RIGHT: Run Jerk-Limited Quintic Spline Test ---
+        if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_RIGHT)) { testQuinticSpline(); }
 
         // --- BUTTON DOWN: Run Feedforward kS / kV Characterization ---
         if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_DOWN)) { testFeedforwardCharacterization(); }
