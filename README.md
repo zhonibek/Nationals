@@ -3,62 +3,63 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/IRAlib-v1.0.0-crimson?style=for-the-badge&logo=cplusplus" alt="Version">
+  <img src="https://img.shields.io/badge/IRAlib-v2.0.0--Pro-crimson?style=for-the-badge&logo=cplusplus" alt="Version">
   <img src="https://img.shields.io/badge/PROS-v4.2.2-black?style=for-the-badge" alt="PROS">
   <img src="https://img.shields.io/badge/VEX_V5-Nationals_Ready-red?style=for-the-badge" alt="VEX V5">
+  <img src="https://img.shields.io/badge/Eigen-v3.4-blue?style=for-the-badge" alt="Eigen">
   <img src="https://img.shields.io/badge/Location-Almaty%2C_Kazakhstan-white?style=for-the-badge&logo=google-maps&logoColor=red" alt="Almaty, Kazakhstan">
 </p>
 
 <hr>
 
-# IRAlib
+# IRAlib — Next-Generation VEX V5 Control Architecture
 
-**IRAlib** is an advanced, high-performance VEX V5 robotics control framework developed at the **International Robotics Academy (Almaty, Kazakhstan)** for competitive robotics, designed for both Kazakhstan Nationals and international championship tournaments.
+**IRAlib** is an advanced, high-performance VEX V5 robotics control framework developed at the **International Robotics Academy (Almaty, Kazakhstan)** for competitive robotics, engineered specifically for the Kazakhstan National Championship and international VEX World Championships.
 
-Inspired by the modularity of [LemLib](https://github.com/LemLib/LemLib) and the robust engineering principles of [OkapiLib](https://github.com/OkapiLib/OkapiLib), **IRAlib** introduces modern state-space control theory, optimal time-varying trajectory tracking, probabilistic localization, and intelligent hardware monitoring into a unified, competition-proven C++ library.
-
----
-
-## ⚡ Key Features
-
-### 🏎️ Advanced Motion Control
-- **LTV-LQR Trajectory Tracking**: Linear Time-Varying controller executing high-speed curved paths using an **online DARE Riccati solver** (2–3 ms convergence) to compute optimal curvature-adaptive gains.
-- **LQR Optimal State Feedback**: Linear Quadratic Regulator for razor-sharp point-to-point targeting and turns with instantaneous velocity and acceleration damping.
-- **PIDf Inner-Loop Velocity Controller**: Voltage-level feedforward ($kS$ static friction, $kV$ velocity, $kA$ acceleration) coupled with closed-loop PID velocity tracking.
-- **Multi-Controller Hybrid Architecture**: Switch between **LTV**, **LQR**, and **PID** on the fly with zero re-calibration.
-- **Drive Curves & Curvature Drive**: Non-linear exponential throttle and steering curves for precise, natural driver handling.
-
-### 📍 Localization & Sensor Fusion
-- **Arc-Based Odometry**: Dual vertical & horizontal tracking wheel odometry combined with V5 Inertial Sensor heading tracking.
-- **Adaptive Monte Carlo Localization (AMCL)**: High-performance 2000–5000 particle filter utilizing distance sensor raycasting against field walls for continuous 2D position correction.
-- **Multi-Sensor Recalibration Suite (`OdomReset`)**:
-  - **4-Way Distance Sensor Triangulation**: Global position reset using cardinal distance sensor measurements.
-  - **Optical Centerline Reset**: Automatically zeroes coordinate axes when crossing white field tape.
-  - **Wall Bumper Reset**: Instant physical perimeter recalibration.
-
-### 🛡️ Autonomy & Game Automation
-- **Automated Color Sorter**: Optical sensor game piece identification and automatic opposing alliance ejection via roller/intake control, with instant runtime team color switching.
-- **Watchdog Health Monitor (`MotorMonitor`)**: Background diagnostic task continuously verifying motor connections and thermal health ($>55^\circ\text{C}$), with haptic rumble and LCD notifications.
+Combining modern state-space control theory, real-time optimal trajectory tracking, nonlinear state estimation, and intelligent hardware safety watchdogs, **IRAlib** represents the cutting edge of competitive mobile robotics programming.
 
 ---
 
-## 📐 System Architecture
+## ⚡ Key Architectural Features
+
+### 🏎️ 1. State-Space & Optimal Control
+- **LTV-LQR Trajectory Tracking**: Linear Time-Varying controller executing high-speed curved paths using an **online DARE Riccati solver** (Structure-Preserving Doubling Algorithm) on ARM Cortex-A9 at 100 Hz.
+- **LQR Optimal State Feedback**: Full-state feedback ($u = k_P e - k_V v - k_A a + k_I \int e$) with EMA low-pass filtering and anti-derivative kick logic.
+- **TCS (Traction Control System)**: Active anti-slip module preventing tire spinout during explosive launches by throttling torque to match the maximum static friction limit.
+- **Adaptive Fuzzy Logic Control (FLC)**: Takagi-Sugeno fuzzy inference system dynamically scaling $k_P$ and $k_V$ based on instantaneous position error and velocity.
+- **Jerk-Limited Quintic Splines**: On-the-fly $C^2$-continuous 5th-order Hermite spline generator with strict bounds on maximum jerk ($j \le 3.5\,\text{m/s}^3$).
+- **PIDf Inner-Loop Velocity Controller**: Hyperbolic tangent friction feedforward ($kS \cdot \tanh, kV, kA$) coupled with closed-loop PI velocity tracking.
+
+### 📍 2. Localization & Sensor Fusion
+- **5-State Extended Kalman Filter (EKF)**: Fuses differential drive motor encoders, spring-loaded tracking wheels, and V5 Inertial Sensor (IMU) with covariance estimation.
+- **Adaptive Monte Carlo Localization (AMCL)**: 2000-particle filter utilizing distance sensor raycasting against field walls for continuous 2D relocalization.
+- **Multi-Sensor Recalibration Suite (`OdomReset`)**: High-precision wall bumper, optical centerline, and 4-way trigonometric distance sensor resets.
+
+### 🛡️ 3. Safety & Diagnostic Subsystems
+- **Watchdog Health Monitor (`MotorMonitor`)**: Background diagnostic task continuously verifying Smart Port cable connections and motor temperatures ($>55^\circ\text{C}$), providing haptic rumble and LCD notifications.
+- **Automated Color Sorter**: Optical sensor game piece identification and automatic opposing alliance ejection with runtime color switching.
+
+---
+
+## 📐 System Control Flow
 
 ```mermaid
 graph TD
-    A[Autonomous Trajectory] -->|State Waypoints| B[LTV Path Follower]
-    C[Point Target / Heading] -->|Pose Target| D[LQR Controller]
+    A[Quintic Spline / Waypoints] -->|State Profile x,y,θ,v,ω| B[LTV-LQR DARE Solver]
+    C[Point Target / Heading] -->|Target Pose| D[Fuzzy-LQR Controller]
     
-    B -->|v_cmd, w_cmd in m/s| E[PIDf Velocity Controller]
-    D -->|Control Signal| E
+    B -->|v_cmd, ω_cmd| E[TCS + Velocity Controller]
+    D -->|Target Velocities| E
     
-    E -->|Feedforward + Feedback Voltage| F[Drivetrain Motors]
+    E -->|Feedforward + Feedback Voltage| F[V5 Drivetrain Motors]
     
-    G[Sensors & Telemetry] --> H[MotorMonitor Watchdog]
-    G --> I[ColorSorter Subsystem]
-    G --> J[OdomReset & AMCL Localization]
+    G[Sensors: IMU + Encoders + Pods] --> H[5-State EKF Filter]
+    G --> I[MotorMonitor Watchdog]
+    G --> J[AMCL Localization]
     
-    H -->|LCD & Haptic Alerts| K[Driver Controller]
+    H -->|Fused Pose x,y,θ| B
+    H -->|Fused Pose x,y,θ| D
+    I -->|Haptic & LCD Alerts| K[Driver Controller]
 ```
 
 ---
@@ -67,29 +68,58 @@ graph TD
 
 ```
 include/
-├── Eigen/                     # Header-only Eigen math library for DARE & matrix operations
+├── Eigen/                     # Header-only Eigen C++ template library for linear algebra
 ├── lemlib/                    # LemLib core foundations (Chassis, Pose, Odometry, Math)
 └── subsystems/
     ├── subsystems.hpp         # Master header for all subsystems
-    ├── VelocityController.hpp # PIDf inner-loop voltage controller
+    ├── VelocityController.hpp # PIDf inner-loop controller with Active TCS
     ├── MotorMonitor.hpp       # Real-time motor disconnect & overtemp watchdog
     ├── ColorSorter.hpp        # Optical sensor piece sorter
     ├── OdomReset.hpp          # Wall, line, and 4-distance sensor localization
+    ├── ekf/
+    │   └── EKF.hpp            # 5-State Extended Kalman Filter
+    ├── flc/
+    │   └── FuzzyLogic.hpp     # Adaptive Fuzzy Logic Controller
+    ├── trajectory/
+    │   └── QuinticSpline.hpp  # Jerk-limited 5th-order spline generator
     ├── ltv/
     │   ├── State.hpp          # Trajectory waypoint definition
     │   └── ltv.hpp            # LTV-LQR DARE optimal trajectory follower
     └── mcl/
-        └── MCL.hpp            # 2000-particle AMCL localization filter
+        └── MCL.hpp            # AMCL particle filter localization
 src/
-├── main.cpp                   # Unified competition entrypoint
+├── main.cpp                   # Competition entrypoint with interactive test suite
 └── subsystems/
     ├── VelocityController.cpp
     ├── MotorMonitor.cpp
     ├── ColorSorter.cpp
     ├── OdomReset.cpp
+    ├── ekf/EKF.cpp
+    ├── flc/FuzzyLogic.cpp
+    ├── trajectory/QuinticSpline.cpp
     ├── ltv/ltv.cpp
     └── mcl/MCL.cpp
+docs/
+└── TUNING_GUIDE.md            # Comprehensive step-by-step tuning manual
 ```
+
+---
+
+## 🛠️ Interactive Tuning Test Suite
+
+In driver control mode (`opcontrol`), use the interactive controller buttons for live tuning:
+
+| Button | Action | Purpose |
+| :--- | :--- | :--- |
+| **[ A ]** | **360° Track Width Spin** | Spin exactly 360° to calibrate effective track width. |
+| **[ B ]** | **24" Linear Drive Test** | Test straight line accuracy, settle time, and $k_P/k_V$. |
+| **[ Y ]** | **90° Angular Snap Test** | Test heading stiffness and overshoot damping. |
+| **[ UP ]** | **LTV S-Curve Trajectory** | Run a 2-meter smooth curved path with real-time DARE solving. |
+| **[ RIGHT ]** | **Quintic Spline Test** | Generate and track a $C^2$ jerk-limited 5th-order spline on-the-fly. |
+| **[ DOWN ]** | **$k_S$ Characterization** | Measure the static friction voltage required to start moving. |
+| **[ X ]** | **LQR $\leftrightarrow$ PID Toggle** | Switch between Optimal LQR and Classic PID on the fly. |
+
+> 📖 **Full Tuning Manual:** See [docs/TUNING_GUIDE.md](docs/TUNING_GUIDE.md) for detailed step-by-step instructions.
 
 ---
 
@@ -98,58 +128,43 @@ src/
 ```cpp
 #include "main.h"
 #include "lemlib/api.hpp"
+#include "subsystems/subsystems.hpp"
 
-// Drivetrain & Motors
-pros::MotorGroup leftMotors({-3, 18, -5}, pros::MotorGearset::green);
-pros::MotorGroup rightMotors({-10, 3, -17}, pros::MotorGearset::green);
+// Drivetrain & Motors (Correct physical left/right wiring)
+pros::MotorGroup leftMotors({-3, 18, -5}, pros::MotorGearset::blue);
+pros::MotorGroup rightMotors({-10, 3, -17}, pros::MotorGearset::blue);
 
-lemlib::Drivetrain drivetrain(&rightMotors, &leftMotors, 10.5, lemlib::Omniwheel::NEW_4, 200, 2.0);
+lemlib::Drivetrain drivetrain(&leftMotors, &rightMotors, 10.5, lemlib::Omniwheel::NEW_325, 450.0, 2.0);
 lemlib::Chassis chassis(drivetrain, linearController, angularController, lateralLQR, angularLQR, sensors);
 
-// LTV Trajectory Follower
-VelocityControllerConfig velConfig{ .kV = 4.5, .KA_straight = 0.2, .KS_straight = 0.4, .KP_straight = 2.0 };
+// Cascaded LTV + TCS Velocity Controller
+VelocityControllerConfig velConfig{ 
+    .kV = 6.2, 
+    .KA_straight = 0.25, 
+    .KS_straight = 0.45, 
+    .KP_straight = 2.0,
+    .enableTCS = true,
+    .maxSlipRatio = 0.18
+};
 lemlib::LTVPathFollower ltvFollower(chassis, leftMotors, rightMotors, velConfig);
 
-// Motor & Sensor Watchdog
-lemlib::MotorMonitor motorMonitor(controller, {{"LeftDrive", &leftMotors}, {"RightDrive", &rightMotors}});
-
-void initialize() {
-    chassis.calibrate();
-    motorMonitor.startTask(500); // Start background watchdog
-}
-
 void autonomous() {
-    // 1. High-Speed Trajectory Following via LTV (Online DARE)
-    ltvFollower.followPath("my_trajectory_data", {.turnFirst = true, .log = true});
+    // 1. Generate and follow a smooth Jerk-Limited Quintic Spline
+    auto path = lemlib::QuinticSplineGenerator::generateTrajectory({
+        .start = lemlib::Pose(0, 0, 0),
+        .end = lemlib::Pose(24.0, 48.0, 45.0),
+        .maxVel = 1.2,
+        .maxAccel = 2.0,
+        .maxJerk = 3.5
+    });
+
+    ltvFollower.followTrajectory(path, {.log = true});
     ltvFollower.waitUntilDone();
 
-    // 2. Point-to-Point Movement via LQR (Optimal State Feedback)
+    // 2. High-precision LQR snap turn
     chassis.useLQR();
     chassis.turnToHeading(90, 1000);
     chassis.waitUntilDone();
-    chassis.moveToPoint(0, 24, 2500);
-    chassis.waitUntilDone();
-}
-
-void opcontrol() {
-    while (true) {
-        // Toggle LQR / PID with 'X' button
-        if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_X)) {
-            if (chassis.getMotionControllerType() == lemlib::MotionControllerType::PID) {
-                chassis.useLQR();
-                controller.rumble(".");
-            } else {
-                chassis.usePID();
-                controller.rumble("-");
-            }
-        }
-
-        int throttle = controller.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y);
-        int steer = controller.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X);
-        chassis.arcade(throttle, steer);
-
-        pros::delay(10);
-    }
 }
 ```
 
@@ -157,14 +172,14 @@ void opcontrol() {
 
 ## 🏛️ About International Robotics Academy
 
-**International Robotics Academy (IRA)** is located in **Almaty, Kazakhstan**, educating the next generation of engineers, programmers, and roboticists. IRA teams compete at national and international VEX Robotics Championships.
+**International Robotics Academy (IRA)** is located in **Almaty, Kazakhstan**, educating the next generation of world-class roboticists and control engineers.
 
 - 📍 **Location**: Almaty, Kazakhstan
-- 🏆 **Focus**: Advanced Robotics Engineering, Controls Theory, VEX V5 / VRC Competition
+- 🏆 **Focus**: Advanced Controls Theory, Embedded Systems, VEX V5 Competition Robotics
 
 ---
 
 ## 📄 License & Acknowledgments
 
 - **License**: [MIT License](LICENSE)
-- **Acknowledgments**: Special thanks to the creators of [LemLib](https://github.com/LemLib/LemLib), [OkapiLib](https://github.com/OkapiLib/OkapiLib), and [EZ-Template](https://github.com/EZ-Robotics/EZ-Template) for foundational concepts in VEX robotics programming.
+- **Acknowledgments**: Thanks to [LemLib](https://github.com/LemLib/LemLib) and [Eigen](https://gitlab.com/libeigen/eigen) for foundational frameworks.
