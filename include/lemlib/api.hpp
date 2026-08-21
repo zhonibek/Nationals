@@ -8,10 +8,19 @@
 #include "lemlib/chassis/trackingWheel.hpp" // IWYU pragma: keep
 #include "lemlib/logger/logger.hpp" // IWYU pragma: keep
 
+#include "subsystems/subsystems.hpp" // IWYU pragma: keep
+
 // using to shorten lemlib::AngularDirection to just AngularDirection
 using lemlib::AngularDirection;
 // using to shorten lemlib::DriveSide to just DriveSide
 using lemlib::DriveSide;
 // using to shorten lemlib::MotionControllerType to just MotionControllerType
 using lemlib::MotionControllerType;
+using lemlib::LTVPathFollower;
+using lemlib::ltvConfig;
+using lemlib::MotorMonitor;
+using lemlib::ColorSorter;
+using lemlib::AllianceColor;
+using lemlib::OdomReset;
+using lemlib::MCL;
 
