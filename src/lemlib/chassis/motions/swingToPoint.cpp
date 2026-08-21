@@ -74,7 +74,7 @@ void lemlib::Chassis::swingToPoint(float x, float y, DriveSide lockedSide, int t
         if (motionControllerType == MotionControllerType::LQR) {
             float angularVel = 0;
             if (sensors.imu != nullptr) {
-                angularVel = sensors.imu->get_gyro_rate().z;
+                angularVel = -sensors.imu->get_gyro_rate().z;
             } else {
                 angularVel = getLocalSpeed().theta;
             }

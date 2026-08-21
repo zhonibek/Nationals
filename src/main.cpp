@@ -26,8 +26,8 @@ constexpr float TRACK_WIDTH_INCHES = 10.5f;
 constexpr float WHEEL_DIAMETER_INCHES = 3.25f;
 constexpr float DRIVETRAIN_RPM = 450.0f;
 
-lemlib::Drivetrain drivetrain(&rightMotors, // right motor group mapped to drivetrain left/right
-                              &leftMotors,
+lemlib::Drivetrain drivetrain(&leftMotors, // left motor group
+                              &rightMotors, // right motor group
                               TRACK_WIDTH_INCHES,
                               lemlib::Omniwheel::NEW_325, // 3.25-inch wheels
                               DRIVETRAIN_RPM,

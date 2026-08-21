@@ -15,10 +15,15 @@ LQR::LQR(float kP, float kV, float kA, float kI, float windupRange, bool signFli
 float LQR::update(float error, float velocity, float accel, float dt) {
     if (dt <= 0) dt = 0.01f;
 
-    // update integral
-    integral += error;
+    // update integral with anti-windup clamping
+    if (windupRange == 0 || std::fabs(error) <= windupRange) {
+        integral += error * dt;
+        integral = std::clamp(integral, -30.0f, 30.0f);
+    } else {
+        integral = 0;
+    }
+
     if (sgn(error) != sgn(prevError) && signFlipReset) integral = 0;
-    if (std::fabs(error) > windupRange && windupRange != 0) integral = 0;
     prevError = error;
 
     // 1-step predictive lookahead using instantaneous acceleration
@@ -36,9 +41,16 @@ float LQR::update(float error, float velocity, float accel, float dt) {
 float LQR::update(float error, float dt) {
     if (dt <= 0) dt = 0.01f;
 
-    // If external velocity is not provided, estimate from change in position error
-    float derivative = (prevError - error) / dt; // rate of closing the error
-    filteredVelocity = ema(derivative, filteredVelocity, 0.75f);
+    // If external velocity is not provided, estimate from change in position error with kick prevention
+    if (isFirstStep) {
+        prevError = error;
+        filteredVelocity = 0.0f;
+        isFirstStep = false;
+    } else {
+        float derivative = (prevError - error) / dt; // rate of closing the error
+        filteredVelocity = ema(derivative, filteredVelocity, 0.75f);
+        prevError = error;
+    }
 
     return update(error, filteredVelocity, 0, dt);
 }
@@ -47,6 +59,7 @@ void LQR::reset() {
     integral = 0;
     prevError = 0;
     filteredVelocity = 0;
+    isFirstStep = true;
 }
 
 void LQR::setGains(float kP, float kV, float kA, float kI) {

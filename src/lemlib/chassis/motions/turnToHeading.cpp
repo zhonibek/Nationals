@@ -63,7 +63,8 @@ void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParam
         if (motionControllerType == MotionControllerType::LQR) {
             float angularVel = 0;
             if (sensors.imu != nullptr) {
-                angularVel = sensors.imu->get_gyro_rate().z;
+                // Invert IMU gyro rate (PROS CCW+) to match LemLib CW+ angle frame
+                angularVel = -sensors.imu->get_gyro_rate().z;
             } else {
                 angularVel = getLocalSpeed().theta;
             }

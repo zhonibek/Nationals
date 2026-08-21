@@ -66,7 +66,7 @@ void lemlib::Chassis::turnToPoint(float x, float y, int timeout, TurnToPointPara
         if (motionControllerType == MotionControllerType::LQR) {
             float angularVel = 0;
             if (sensors.imu != nullptr) {
-                angularVel = sensors.imu->get_gyro_rate().z;
+                angularVel = -sensors.imu->get_gyro_rate().z;
             } else {
                 angularVel = getLocalSpeed().theta;
             }

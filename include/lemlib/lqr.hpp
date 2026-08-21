@@ -127,6 +127,7 @@ class LQR {
         float integral = 0;
         float prevError = 0;
         float filteredVelocity = 0;
+        bool isFirstStep = true;
 };
 
 } // namespace lemlib

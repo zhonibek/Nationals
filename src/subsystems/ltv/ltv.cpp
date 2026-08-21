@@ -188,12 +188,14 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
 
     controller.reset();
 
+    uint32_t loop_time = pros::millis();
+
     for (int i = 0; i < trajectory_size; ++i) {
         if (cancel_request) break;
 
         uint32_t current_time = pros::millis();
         double measured_dt = (current_time - prev_time) / 1000.0;
-        if (measured_dt <= 0.002) measured_dt = 0.01;
+        if (measured_dt <= 0.002 || measured_dt > 0.1) measured_dt = 0.01;
         prev_time = current_time;
 
         const auto &target_state = trajectory[i];
@@ -250,20 +252,31 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
                  0, 0, eps;
                  
             Eigen::Matrix<float, 3, 2> B;
-            B << 1, 0,
-                 0, 0,
-                 0, 1;
+            B << -1, 0,
+                  0, 0,
+                  0, -1;
                 
             auto discAB = discretizeAB(A, B, measured_dt);
             Eigen::MatrixXf X = dareSolver(discAB.first, discAB.second, Q_mat, R_mat);
             
-            cached_K = (R_mat + discAB.second.transpose() * X * discAB.second).inverse() * discAB.second.transpose() * X * discAB.first;
+            Eigen::Matrix2f R_reg = R_mat + Eigen::Matrix2f::Identity() * 1e-4f;
+            cached_K = (R_reg + discAB.second.transpose() * X * discAB.second).ldlt().solve(discAB.second.transpose() * X * discAB.first);
+            
+            if (cached_K.hasNaN() || !cached_K.allFinite()) {
+                cached_K.setZero();
+            }
+
             last_solve_v = v_ref;
             last_solve_w = w_ref;
         }
         
-        Eigen::Vector2f u = cached_K * error.cast<float>();
+        // Optimal control law: u = - K * e
+        Eigen::Vector2f u = -cached_K * error.cast<float>();
         
+        if (u.hasNaN() || !u.allFinite()) {
+            u.setZero();
+        }
+
         float u_v = clamp(u(0), -l_config.max_lin_correction, l_config.max_lin_correction);
         float u_w = clamp(u(1), -l_config.max_ang_correction, l_config.max_ang_correction);
         
@@ -305,7 +318,7 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
             logs.push_back(ss.str());
         }
         
-        pros::Task::delay_until(&current_time, 10);
+        pros::Task::delay_until(&loop_time, 10);
     }
 
     rightMotors.brake();
@@ -331,7 +344,8 @@ Eigen::MatrixXf LTVPathFollower::dareSolver(const Eigen::MatrixXf &A, const Eige
     int states = A.rows();
     
     Eigen::MatrixXf A_k = A;
-    Eigen::MatrixXf G_k = B * R.llt().solve(B.transpose()); 
+    Eigen::MatrixXf R_reg = R + Eigen::MatrixXf::Identity(R.rows(), R.cols()) * 1e-4f;
+    Eigen::MatrixXf G_k = B * R_reg.ldlt().solve(B.transpose()); 
     Eigen::MatrixXf H_k;
     Eigen::MatrixXf H_k1 = Q;
     
@@ -347,12 +361,17 @@ Eigen::MatrixXf LTVPathFollower::dareSolver(const Eigen::MatrixXf &A, const Eige
         G_k += A_k * V_2 * A_k.transpose();
         H_k1 = H_k + V_1.transpose() * H_k * A_k;
         A_k *= V_1;
-        if ((H_k1 - H_k).norm() <= 1e-6f * H_k1.norm()) {
+        
+        if (H_k1.hasNaN() || !H_k1.allFinite()) {
+            return Q;
+        }
+
+        if ((H_k1 - H_k).norm() <= 1e-5f * H_k1.norm()) {
             break;
         }
     }
 
-    return H_k1;
+    return H_k1.allFinite() ? H_k1 : Q;
 }
 
 std::pair<Eigen::MatrixXf, Eigen::MatrixXf> LTVPathFollower::discretizeAB(

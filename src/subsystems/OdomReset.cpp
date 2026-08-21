@@ -56,19 +56,21 @@ Pose OdomReset::distanceReset(Chassis& chassis,
         double dx = std::sin(sensorHeading);
         double dy = std::cos(sensorHeading);
 
-        // If sensor is aligned near field cardinal directions (±X or ±Y)
-        if (std::abs(dx) > 0.85) { // Facing east or west
+        // If sensor is aligned near field cardinal directions (tight tolerance < 8 deg)
+        if (std::abs(dx) > 0.98) { // Facing east or west
+            double projectedDist = distInches * std::abs(dx);
             if (dx > 0) { // Facing East (+X wall at +fieldWidth/2)
-                x_estimates.push_back((fieldWidthInches / 2.0) - distInches);
+                x_estimates.push_back((fieldWidthInches / 2.0) - projectedDist);
             } else { // Facing West (-X wall at -fieldWidth/2)
-                x_estimates.push_back((-fieldWidthInches / 2.0) + distInches);
+                x_estimates.push_back((-fieldWidthInches / 2.0) + projectedDist);
             }
         }
-        if (std::abs(dy) > 0.85) { // Facing north or south
+        if (std::abs(dy) > 0.98) { // Facing north or south
+            double projectedDist = distInches * std::abs(dy);
             if (dy > 0) { // Facing North (+Y wall at +fieldHeight/2)
-                y_estimates.push_back((fieldHeightInches / 2.0) - distInches);
+                y_estimates.push_back((fieldHeightInches / 2.0) - projectedDist);
             } else { // Facing South (-Y wall at -fieldHeight/2)
-                y_estimates.push_back((-fieldHeightInches / 2.0) + distInches);
+                y_estimates.push_back((-fieldHeightInches / 2.0) + projectedDist);
             }
         }
     };

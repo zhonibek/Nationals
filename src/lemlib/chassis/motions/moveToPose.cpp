@@ -115,7 +115,7 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
 
             float angularVel = 0;
             if (sensors.imu != nullptr) {
-                angularVel = sensors.imu->get_gyro_rate().z;
+                angularVel = -sensors.imu->get_gyro_rate().z;
             } else {
                 angularVel = getLocalSpeed().theta;
             }

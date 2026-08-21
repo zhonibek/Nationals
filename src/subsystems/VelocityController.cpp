@@ -49,12 +49,12 @@ DrivetrainVoltages VelocityController::update(double v_cmd, double w_cmd, double
     double kS_eff = config.KS_straight * (1.0 - turnRatio) + config.KS_turn * turnRatio;
     double kA_eff = config.KA_straight * (1.0 - turnRatio) + config.KA_turn * turnRatio;
 
-    // Feedforward voltages
-    double ff_left = (std::abs(v_left_target) > 1e-3 ? kS_eff * sgn(v_left_target) : 0.0)
+    // Smooth feedforward voltages (smooth tanh avoids 100Hz square-wave buzzing at near-zero speeds)
+    double ff_left = (kS_eff * std::tanh(v_left_target / 0.05))
                    + (config.kV * v_left_target)
                    + (kA_eff * a_left_target);
 
-    double ff_right = (std::abs(v_right_target) > 1e-3 ? kS_eff * sgn(v_right_target) : 0.0)
+    double ff_right = (kS_eff * std::tanh(v_right_target / 0.05))
                     + (config.kV * v_right_target)
                     + (kA_eff * a_right_target);
 

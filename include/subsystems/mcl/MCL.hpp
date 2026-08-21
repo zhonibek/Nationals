@@ -52,6 +52,7 @@ private:
     Pose lastOdomPose = Pose(0, 0, 0);
     Pose estimatedPose = Pose(0, 0, 0);
     bool converged = false;
+    mutable pros::Mutex mclMutex;
 
     pros::Task* task = nullptr;
     bool running = false;

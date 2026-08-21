@@ -41,23 +41,17 @@ class PID {
          * }
          * @endcode
          */
-        float update(float error);
+        /**
+         * @brief Update the PID
+         *
+         * @param error target minus position - AKA error
+         * @param dt loop time step in seconds (default 0.01s / 10ms)
+         * @return float output
+         */
+        float update(float error, float dt = 0.01f);
 
         /**
-         * @brief reset integral, derivative, and prevTime
-         *
-         * @b Example
-         * @code {.cpp}
-         * void opcontrol() {
-         *     // create a PID
-         *     PID pid(5, 0, 20);
-         *     // give the pid a test input
-         *     // the pid will then return an output
-         *     float output = pid.update(10);
-         *     // reset the pid
-         *     pid.reset();
-         * }
-         * @endcode
+         * @brief reset integral, derivative, and filter state
          */
         void reset();
     protected:
@@ -72,5 +66,7 @@ class PID {
 
         float integral = 0;
         float prevError = 0;
+        float filteredDerivative = 0;
+        bool isFirstStep = true;
 };
 } // namespace lemlib

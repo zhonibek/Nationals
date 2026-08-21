@@ -23,6 +23,7 @@ MCL::~MCL() {
 }
 
 void MCL::init(const Pose& initialPose, double posStdDev, double headingStdDevDeg) {
+    mclMutex.take(TIMEOUT_MAX);
     std::normal_distribution<double> distX(initialPose.x, posStdDev);
     std::normal_distribution<double> distY(initialPose.y, posStdDev);
     std::normal_distribution<double> distTheta(degToRad(initialPose.theta), degToRad(headingStdDevDeg));
@@ -36,6 +37,7 @@ void MCL::init(const Pose& initialPose, double posStdDev, double headingStdDevDe
 
     lastOdomPose = chassis.getPose(true);
     estimatedPose = initialPose;
+    mclMutex.give();
 }
 
 void MCL::startTask(uint32_t periodMs) {
@@ -99,6 +101,7 @@ double MCL::raycastField(double px, double py, double rayAngleRad) const {
 }
 
 void MCL::update() {
+    mclMutex.take(TIMEOUT_MAX);
     Pose currentOdom = chassis.getPose(true);
     double deltaX = currentOdom.x - lastOdomPose.x;
     double deltaY = currentOdom.y - lastOdomPose.y;
@@ -207,10 +210,14 @@ void MCL::update() {
     double meanTheta = std::atan2(sinSum, cosSum);
 
     estimatedPose = Pose(meanX, meanY, radToDeg(meanTheta));
+    mclMutex.give();
 }
 
 Pose MCL::getEstimatedPose() const {
-    return estimatedPose;
+    mclMutex.take(TIMEOUT_MAX);
+    Pose p = estimatedPose;
+    mclMutex.give();
+    return p;
 }
 
 bool MCL::isConverged() const {
