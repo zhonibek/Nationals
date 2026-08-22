@@ -22,8 +22,8 @@ std::vector<State> QuinticSplineGenerator::generateTrajectory(const SplineWaypoi
         return { State{x0, y0, theta0, 0.0, 0.0} };
     }
 
-    // Tangent vectors scaled by distance
-    double scale = std::max(dist, 0.2);
+    // Tangent vectors scaled by distance to create a pronounced, smooth curvature arc
+    double scale = std::max(1.35 * dist, 0.45);
     double vx0 = scale * std::sin(theta0); // In LemLib heading, dx = sin(theta), dy = cos(theta)
     double vy0 = scale * std::cos(theta0);
     double vx1 = scale * std::sin(theta1);
@@ -57,7 +57,8 @@ std::vector<State> QuinticSplineGenerator::generateTrajectory(const SplineWaypoi
     std::vector<State> trajectory;
     trajectory.reserve(numSteps + 1);
 
-    double prevHeading = theta0;
+    // Standard Cartesian math angle frame (matches LTV DARE solver effective_theta)
+    double prevHeading = M_PI_2 - theta0;
 
     for (int i = 0; i <= numSteps; ++i) {
         double t = static_cast<double>(i) / numSteps; // normalized time [0, 1]
@@ -74,8 +75,8 @@ std::vector<State> QuinticSplineGenerator::generateTrajectory(const SplineWaypoi
         double dpx = cx1 + 2.0 * cx2 * t + 3.0 * cx3 * t2 + 4.0 * cx4 * t3 + 5.0 * cx5 * t4;
         double dpy = cy1 + 2.0 * cy2 * t + 3.0 * cy3 * t2 + 4.0 * cy4 * t3 + 5.0 * cy5 * t4;
 
-        // Instantaneous heading from velocity vector
-        double heading = std::atan2(dpx, dpy);
+        // Instantaneous Cartesian heading: atan2(dy, dx) matches LTV DARE solver frame
+        double heading = std::atan2(dpy, dpx);
         if (std::isnan(heading)) heading = prevHeading;
 
         // Smooth Jerk-limited S-curve velocity profile

@@ -21,20 +21,20 @@ constexpr double METER_TO_INCH = 1.0 / 0.0254;
  */
 struct ltvConfig {
     // Forward state error penalty weights (Q diagonal)
-    float q_x = 1.5f;
-    float q_y = 6.0f;
-    float q_theta = 3.5f;
+    float q_x = 2.0f;
+    float q_y = 7.0f;
+    float q_theta = 5.0f; // High angular tracking stiffness
 
     // Forward control effort penalty weights (R diagonal)
     float r_vel = 0.008f;
-    float r_ang = 0.006f;
+    float r_ang = 0.003f; // Lower effort penalty -> snappier angular corrections
 
     // Backward state & control weights
-    float q_x_b = 1.5f;
-    float q_y_b = 6.0f;
-    float q_theta_b = 3.5f;
+    float q_x_b = 2.0f;
+    float q_y_b = 7.0f;
+    float q_theta_b = 5.0f;
     float r_vel_b = 0.008f;
-    float r_ang_b = 0.006f;
+    float r_ang_b = 0.003f;
 
     float q_scalar = 1.0f;
     float max_lin_correction = 1.5f; // m/s limit on feedback correction
