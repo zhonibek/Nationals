@@ -14,8 +14,8 @@ namespace lemlib {
 class QuinticSplineGenerator {
 public:
     struct SplineWaypoints {
-        Pose start;
-        Pose end;
+        Pose start{0.0f, 0.0f, 0.0f};
+        Pose end{0.0f, 0.0f, 0.0f};
         double startVel = 0.0; // m/s
         double endVel = 0.0;   // m/s
         double maxVel = 1.2;   // m/s

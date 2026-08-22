@@ -7,3 +7,6 @@
 #include "subsystems/ColorSorter.hpp"
 #include "subsystems/OdomReset.hpp"
 #include "subsystems/mcl/MCL.hpp"
+#include "subsystems/ekf/EKF.hpp"
+#include "subsystems/flc/FuzzyLogic.hpp"
+#include "subsystems/trajectory/QuinticSpline.hpp"

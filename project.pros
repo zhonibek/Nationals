@@ -1,7 +1,7 @@
 {
   "py/object": "pros.conductor.project.Project",
   "py/state": {
-    "project_name": "LemLib",
+    "project_name": "IRAlib",
     "target": "v5",
     "templates": {
       "kernel": {

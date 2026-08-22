@@ -1,4 +1,5 @@
 #include "subsystems/VelocityController.hpp"
+#include <algorithm>
 
 VelocityController::VelocityController(const VelocityControllerConfig& config)
     : config(config) {}

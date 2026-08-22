@@ -5,8 +5,6 @@
 
 namespace lemlib {
 
-constexpr double INCH_TO_METER = 0.0254;
-
 std::vector<State> QuinticSplineGenerator::generateTrajectory(const SplineWaypoints& params, double dt) {
     if (dt <= 1e-4) dt = 0.02;
 
