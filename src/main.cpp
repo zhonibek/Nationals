@@ -227,6 +227,65 @@ void autoPIDTurn(float targetHeading, int timeout = 1500) {
     chassis.waitUntilDone();
 }
 
+/**
+ * @brief 8. Drive Distance along Target Heading (Inches, Heading, Time)
+ * @param inches Distance to drive (positive = forward, negative = reverse)
+ * @param heading Heading angle in degrees (0 = North/Forward, 90 = East/Right, etc.)
+ * @param timeout Maximum execution duration in milliseconds
+ */
+void drive(float inches, float heading, int timeout = 2000, float maxSpeed = 127.0f) {
+    chassis.useLQR();
+    lemlib::Pose cur = chassis.getPose();
+
+    // If heading differs by more than 8 deg, snap to heading first (when moving forward)
+    if (std::abs(lemlib::angleError(heading, cur.theta)) > 8.0f && inches > 0) {
+        chassis.turnToHeading(heading, 800);
+        chassis.waitUntilDone();
+        cur = chassis.getPose();
+    }
+
+    float rad = lemlib::degToRad(heading);
+    float targetX = cur.x + inches * std::sin(rad);
+    float targetY = cur.y + inches * std::cos(rad);
+
+    bool forwards = (inches >= 0);
+    chassis.moveToPoint(targetX, targetY, timeout, {.forwards = forwards, .maxSpeed = maxSpeed});
+    chassis.waitUntilDone();
+}
+
+/**
+ * @brief 9. Curved Relative Drive (Forward Inches, Lateral Inches, End Heading, Time)
+ * Curves smoothly into target heading over forward & lateral distance using LQR.
+ * @param forwardInches Distance forward along current heading
+ * @param lateralInches Distance lateral (positive = right, negative = left)
+ * @param endHeading Final orientation heading in degrees
+ * @param timeout Maximum execution duration in milliseconds
+ */
+void curve(float forwardInches, float lateralInches, float endHeading, int timeout = 2500, float maxSpeed = 127.0f) {
+    chassis.useLQR();
+    lemlib::Pose cur = chassis.getPose();
+    float currentRad = lemlib::degToRad(cur.theta);
+
+    float deltaX = lateralInches * std::cos(currentRad) + forwardInches * std::sin(currentRad);
+    float deltaY = -lateralInches * std::sin(currentRad) + forwardInches * std::cos(currentRad);
+
+    chassis.moveToPose(cur.x + deltaX, cur.y + deltaY, endHeading, timeout, {.maxSpeed = maxSpeed});
+    chassis.waitUntilDone();
+}
+
+/**
+ * @brief 10. Smooth Jerk-Limited Quintic Spline S-Curve (Forward Inches, Lateral Inches, End Heading)
+ */
+void splineCurve(float forwardInches, float lateralInches, float endHeading, double maxVel = 1.0, double maxAccel = 1.8) {
+    lemlib::Pose cur = chassis.getPose();
+    float currentRad = lemlib::degToRad(cur.theta);
+
+    float deltaX = lateralInches * std::cos(currentRad) + forwardInches * std::sin(currentRad);
+    float deltaY = -lateralInches * std::sin(currentRad) + forwardInches * std::cos(currentRad);
+
+    autoSpline(cur, lemlib::Pose(cur.x + deltaX, cur.y + deltaY, endHeading), maxVel, maxAccel);
+}
+
 // Mechanism helpers
 inline void setIntake(int voltage_mv) { intakeMotors.move_voltage(voltage_mv); }
 inline void stopIntake() { intakeMotors.move_voltage(0); }
@@ -364,8 +423,8 @@ enum class AutoRoutine {
     SKILLS_60S = 5      // 60-Second Full Field Skills Autonomous
 };
 
-// Default competition routine
-AutoRoutine currentAuto = AutoRoutine::HYBRID_TEST;
+// Default competition routine (Skills 60s is active)
+AutoRoutine currentAuto = AutoRoutine::SKILLS_60S;
 
 /**
  * @brief Hybrid Autonomous Demo (LTV Trajectory + LQR Snap Turns + PID Fine Alignment)
@@ -470,37 +529,74 @@ void autoGoalRush(bool isRedAlliance) {
 }
 
 /**
- * @brief 60-Second Full Field Skills Autonomous Routine
+ * @brief Skills Autonomous Routine:
+ * 
+ * --- PART 1: DISCRETE LQR MOTIONS ---
+ *   1. Straight 24 inches
+ *   2. Turn Right 90 degrees
+ *   3. Straight 24 inches
+ *   4. Back 24 inches
+ *   5. Turn Left 90 degrees (back to 0 deg)
+ *   6. Back 24 inches (back to 0,0,0)
+ * 
+ * --- PART 2: CONTINUOUS CURVED MOTIONS ---
+ *   7. Smooth Quintic Spline Curve forward-right to (24, 24) ending at 90 deg
+ *   8. Smooth Boomerang Curve reverse-left back to (0, 0) ending at 0 deg
  */
 void autoSkills() {
     chassis.setPose(0, 0, 0);
-    controller.print(0, 0, "Auto: Skills 60s   ");
+    controller.print(0, 0, "Auto: Skills Run   ");
 
-    // 1. Score Alliance Stake
-    intake();
-    pros::delay(400);
+    std::cout << "\n==============================================" << std::endl;
+    std::cout << ">>> PART 1: DISCRETE LQR STRAIGHT & SNAP TURNS" << std::endl;
+    std::cout << "==============================================" << std::endl;
 
-    // 2. LTV S-Curve to Quadrant 1 Mobile Goal
-    autoSpline(lemlib::Pose(0, 0, 0), lemlib::Pose(-18.0, 24.0, -90.0), 1.1, 1.8);
+    // 1. Straight 24 inches forward (Heading 0 deg)
+    std::cout << "[1] Straight 24 inches (Heading 0)..." << std::endl;
+    drive(24.0f, 0.0f, 1500);
+    pros::delay(200);
 
-    // 3. LQR Snap Turn & Clamp
-    autoTurn(-180.0f, 800);
-    autoDrive(-18.0f, 12.0f, 1000);
+    // 2. Turn Right 90 degrees
+    std::cout << "[2] Turn Right 90 degrees..." << std::endl;
+    autoTurn(90.0f, 800);
+    pros::delay(200);
 
-    // 4. LTV Multi-Waypoint Ring Sweep
-    autoPath({
-        lemlib::Pose(-18.0, 12.0, -180.0),
-        lemlib::Pose(-48.0, 24.0, -90.0),
-        lemlib::Pose(-48.0, 48.0, 0.0),
-        lemlib::Pose(-24.0, 60.0, 45.0)
-    }, 1.0, 1.6);
+    // 3. Straight 24 inches (Heading 90 deg)
+    std::cout << "[3] Straight 24 inches (Heading 90)..." << std::endl;
+    drive(24.0f, 90.0f, 1500);
+    pros::delay(200);
 
-    // 5. LQR Corner Placement
-    autoTurn(135.0f, 900);
-    autoDrive(-60.0f, 60.0f, 1500);
+    // 4. Back 24 inches (along Heading 90 deg)
+    std::cout << "[4] Back 24 inches (along Heading 90)..." << std::endl;
+    drive(-24.0f, 90.0f, 1500);
+    pros::delay(200);
 
-    stopIntake();
+    // 5. Turn Left 90 degrees (back to 0 deg)
+    std::cout << "[5] Turn Left 90 degrees (to Heading 0)..." << std::endl;
+    autoTurn(0.0f, 800);
+    pros::delay(200);
+
+    // 6. Back 24 inches (back to origin 0,0,0)
+    std::cout << "[6] Back 24 inches (to origin 0,0,0)..." << std::endl;
+    drive(-24.0f, 0.0f, 1500);
+    pros::delay(500);
+
+    std::cout << "\n==============================================" << std::endl;
+    std::cout << ">>> PART 2: CONTINUOUS SMOOTH CURVED PATH" << std::endl;
+    std::cout << "==============================================" << std::endl;
+
+    // 7. Smooth Jerk-Limited Quintic Spline Curve: from (0,0,0°) to (24, 24, 90°)
+    std::cout << "[7] LTV Quintic Spline Curve to (24, 24) facing 90 deg..." << std::endl;
+    autoSpline(lemlib::Pose(0, 0, 0), lemlib::Pose(24.0, 24.0, 90.0), 1.0, 1.8, 3.5);
+    pros::delay(300);
+
+    // 8. Smooth Boomerang Curve back: from (24, 24, 90°) back to (0, 0, 0°)
+    std::cout << "[8] Boomerang Curve back to (0, 0) facing 0 deg..." << std::endl;
+    autoPose(0.0f, 0.0f, 0.0f, 2500);
+
     controller.print(0, 0, "Skills Done!       ");
+    controller.rumble("..");
+    std::cout << ">>> Skills Routine Completed Successfully!" << std::endl;
 }
 
 // ============================================================================
@@ -595,8 +691,8 @@ void opcontrol() {
         // --- BUTTON DOWN: Run Feedforward kS / kV Characterization ---
         if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_DOWN)) { testFeedforwardCharacterization(); }
 
-        // --- BUTTON L1: Run Full Hybrid Autonomous Routine (Live in Driver Mode) ---
-        if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_L1)) { autoHybridDemo(); }
+        // --- BUTTON L1: Run Skills Autonomous Routine (Live in Driver Mode) ---
+        if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_L1)) { autoSkills(); }
 
         // --- BUTTON X: Toggle Controller Mode (LQR <-> PID) ---
         if (controller.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_X)) {
