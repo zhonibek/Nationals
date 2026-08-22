@@ -153,16 +153,15 @@ ASSET(example_txt);
  * @brief 1. Smooth Jerk-Limited Quintic Hermite Spline Trajectory (LTV-LQR + TCS)
  * Computes optimal C^2 continuous trajectory on-the-fly and tracks with online DARE Riccati solver.
  */
-void autoSpline(lemlib::Pose start, lemlib::Pose end, double maxVel = 1.0, double maxAccel = 1.8, double maxJerk = 3.5) {
-    lemlib::QuinticSplineGenerator::SplineWaypoints params {
-        .start = start,
-        .end = end,
-        .startVel = 0.0,
-        .endVel = 0.0,
-        .maxVel = maxVel,
-        .maxAccel = maxAccel,
-        .maxJerk = maxJerk
-    };
+void autoSpline(lemlib::Pose start, lemlib::Pose end, double maxVel = 1.0, double maxAccel = 1.8,
+                double maxJerk = 3.5) {
+    lemlib::QuinticSplineGenerator::SplineWaypoints params {.start = start,
+                                                            .end = end,
+                                                            .startVel = 0.0,
+                                                            .endVel = 0.0,
+                                                            .maxVel = maxVel,
+                                                            .maxAccel = maxAccel,
+                                                            .maxJerk = maxJerk};
     auto traj = lemlib::QuinticSplineGenerator::generateTrajectory(params, 0.01);
     ltvFollower.followTrajectory(traj, {.log = true});
     ltvFollower.waitUntilDone();
@@ -237,13 +236,6 @@ void drive(float inches, float heading, int timeout = 2000, float maxSpeed = 127
     chassis.useLQR();
     lemlib::Pose cur = chassis.getPose();
 
-    // If heading differs by more than 8 deg, snap to heading first (when moving forward)
-    if (std::abs(lemlib::angleError(heading, cur.theta)) > 8.0f && inches > 0) {
-        chassis.turnToHeading(heading, 800);
-        chassis.waitUntilDone();
-        cur = chassis.getPose();
-    }
-
     float rad = lemlib::degToRad(heading);
     float targetX = cur.x + inches * std::sin(rad);
     float targetY = cur.y + inches * std::cos(rad);
@@ -276,7 +268,8 @@ void curve(float forwardInches, float lateralInches, float endHeading, int timeo
 /**
  * @brief 10. Smooth Jerk-Limited Quintic Spline S-Curve (Forward Inches, Lateral Inches, End Heading)
  */
-void splineCurve(float forwardInches, float lateralInches, float endHeading, double maxVel = 1.0, double maxAccel = 1.8) {
+void splineCurve(float forwardInches, float lateralInches, float endHeading, double maxVel = 1.0,
+                 double maxAccel = 1.8) {
     lemlib::Pose cur = chassis.getPose();
     float currentRad = lemlib::degToRad(cur.theta);
 
@@ -288,8 +281,11 @@ void splineCurve(float forwardInches, float lateralInches, float endHeading, dou
 
 // Mechanism helpers
 inline void setIntake(int voltage_mv) { intakeMotors.move_voltage(voltage_mv); }
+
 inline void stopIntake() { intakeMotors.move_voltage(0); }
+
 inline void intake() { setIntake(12000); }
+
 inline void outtake() { setIntake(-12000); }
 
 // ============================================================================
@@ -302,7 +298,8 @@ void testTrackWidth(int fullRotations = 1) {
     chassis.setPose(0, 0, 0);
 
     for (int i = 0; i < fullRotations; i++) {
-        chassis.turnToHeading(180.0f, 2500, {.direction = lemlib::AngularDirection::CW_CLOCKWISE, .minSpeed = 40, .earlyExitRange = 15});
+        chassis.turnToHeading(
+            180.0f, 2500, {.direction = lemlib::AngularDirection::CW_CLOCKWISE, .minSpeed = 40, .earlyExitRange = 15});
         chassis.turnToHeading(0.0f, 2500, {.direction = lemlib::AngularDirection::CW_CLOCKWISE});
         chassis.waitUntilDone();
     }
@@ -326,7 +323,8 @@ void testLinearDrive(float targetInches = 24.0f) {
 
     lemlib::Pose endPose = chassis.getPose();
     float error = targetInches - endPose.y;
-    std::cout << "Final Y: " << endPose.y << " in | Error: " << error << " in | Settle Time: " << elapsed << " ms" << std::endl;
+    std::cout << "Final Y: " << endPose.y << " in | Error: " << error << " in | Settle Time: " << elapsed << " ms"
+              << std::endl;
     controller.print(0, 0, "Err: %4.2fin %4dms", error, (int)elapsed);
     controller.rumble(".");
 }
@@ -343,7 +341,8 @@ void testAngularTurn(float targetHeading = 90.0f) {
 
     lemlib::Pose endPose = chassis.getPose();
     float error = targetHeading - endPose.theta;
-    std::cout << "Final Theta: " << endPose.theta << " deg | Error: " << error << " deg | Settle: " << elapsed << " ms" << std::endl;
+    std::cout << "Final Theta: " << endPose.theta << " deg | Error: " << error << " deg | Settle: " << elapsed << " ms"
+              << std::endl;
     controller.print(0, 0, "Err: %4.1fdeg %4dms", error, (int)elapsed);
     controller.rumble(".");
 }
@@ -415,12 +414,12 @@ void testQuinticSpline() {
 // ============================================================================
 
 enum class AutoRoutine {
-    HYBRID_TEST = 0,    // Combined LTV Spline + LQR Snap + PID Wall align
-    RED_SOLO_AWP = 1,   // Red Alliance Solo Win Point
-    BLUE_SOLO_AWP = 2,  // Blue Alliance Solo Win Point
-    RED_GOAL_RUSH = 3,  // Fast Center Mobile Goal Rush
+    HYBRID_TEST = 0, // Combined LTV Spline + LQR Snap + PID Wall align
+    RED_SOLO_AWP = 1, // Red Alliance Solo Win Point
+    BLUE_SOLO_AWP = 2, // Blue Alliance Solo Win Point
+    RED_GOAL_RUSH = 3, // Fast Center Mobile Goal Rush
     BLUE_GOAL_RUSH = 4, // Fast Center Mobile Goal Rush
-    SKILLS_60S = 5      // 60-Second Full Field Skills Autonomous
+    SKILLS_60S = 5 // 60-Second Full Field Skills Autonomous
 };
 
 // Default competition routine (Skills 60s is active)
@@ -530,7 +529,7 @@ void autoGoalRush(bool isRedAlliance) {
 
 /**
  * @brief Skills Autonomous Routine:
- * 
+ *
  * --- PART 1: DISCRETE LQR MOTIONS ---
  *   1. Straight 24 inches
  *   2. Turn Right 90 degrees
@@ -538,7 +537,7 @@ void autoGoalRush(bool isRedAlliance) {
  *   4. Back 24 inches
  *   5. Turn Left 90 degrees (back to 0 deg)
  *   6. Back 24 inches (back to 0,0,0)
- * 
+ *
  * --- PART 2: CONTINUOUS CURVED MOTIONS ---
  *   7. Smooth Quintic Spline Curve forward-right to (24, 24) ending at 90 deg
  *   8. Smooth Boomerang Curve reverse-left back to (0, 0) ending at 0 deg
@@ -551,34 +550,36 @@ void autoSkills() {
     std::cout << ">>> PART 1: DISCRETE LQR STRAIGHT & SNAP TURNS" << std::endl;
     std::cout << "==============================================" << std::endl;
 
-    // 1. Straight 24 inches forward (Heading 0 deg)
-    std::cout << "[1] Straight 24 inches (Heading 0)..." << std::endl;
-    drive(24.0f, 0.0f, 1500);
-    pros::delay(200);
+    // 1. Straight 24 inches forward to (0, 24)
+    std::cout << "[1] Straight 24 inches to (0, 24)..." << std::endl;
+    autoDrive(0.0f, 24.0f, 2000);
+    pros::delay(150);
 
     // 2. Turn Right 90 degrees
     std::cout << "[2] Turn Right 90 degrees..." << std::endl;
-    autoTurn(90.0f, 800);
-    pros::delay(200);
+    autoTurn(90.0f, 1200);
+    pros::delay(150);
 
-    // 3. Straight 24 inches (Heading 90 deg)
-    std::cout << "[3] Straight 24 inches (Heading 90)..." << std::endl;
-    drive(24.0f, 90.0f, 1500);
-    pros::delay(200);
+    // 3. Straight 24 inches to (24, 24)
+    std::cout << "[3] Straight 24 inches to (24, 24)..." << std::endl;
+    autoDrive(24.0f, 24.0f, 2000);
+    pros::delay(150);
 
-    // 4. Back 24 inches (along Heading 90 deg)
-    std::cout << "[4] Back 24 inches (along Heading 90)..." << std::endl;
-    drive(-24.0f, 90.0f, 1500);
-    pros::delay(200);
+    // 4. Back 24 inches to (0, 24)
+    std::cout << "[4] Back 24 inches to (0, 24)..." << std::endl;
+    chassis.moveToPoint(0.0f, 24.0f, 2000, {.forwards = false});
+    chassis.waitUntilDone();
+    pros::delay(150);
 
     // 5. Turn Left 90 degrees (back to 0 deg)
-    std::cout << "[5] Turn Left 90 degrees (to Heading 0)..." << std::endl;
-    autoTurn(0.0f, 800);
-    pros::delay(200);
+    std::cout << "[5] Turn Left 90 degrees (to 0 deg)..." << std::endl;
+    autoTurn(0.0f, 1200);
+    pros::delay(150);
 
-    // 6. Back 24 inches (back to origin 0,0,0)
-    std::cout << "[6] Back 24 inches (to origin 0,0,0)..." << std::endl;
-    drive(-24.0f, 0.0f, 1500);
+    // 6. Back 24 inches to origin (0, 0)
+    std::cout << "[6] Back 24 inches to origin (0, 0)..." << std::endl;
+    chassis.moveToPoint(0.0f, 0.0f, 2000, {.forwards = false});
+    chassis.waitUntilDone();
     pros::delay(500);
 
     std::cout << "\n==============================================" << std::endl;
@@ -646,24 +647,12 @@ void competition_initialize() {}
 
 void autonomous() {
     switch (currentAuto) {
-        case AutoRoutine::HYBRID_TEST:
-            autoHybridDemo();
-            break;
-        case AutoRoutine::RED_SOLO_AWP:
-            autoRedAWP();
-            break;
-        case AutoRoutine::BLUE_SOLO_AWP:
-            autoBlueAWP();
-            break;
-        case AutoRoutine::RED_GOAL_RUSH:
-            autoGoalRush(true);
-            break;
-        case AutoRoutine::BLUE_GOAL_RUSH:
-            autoGoalRush(false);
-            break;
-        case AutoRoutine::SKILLS_60S:
-            autoSkills();
-            break;
+        case AutoRoutine::HYBRID_TEST: autoHybridDemo(); break;
+        case AutoRoutine::RED_SOLO_AWP: autoRedAWP(); break;
+        case AutoRoutine::BLUE_SOLO_AWP: autoBlueAWP(); break;
+        case AutoRoutine::RED_GOAL_RUSH: autoGoalRush(true); break;
+        case AutoRoutine::BLUE_GOAL_RUSH: autoGoalRush(false); break;
+        case AutoRoutine::SKILLS_60S: autoSkills(); break;
     }
 }
 
