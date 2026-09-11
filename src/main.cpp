@@ -12,8 +12,13 @@
 // ============================================================================
 pros::Controller controller(pros::E_CONTROLLER_MASTER);
 
-// Motor groups (6-motor drive, 600 RPM green cartridges)
-// Configured for physical motor wiring and polarity
+// Individual motors for Holonomic X-Drive / Mecanum (4 motors, 200 RPM green cartridges)
+pros::Motor frontLeft(-9, pros::MotorGearset::green);
+pros::Motor backLeft(-19, pros::MotorGearset::green);
+pros::Motor frontRight(3, pros::MotorGearset::green);
+pros::Motor backRight(12, pros::MotorGearset::green);
+
+// Motor groups (configured for physical motor wiring and polarity)
 pros::MotorGroup leftMotors({-9, -19}, pros::MotorGearset::green);
 pros::MotorGroup rightMotors({3, 12}, pros::MotorGearset::green);
 
@@ -279,6 +284,143 @@ void splineCurve(float forwardInches, float lateralInches, float endHeading, dou
     autoSpline(cur, lemlib::Pose(cur.x + deltaX, cur.y + deltaY, endHeading), maxVel, maxAccel);
 }
 
+// ============================================================================
+// Holonomic X-Drive / Mecanum Kinematics & Specialized Autonomous Moves
+// ============================================================================
+
+/**
+ * @brief 3-DOF Holonomic Drive by direct motor power [-127, 127]
+ * @param throttle Forward (+) / Backward (-) along robot Y
+ * @param strafe Right (+) / Left (-) along robot X
+ * @param turn Clockwise (+) / Counter-clockwise (-) yaw rate
+ */
+void holonomicDrive(int throttle, int strafe, int turn) {
+    int fl = throttle + strafe + turn;
+    int bl = throttle - strafe + turn;
+    int fr = throttle - strafe - turn;
+    int br = throttle + strafe - turn;
+
+    int maxMag = std::max({std::abs(fl), std::abs(bl), std::abs(fr), std::abs(br), 127});
+    if (maxMag > 127) {
+        fl = (fl * 127) / maxMag;
+        bl = (bl * 127) / maxMag;
+        fr = (fr * 127) / maxMag;
+        br = (br * 127) / maxMag;
+    }
+
+    frontLeft.move(fl);
+    backLeft.move(bl);
+    frontRight.move(fr);
+    backRight.move(br);
+}
+
+/**
+ * @brief 3-DOF Holonomic Drive by Millivolts [-12000, 12000]
+ */
+void holonomicDriveVoltage(float throttle_mv, float strafe_mv, float turn_mv) {
+    float fl = throttle_mv + strafe_mv + turn_mv;
+    float bl = throttle_mv - strafe_mv + turn_mv;
+    float fr = throttle_mv - strafe_mv - turn_mv;
+    float br = throttle_mv + strafe_mv - turn_mv;
+
+    float maxMag = std::max({std::abs(fl), std::abs(bl), std::abs(fr), std::abs(br), 12000.0f});
+    if (maxMag > 12000.0f) {
+        fl = (fl * 12000.0f) / maxMag;
+        bl = (bl * 12000.0f) / maxMag;
+        fr = (fr * 12000.0f) / maxMag;
+        br = (br * 12000.0f) / maxMag;
+    }
+
+    frontLeft.move_voltage(fl);
+    backLeft.move_voltage(bl);
+    frontRight.move_voltage(fr);
+    backRight.move_voltage(br);
+}
+
+void holonomicBrake() {
+    frontLeft.brake();
+    backLeft.brake();
+    frontRight.brake();
+    backRight.brake();
+}
+
+/**
+ * @brief Pure Holonomic Lateral Strafe (sideways displacement without turning)
+ * @param strafeInches Distance to strafe (positive = right, negative = left)
+ * @param headingDeg Target orientation to lock onto
+ * @param timeout Maximum duration in milliseconds
+ */
+void holonomicStrafe(float strafeInches, float headingDeg, int timeout = 2000, float maxSpeed = 110.0f) {
+    uint32_t startTime = pros::millis();
+    lemlib::Pose startPose = chassis.getPose();
+    float headingRad = lemlib::degToRad(headingDeg);
+
+    float targetX = startPose.x + strafeInches * std::cos(headingRad);
+    float targetY = startPose.y - strafeInches * std::sin(headingRad);
+
+    while (pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
+        lemlib::Pose cur = chassis.getPose();
+        float dx = targetX - cur.x;
+        float dy = targetY - cur.y;
+        float distErr = std::hypot(dx, dy);
+        if (distErr < 0.8f) break;
+
+        float curRad = lemlib::degToRad(cur.theta);
+        float errForward = dx * std::sin(curRad) + dy * std::cos(curRad);
+        float errStrafe = dx * std::cos(curRad) - dy * std::sin(curRad);
+
+        float headErr = lemlib::radToDeg(std::remainder(headingRad - curRad, 2.0 * M_PI));
+        float turnVolt = std::clamp(headErr * 2.8f, -60.0f, 60.0f);
+
+        float strafeCmd = std::clamp(errStrafe * 7.5f, -maxSpeed, maxSpeed);
+        float forwardCmd = std::clamp(errForward * 7.5f, -maxSpeed, maxSpeed);
+
+        holonomicDrive(forwardCmd, strafeCmd, turnVolt);
+        pros::delay(10);
+    }
+    holonomicBrake();
+}
+
+/**
+ * @brief Holonomic Diagonal Move with Simultaneous Heading Rotation
+ * @param forwardInches Distance forward along current orientation
+ * @param strafeInches Distance lateral (positive = right)
+ * @param endHeading Final robot orientation in degrees
+ * @param timeout Maximum duration in milliseconds
+ */
+void holonomicDiagonal(float forwardInches, float strafeInches, float endHeading, int timeout = 2500, float maxSpeed = 115.0f) {
+    uint32_t startTime = pros::millis();
+    lemlib::Pose startPose = chassis.getPose();
+    float curRad = lemlib::degToRad(startPose.theta);
+
+    float targetX = startPose.x + strafeInches * std::cos(curRad) + forwardInches * std::sin(curRad);
+    float targetY = startPose.y - strafeInches * std::sin(curRad) + forwardInches * std::cos(curRad);
+    float targetHeadingRad = lemlib::degToRad(endHeading);
+
+    while (pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
+        lemlib::Pose cur = chassis.getPose();
+        float dx = targetX - cur.x;
+        float dy = targetY - cur.y;
+        float distErr = std::hypot(dx, dy);
+
+        float rad = lemlib::degToRad(cur.theta);
+        float headErr = lemlib::radToDeg(std::remainder(targetHeadingRad - rad, 2.0 * M_PI));
+
+        if (distErr < 0.8f && std::abs(headErr) < 1.0f) break;
+
+        float errForward = dx * std::sin(rad) + dy * std::cos(rad);
+        float errStrafe = dx * std::cos(rad) - dy * std::sin(rad);
+
+        float forwardCmd = std::clamp(errForward * 7.0f, -maxSpeed, maxSpeed);
+        float strafeCmd = std::clamp(errStrafe * 7.0f, -maxSpeed, maxSpeed);
+        float turnCmd = std::clamp(headErr * 2.8f, -70.0f, 70.0f);
+
+        holonomicDrive(forwardCmd, strafeCmd, turnCmd);
+        pros::delay(10);
+    }
+    holonomicBrake();
+}
+
 // Mechanism helpers
 inline void setIntake(int voltage_mv) { intakeMotors.move_voltage(voltage_mv); }
 
@@ -419,11 +561,14 @@ enum class AutoRoutine {
     BLUE_SOLO_AWP = 2, // Blue Alliance Solo Win Point
     RED_GOAL_RUSH = 3, // Fast Center Mobile Goal Rush
     BLUE_GOAL_RUSH = 4, // Fast Center Mobile Goal Rush
-    SKILLS_60S = 5 // 60-Second Full Field Skills Autonomous
+    SKILLS_60S = 5, // 60-Second Full Field Skills Autonomous
+    HOLONOMIC_SKILLS = 6, // 3-DOF Holonomic High Stakes Skills Routine
+    HOLONOMIC_RED_AWP = 7, // Holonomic Red Solo AWP with lateral strafes
+    HOLONOMIC_GOAL_RUSH = 8 // Holonomic Diagonal Goal Rush
 };
 
-// Default competition routine (Skills 60s is active)
-AutoRoutine currentAuto = AutoRoutine::SKILLS_60S;
+// Default competition routine (Holonomic Skills is active)
+AutoRoutine currentAuto = AutoRoutine::HOLONOMIC_SKILLS;
 
 /**
  * @brief Hybrid Autonomous Demo (LTV Trajectory + LQR Snap Turns + PID Fine Alignment)
@@ -600,6 +745,104 @@ void autoSkills() {
     std::cout << ">>> Skills Routine Completed Successfully!" << std::endl;
 }
 
+/**
+ * @brief 3-DOF Holonomic Skills Routine:
+ * Capitalizes on holonomic omnidirectional movement without needing to pivot before each move!
+ *
+ * 1. Forward 24" to (0, 24)
+ * 2. Pure Lateral Strafe Right 24" directly to (24, 24) facing 0 deg
+ * 3. Diagonal Dash back to (0, 24)
+ * 4. Pure Lateral Strafe Left 24" to clear obstacles
+ * 5. Diagonal Dash back to (0, 0)
+ * 6. Smooth Quintic Spline to (24, 24) ending at 90 deg
+ * 7. Boomerang Curve back to (0, 0) facing 0 deg
+ */
+void autoHolonomicSkills() {
+    chassis.setPose(0, 0, 0);
+    controller.print(0, 0, "Auto: Holo Skills  ");
+    std::cout << "\n=== STARTING 3-DOF HOLONOMIC SKILLS ROUTINE ===" << std::endl;
+
+    intake();
+
+    // 1. Forward 24 inches to (0, 24)
+    std::cout << "[Holo 1] Forward 24in to (0, 24)..." << std::endl;
+    autoDrive(0.0f, 24.0f, 1800);
+    pros::delay(100);
+
+    // 2. Pure Lateral Strafe Right 24 inches to (24, 24) without turning!
+    std::cout << "[Holo 2] Sideways Strafe Right 24in to (24, 24)..." << std::endl;
+    holonomicStrafe(24.0f, 0.0f, 1800);
+    pros::delay(100);
+
+    // 3. Diagonal Dash back to (0, 24)
+    std::cout << "[Holo 3] Diagonal Strafe back to (0, 24)..." << std::endl;
+    holonomicDiagonal(0.0f, -24.0f, 0.0f, 1800);
+    pros::delay(100);
+
+    // 4. Reverse 24 inches back to (0, 0)
+    std::cout << "[Holo 4] Reverse 24in to (0, 0)..." << std::endl;
+    autoDrive(0.0f, 0.0f, 1800);
+    pros::delay(200);
+
+    // 5. Continuous Quintic Spline to (24, 24) facing 90 deg
+    std::cout << "[Holo 5] Quintic Spline to (24, 24, 90 deg)..." << std::endl;
+    autoSpline(lemlib::Pose(0, 0, 0), lemlib::Pose(24.0, 24.0, 90.0), 1.1, 1.8);
+    pros::delay(200);
+
+    // 6. Boomerang curve back to origin
+    std::cout << "[Holo 6] Boomerang curve back to (0, 0)..." << std::endl;
+    autoPose(0.0f, 0.0f, 0.0f, 2200);
+
+    stopIntake();
+    controller.print(0, 0, "Holo Skills Done!  ");
+    controller.rumble("..");
+    std::cout << ">>> Holonomic Skills Completed!" << std::endl;
+}
+
+/**
+ * @brief Holonomic Red Solo AWP Routine
+ * Scores Alliance Stake, then performs an instant lateral strafe to flank the Mobile Goal!
+ */
+void autoHolonomicRedAWP() {
+    chassis.setPose(0, 0, 0);
+    controller.print(0, 0, "Auto: Holo Red AWP ");
+
+    // 1. Score Alliance Stake
+    intake();
+    autoDrive(0.0f, 14.0f, 1200);
+    pros::delay(250);
+
+    // 2. Lateral strafe left to instantly clear the alliance stake
+    holonomicStrafe(-16.0f, 0.0f, 1200);
+
+    // 3. Diagonal dash into the Mobile Goal
+    holonomicDiagonal(18.0f, -8.0f, -45.0f, 1500);
+
+    // 4. LTV Spline through Ring Stack
+    autoSpline(chassis.getPose(), lemlib::Pose(-36.0, 48.0, 0.0), 1.0, 1.8);
+
+    stopIntake();
+    controller.print(0, 0, "Holo AWP Done!     ");
+}
+
+/**
+ * @brief Holonomic Center Mobile Goal Rush
+ */
+void autoHolonomicGoalRush() {
+    chassis.setPose(0, 0, 0);
+    controller.print(0, 0, "Auto: Holo Rush    ");
+
+    intake();
+    // High-speed diagonal dash to center goal
+    holonomicDiagonal(48.0f, 12.0f, 15.0f, 1600, 127.0f);
+
+    // Instant reverse strafe pulling goal back
+    holonomicDiagonal(-36.0f, -12.0f, 0.0f, 1600, 127.0f);
+
+    stopIntake();
+    controller.print(0, 0, "Holo Rush Done!    ");
+}
+
 // ============================================================================
 // 7. Lifecycle Functions & Autonomous Selector
 // ============================================================================
@@ -631,7 +874,7 @@ void initialize() {
             pros::lcd::print(0, "EKF X: %5.1f in | Odom: %5.1f", fusedPose.x, rawPose.x);
             pros::lcd::print(1, "EKF Y: %5.1f in | Odom: %5.1f", fusedPose.y, rawPose.y);
             pros::lcd::print(2, "EKF Th: %5.1f deg", fusedPose.theta);
-            pros::lcd::print(3, "Mode: LTV+LQR+PID [ACTIVE]");
+            pros::lcd::print(3, "Drive: HOLONOMIC X-DRIVE");
             pros::delay(10);
         }
     });
@@ -653,6 +896,9 @@ void autonomous() {
         case AutoRoutine::RED_GOAL_RUSH: autoGoalRush(true); break;
         case AutoRoutine::BLUE_GOAL_RUSH: autoGoalRush(false); break;
         case AutoRoutine::SKILLS_60S: autoSkills(); break;
+        case AutoRoutine::HOLONOMIC_SKILLS: autoHolonomicSkills(); break;
+        case AutoRoutine::HOLONOMIC_RED_AWP: autoHolonomicRedAWP(); break;
+        case AutoRoutine::HOLONOMIC_GOAL_RUSH: autoHolonomicGoalRush(); break;
     }
 }
 
@@ -696,10 +942,17 @@ void opcontrol() {
             }
         }
 
-        // Normal driving control (Arcade Drive)
-        int leftY = controller.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y); // Axis 3 (Throttle)
-        int rightX = controller.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X); // Axis 1 (Turn)
-        chassis.arcade(leftY, rightX);
+        // ====================================================================
+        // Holonomic 3-DOF Driving Control:
+        // Left Stick Y (Axis 3) = Forward / Backward
+        // Left Stick X (Axis 4) = Lateral Strafe Left / Right
+        // Right Stick X (Axis 1) = Yaw Turn Clockwise / Counter-Clockwise
+        // ====================================================================
+        int forward = controller.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y);
+        int strafe  = controller.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_X);
+        int turn    = controller.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X);
+
+        holonomicDrive(forward, strafe, turn);
 
         pros::delay(10);
     }
