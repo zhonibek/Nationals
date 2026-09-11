@@ -135,8 +135,7 @@ console.log(`- Deadband active when error < 0.5": Output = ${pid.update(0.2, 0.0
 console.log("\n[TEST 7] Field-Space Wall Collision at 90 Degrees:");
 const wallSim = new VexRobotSimulator();
 wallSim.setPose(0, 66.7, 90);
-wallSim.vx = -1.0; // Moving toward the +Y wall in field space.
-wallSim.stepHolonomicPhysics(0.0, 0.0, 0.0, 0.1);
+wallSim.stepHolonomicPhysics(0.0, -12.0, 0.0, 0.1); // Move toward +Y in field space.
 const wallTheta = wallSim.theta * DEG_TO_RAD;
 const wallWorldVy = -wallSim.vx * Math.sin(wallTheta) + wallSim.vy * Math.cos(wallTheta);
 assert(wallSim.y <= 66.75, 'robot must remain within the field boundary');

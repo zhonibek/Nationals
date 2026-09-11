@@ -541,7 +541,8 @@ class LemLibLQRController {
     const smallTimeout = this.settings.smallErrorTimeout || 100;
     const largeTimeout = this.settings.largeErrorTimeout || 450;
 
-    if (this.timeSpentSmallError >= smallTimeout || this.timeSpentLargeError >= largeTimeout) {
+    const isStationary = Math.abs(this.filteredVelocity || 0) < 0.06;
+    if (this.timeSpentSmallError >= smallTimeout || (this.timeSpentLargeError >= largeTimeout && isStationary)) {
       this.isSettled = true;
     }
 
@@ -562,6 +563,7 @@ class LemLibPIDController {
     this.timeSpentLargeError = 0.0;
     this.output = 0.0;
     this.isSettled = false;
+    this.isFirstStep = true;
   }
 
   update(error, dt = 0.01) {
@@ -587,8 +589,14 @@ class LemLibPIDController {
       this.integral = 0.0;
     }
 
-    const derivative = (error - this.prevError) / dt;
-    this.prevError = error;
+    let derivative = 0.0;
+    if (this.isFirstStep) {
+      this.prevError = error;
+      this.isFirstStep = false;
+    } else {
+      derivative = (error - this.prevError) / dt;
+      this.prevError = error;
+    }
 
     let rawOut = (this.settings.kP * error) + (this.settings.kI * this.integral) + (this.settings.kD * derivative);
 
@@ -616,7 +624,8 @@ class LemLibPIDController {
     const smallTimeout = this.settings.smallErrorTimeout || 100;
     const largeTimeout = this.settings.largeErrorTimeout || 450;
 
-    if (this.timeSpentSmallError >= smallTimeout || this.timeSpentLargeError >= largeTimeout) {
+    const isStationary = Math.abs(derivative) < 0.08;
+    if (this.timeSpentSmallError >= smallTimeout || (this.timeSpentLargeError >= largeTimeout && isStationary)) {
       this.isSettled = true;
     }
 
@@ -658,16 +667,20 @@ class VexRobotSimulator {
     this.batteryVoltage = 12.6;   // Nominal full V5 battery
     this.batteryInternalR = 0.04; // Battery internal resistance (Ohms)
 
-    // Physical State (Ground Truth)
+    // Physical State in Field Reference Frame (Inertial, 100% conserved)
     this.x = 0.0;
     this.y = 0.0;
     this.theta = 0.0; // 0 = North (+Y)
-    this.vx = 0.0; // Body lateral speed (m/s)
-    this.vy = 0.0; // Body longitudinal speed (m/s)
-    this.v = 0.0;
-    this.w = 0.0; // Yaw rate (rad/s)
-    this.ax = 0.0; // Body lateral acceleration (m/s^2)
-    this.ay = 0.0; // Body forward acceleration (m/s^2)
+    this.Vx = 0.0;    // Field X velocity (m/s)
+    this.Vy = 0.0;    // Field Y velocity (m/s)
+    this.vx = 0.0;    // Body lateral speed (m/s)
+    this.vy = 0.0;    // Body longitudinal speed (m/s)
+    this.v = 0.0;     // Total speed (m/s)
+    this.w = 0.0;     // Yaw rate (rad/s, CW positive)
+    this.Ax = 0.0;    // Field X acceleration (m/s^2)
+    this.Ay = 0.0;    // Field Y acceleration (m/s^2)
+    this.ax = 0.0;    // Body lateral acceleration (m/s^2)
+    this.ay = 0.0;    // Body forward acceleration (m/s^2)
     this.alpha = 0.0; // Angular acceleration (rad/s^2)
 
     // 4 Motors / Wheels: 0=FL, 1=BL, 2=FR, 3=BR
@@ -689,26 +702,32 @@ class VexRobotSimulator {
     this.clampedGoalIndex = -1;
     this.isPneumaticClamped = false;
 
-    // LemLib Controllers (Exact parity with src/main.cpp)
+    // LemLib Controllers (Exact parity with src/main.cpp converted to Volts: 12V/127 ≈ 0.0945)
+    const P2V = 12.0 / 127.0;
     this.linearPID = new LemLibPIDController({
-      kP: 16.0, kI: 0.0, kD: 4.8, windupRange: 3.0,
+      kP: 16.0 * P2V, kI: 0.05 * P2V, kD: 4.8 * P2V, windupRange: 3.0,
       smallError: 0.8, smallErrorTimeout: 100,
-      largeError: 2.5, largeErrorTimeout: 450, slew: 25.0
+      largeError: 2.5, largeErrorTimeout: 450, slewRate: 200.0, deadband: 0.1
+    });
+    this.strafePID = new LemLibPIDController({
+      kP: 14.0 * P2V, kI: 0.05 * P2V, kD: 8.0 * P2V, windupRange: 3.0,
+      smallError: 0.8, smallErrorTimeout: 100,
+      largeError: 2.5, largeErrorTimeout: 450, slewRate: 200.0, deadband: 0.1
     });
     this.angularPID = new LemLibPIDController({
-      kP: 3.2, kI: 0.2, kD: 12.0, windupRange: 2.5,
+      kP: 3.2 * P2V, kI: 0.2 * P2V, kD: 12.0 * P2V, windupRange: 2.5,
       smallError: 0.8, smallErrorTimeout: 100,
-      largeError: 2.5, largeErrorTimeout: 450, slew: 0.0
+      largeError: 2.5, largeErrorTimeout: 450, slewRate: 0.0, deadband: 0.2
     });
     this.linearLQR = new LemLibLQRController({
-      kP: 30.0, kV: 1.4, kA: 0.0, kI: 0.8, windupRange: 2.0,
+      kP: 30.0 * P2V, kV: 1.4 * P2V, kA: 0.0, kI: 0.8 * P2V, windupRange: 2.0,
       smallError: 0.8, smallErrorTimeout: 100,
-      largeError: 2.5, largeErrorTimeout: 450, slew: 25.0
+      largeError: 2.5, largeErrorTimeout: 450, slewRate: 200.0
     });
     this.angularLQR = new LemLibLQRController({
-      kP: 7.8, kV: 0.48, kA: 0.0, kI: 0.45, windupRange: 2.5,
+      kP: 7.8 * P2V, kV: 0.48 * P2V, kA: 0.0, kI: 0.45 * P2V, windupRange: 2.5,
       smallError: 0.8, smallErrorTimeout: 100,
-      largeError: 2.5, largeErrorTimeout: 450, slew: 0.0
+      largeError: 2.5, largeErrorTimeout: 450, slewRate: 0.0
     });
 
     this.ltvQ = Matrix.diag([2.0, 7.0, 5.0]);
@@ -772,10 +791,14 @@ class VexRobotSimulator {
     this.x = x;
     this.y = y;
     this.theta = thetaDeg;
+    this.Vx = 0.0;
+    this.Vy = 0.0;
     this.vx = 0.0;
     this.vy = 0.0;
     this.v = 0.0;
     this.w = 0.0;
+    this.Ax = 0.0;
+    this.Ay = 0.0;
     this.ax = 0.0;
     this.ay = 0.0;
     this.alpha = 0.0;
@@ -806,7 +829,22 @@ class VexRobotSimulator {
   }
 
   // Authentic 3-DOF Rigid Body & DC Motor Physics Step
-  stepHolonomicPhysics(throttle_volts, strafe_volts, turn_volts, dt = 0.01) {
+  stepHolonomicPhysics(throttle_volts, strafe_volts, turn_volts, dt = 0.01, isInternalSubstep = false) {
+    // The tire shear spring is deliberately stiff.  Integrating it at the
+    // public 100 Hz simulation rate makes an explicit Euler solver alternate
+    // between positive and negative traction every frame.  Keep the visible
+    // rate at 100 Hz, but solve contact, motor, and rigid-body dynamics at
+    // 2 kHz so a steady holonomic command produces a smooth trajectory.
+    const MAX_CONTACT_STEP = 0.0005;
+    if (!isInternalSubstep && dt > MAX_CONTACT_STEP) {
+      const substepCount = Math.ceil(dt / MAX_CONTACT_STEP);
+      const substepDt = dt / substepCount;
+      for (let step = 0; step < substepCount; step++) {
+        this.stepHolonomicPhysics(throttle_volts, strafe_volts, turn_volts, substepDt, true);
+      }
+      return;
+    }
+
     // 1. Compute target terminal voltages for 45 deg X-Drive layout
     // 0: FL, 1: BL, 2: FR, 3: BR
     let targetV = [
@@ -849,6 +887,15 @@ class VexRobotSimulator {
     }
 
     // 4. Ground Contact Velocity at each 45 deg omni-wheel
+    const thetaRad = this.theta * DEG_TO_RAD;
+    const cosT = Math.cos(thetaRad);
+    const sinT = Math.sin(thetaRad);
+
+    // Body velocities projected directly from conserved field velocities
+    this.vx = this.Vx * cosT - this.Vy * sinT;
+    this.vy = this.Vx * sinT + this.Vy * cosT;
+    this.v = Math.hypot(this.Vx, this.Vy);
+
     const invSqrt2 = 1.0 / Math.SQRT2;
     const v_contact = [
       (this.vy + this.vx) * invSqrt2 + (this.w * this.rEff),
@@ -872,27 +919,24 @@ class VexRobotSimulator {
     const normalLoadPerWheel = (totalMass * 9.81) / 4.0;
     const maxTractionPerWheel = this.muLong * normalLoadPerWheel; // Coulomb friction limit
 
-    // 5. Tire Slip & Tractive Force Integration
+    // 5. Unconditionally Stable Backward-Euler Wheel Traction Integration
+    const I_coupled = this.wheelInertia + (0.25 * totalMass * this.wheelRadiusM * this.wheelRadiusM);
     let hasSlipAlert = false;
     for (let i = 0; i < 4; i++) {
+      const num = this.wheelOmega[i] + ((this.motorTorques[i] + this.kSlip * this.wheelRadiusM * v_contact[i]) * dt) / I_coupled;
+      const den = 1.0 + ((this.kSlip * this.wheelRadiusM * this.wheelRadiusM * dt) / I_coupled);
+      this.wheelOmega[i] = num / den;
+
       const v_wheel = this.wheelOmega[i] * this.wheelRadiusM;
       const slipVel = v_wheel - v_contact[i];
       this.wheelSlips[i] = slipVel;
 
-      // Check slip ratio for TCS
       if (Math.abs(slipVel) > 0.25 && Math.abs(v_contact[i]) > 0.1) {
         hasSlipAlert = true;
       }
 
-      // Tangential traction force with Coulomb saturation
       const f_ideal = this.kSlip * slipVel;
-      const f_tractive = clamp(f_ideal, -maxTractionPerWheel, maxTractionPerWheel);
-      this.wheelTractionForces[i] = f_tractive;
-
-      // Wheel rotor angular acceleration: I * dOmega/dt = tau_motor - F_traction * r
-      const tau_load = f_tractive * this.wheelRadiusM;
-      const dOmega_dt = (this.motorTorques[i] - tau_load) / this.wheelInertia;
-      this.wheelOmega[i] += dOmega_dt * dt;
+      this.wheelTractionForces[i] = clamp(f_ideal, -maxTractionPerWheel, maxTractionPerWheel);
     }
     this.telemetry.slipAlert = hasSlipAlert;
 
@@ -902,82 +946,74 @@ class VexRobotSimulator {
     const F2 = this.wheelTractionForces[2];
     const F3 = this.wheelTractionForces[3];
 
-    // Linear rolling resistance & aerodynamic drag
-    const rollDragY = 1.4 * this.vy + (this.muLat * normalLoadPerWheel * Math.sign(this.vy || 0));
-    const rollDragX = 1.4 * this.vx + (this.muLat * normalLoadPerWheel * Math.sign(this.vx || 0));
-    const rotDrag = 0.32 * this.w;
+    // Rolling resistance & aerodynamic drag
+    const rollFrictionY = (Math.abs(this.vy) > 0.001) ? (this.muLat * normalLoadPerWheel * Math.sign(this.vy) + 1.4 * this.vy) : 0.0;
+    const rollFrictionX = (Math.abs(this.vx) > 0.001) ? (this.muLat * normalLoadPerWheel * Math.sign(this.vx) + 1.4 * this.vx) : 0.0;
+    const rotDrag = (Math.abs(this.w) > 0.001) ? (0.85 * this.w + 0.25 * Math.sign(this.w)) : 0.0;
 
-    const F_y_body = (F0 + F1 + F2 + F3) * invSqrt2 - rollDragY;
-    const F_x_body = (F0 - F1 - F2 + F3) * invSqrt2 - rollDragX;
+    const F_y_body = (F0 + F1 + F2 + F3) * invSqrt2 - rollFrictionY;
+    const F_x_body = (F0 - F1 - F2 + F3) * invSqrt2 - rollFrictionX;
     const Tau_yaw = ((F0 + F1 - F2 - F3) * this.rEff) - rotDrag - goalDragTorque;
 
-    // 7. Rigid Body Newton-Euler Accelerations
-    // vx/vy are expressed in the robot's rotating reference frame. A force
-    // alone is not enough to update them while the chassis is turning: the
-    // frame's transport terms must be included as well.
-    this.ax = (F_x_body / totalMass) - (this.w * this.vy);
-    this.ay = (F_y_body / totalMass) + (this.w * this.vx);
+    // 7. Rigid Body Newton-Euler Accelerations in Inertial Field Frame
+    const F_field_X = F_x_body * cosT + F_y_body * sinT;
+    const F_field_Y = -F_x_body * sinT + F_y_body * cosT;
+
+    this.Ax = F_field_X / totalMass;
+    this.Ay = F_field_Y / totalMass;
     this.alpha = Tau_yaw / totalMOI;
 
-    // Velocity Integration
-    this.vy += this.ay * dt;
-    this.vx += this.ax * dt;
+    // Direct inertial integration (zero Coriolis drift, zero spiral instability)
+    this.Vx += this.Ax * dt;
+    this.Vy += this.Ay * dt;
     this.w += this.alpha * dt;
 
-    // Static friction lock when stopped
-    if (Math.abs(throttle_volts) < 0.1 && Math.abs(strafe_volts) < 0.1 && Math.abs(this.vy) < 0.02 && Math.abs(this.vx) < 0.02) {
-      this.vy = 0;
-      this.vx = 0;
+    // Static friction lock when unpowered and stationary
+    const isStationaryLinear = Math.hypot(this.Vx, this.Vy) < 0.015;
+    const isStationaryRot = Math.abs(this.w) < 0.015;
+    const isUnpowered = Math.abs(throttle_volts) < 0.05 && Math.abs(strafe_volts) < 0.05 && Math.abs(turn_volts) < 0.05;
+
+    if (isUnpowered && isStationaryLinear) {
+      this.Vx = 0.0;
+      this.Vy = 0.0;
     }
-    if (Math.abs(turn_volts) < 0.1 && Math.abs(this.w) < 0.02) {
-      this.w = 0;
+    if (isUnpowered && isStationaryRot) {
+      this.w = 0.0;
     }
 
-    this.v = Math.hypot(this.vx, this.vy);
+    // Body accelerations for telemetry
+    this.ax = this.Ax * cosT - this.Ay * sinT;
+    this.ay = this.Ax * sinT + this.Ay * cosT;
 
-    // 8. Integrate Global Ground-Truth Pose (0 deg = North +Y)
-    const thetaRad = this.theta * DEG_TO_RAD;
-    const cosT = Math.cos(thetaRad);
-    const sinT = Math.sin(thetaRad);
-
-    const dx_m = (this.vx * cosT + this.vy * sinT) * dt;
-    const dy_m = (-this.vx * sinT + this.vy * cosT) * dt;
+    // 8. Integrate Global Ground-Truth Pose
+    const dx_m = this.Vx * dt;
+    const dy_m = this.Vy * dt;
     const dTheta_rad = this.w * dt;
 
     this.x += dx_m * METER_TO_INCH;
     this.y += dy_m * METER_TO_INCH;
     this.theta = normalizeAngle(thetaRad + dTheta_rad) * RAD_TO_DEG;
 
-    // Perimeter Wall Collision (Soft Inelastic Restitution)
+    // Perimeter Wall Collision (Soft Inelastic Restitution in field frame)
     const fieldLimit = 72.0 - (this.trackWidthInches / 2.0);
-    let hitVerticalWall = false;
-    let hitHorizontalWall = false;
-    if (this.x > fieldLimit) { this.x = fieldLimit; hitVerticalWall = true; }
-    if (this.x < -fieldLimit) { this.x = -fieldLimit; hitVerticalWall = true; }
-    if (this.y > fieldLimit) { this.y = fieldLimit; hitHorizontalWall = true; }
-    if (this.y < -fieldLimit) { this.y = -fieldLimit; hitHorizontalWall = true; }
-
-    if (hitVerticalWall || hitHorizontalWall) {
-      // Walls are fixed in field space. Resolving body-relative vx/vy directly
-      // is incorrect whenever the robot is rotated.
-      let worldVx = this.vx * cosT + this.vy * sinT;
-      let worldVy = -this.vx * sinT + this.vy * cosT;
-      if (hitVerticalWall) worldVx *= -0.15;
-      if (hitHorizontalWall) worldVy *= -0.15;
-      this.vx = worldVx * cosT - worldVy * sinT;
-      this.vy = worldVx * sinT + worldVy * cosT;
-      this.v = Math.hypot(this.vx, this.vy);
-    }
+    if (this.x > fieldLimit) { this.x = fieldLimit; if (this.Vx > 0) this.Vx *= -0.15; }
+    if (this.x < -fieldLimit) { this.x = -fieldLimit; if (this.Vx < 0) this.Vx *= -0.15; }
+    if (this.y > fieldLimit) { this.y = fieldLimit; if (this.Vy > 0) this.Vy *= -0.15; }
+    if (this.y < -fieldLimit) { this.y = -fieldLimit; if (this.Vy < 0) this.Vy *= -0.15; }
 
     // 9. Passive Tracking Wheels & IMU Sensor Simulation (Real Noise & Drift)
     const scrubFactor = 1.0 - Math.min(0.003 * Math.abs(this.w), 0.015);
-    const encNoiseX = (Math.random() - 0.5) * 0.0002;
-    const encNoiseY = (Math.random() - 0.5) * 0.0002;
+    // These standard deviations are calibrated for the public 10 ms step.
+    // Scale them with sqrt(dt), preserving their variance when the solver
+    // uses multiple internal substeps.
+    const sensorNoiseScale = Math.sqrt(dt / 0.01);
+    const encNoiseX = (Math.random() - 0.5) * 0.0002 * sensorNoiseScale;
+    const encNoiseY = (Math.random() - 0.5) * 0.0002 * sensorNoiseScale;
     const dx_sensor = (dx_m * scrubFactor) + encNoiseX;
     const dy_sensor = (dy_m * scrubFactor) + encNoiseY;
 
     this.gyroBias += this.gyroDriftRate * (dt / 60.0) * DEG_TO_RAD;
-    const gyroNoise = (Math.random() - 0.5) * 0.001;
+    const gyroNoise = (Math.random() - 0.5) * 0.001 * sensorNoiseScale;
     const dTheta_sensor = dTheta_rad + (this.gyroBias * dt) + gyroNoise;
 
     // Dead-Reckoning Odometry
@@ -1111,10 +1147,10 @@ class VexRobotSimulator {
   // 3-DOF Holonomic Skills Routine
   buildHolonomicSkillsRoutine() {
     this.queueAction({ type: "intake", voltage: 12000, desc: "Intake ON" });
-    this.queueAction({ type: "drive", targetInches: 24, heading: 0, timeout: 1800, desc: "[Holo 1] Forward 24in to (0, 24)" });
-    this.queueAction({ type: "strafe", targetInches: 24, heading: 0, timeout: 1800, desc: "[Holo 2] Sideways Strafe Right 24in" });
-    this.queueAction({ type: "diagonal", forwardInches: 0, strafeInches: -24, endHeading: 0, timeout: 1800, desc: "[Holo 3] Diagonal Strafe to (0, 24)" });
-    this.queueAction({ type: "drive", targetInches: -24, heading: 0, timeout: 1800, desc: "[Holo 4] Reverse 24in to (0, 0)" });
+    this.queueAction({ type: "drive", targetInches: 24, heading: 0, timeout: 2500, desc: "[Holo 1] Forward 24in to (0, 24)" });
+    this.queueAction({ type: "strafe", targetInches: 24, heading: 0, timeout: 3500, desc: "[Holo 2] Sideways Strafe Right 24in" });
+    this.queueAction({ type: "diagonal", targetX: 0, targetY: 24, endHeading: 0, timeout: 3500, desc: "[Holo 3] Strafe Return to (0, 24)" });
+    this.queueAction({ type: "drive", targetInches: -24, heading: 0, timeout: 3500, desc: "[Holo 4] Reverse 24in to (0, 0)" });
     this.queueAction({
       type: "spline",
       start: { x: 0, y: 0, theta: 0 },
@@ -1124,7 +1160,7 @@ class VexRobotSimulator {
     });
     this.queueAction({
       type: "pose",
-      targetX: 0, targetY: 0, targetTheta: 0, timeout: 2200,
+      targetX: 0, targetY: 0, targetTheta: 0, timeout: 2500,
       desc: "[Holo 6] Boomerang curve to (0, 0)"
     });
     this.queueAction({ type: "intake", voltage: 0, desc: "Intake Stop" });
@@ -1221,7 +1257,8 @@ class VexRobotSimulator {
   }
 
   buildTrackWidthTest() {
-    this.queueAction({ type: "turn", targetHeading: 360.0, timeout: 3000, desc: "Test: 360 Spin" });
+    this.queueAction({ type: "turn", targetHeading: 180.0, timeout: 1500, desc: "Spin: 0 to 180 deg" });
+    this.queueAction({ type: "turn", targetHeading: 0.0, timeout: 1500, desc: "Spin: 180 to 360 deg" });
   }
 
   buildLinearDriveTest(inches = 24.0) {
@@ -1268,6 +1305,12 @@ class VexRobotSimulator {
 
       if (isDone) {
         this.currentAction = null;
+        this.actionThrottle = 0.0;
+        this.actionStrafe = 0.0;
+        this.actionTurn = 0.0;
+        throttle_v = 0.0;
+        strafe_v = 0.0;
+        turn_v = 0.0;
         if (this.routineQueue.length === 0) {
           this.isRunning = false;
           this.triggerRumble("..");
@@ -1289,13 +1332,16 @@ class VexRobotSimulator {
     }
 
     if (action.type === "spline") {
+      const start = { x: this.odom.x, y: this.odom.y, theta: this.odom.theta };
       this.activeTrajectory = QuinticSplineGenerator.generateTrajectory(
-        action.start, action.end, action.maxVel, action.maxAccel, 3.5, 0.01
+        start, action.end, action.maxVel, action.maxAccel, 3.5, 0.01
       );
       this.trajectoryIndex = 0;
       this.plannedSplineVisual = this.activeTrajectory.map(s => ({ x: s.x * METER_TO_INCH, y: s.y * METER_TO_INCH }));
     } else if (action.type === "drive") {
-      const rad = action.heading * DEG_TO_RAD;
+      action.initialHeading = (action.heading !== undefined) ? action.heading : this.odom.theta;
+      action.targetHeading = action.initialHeading;
+      const rad = action.initialHeading * DEG_TO_RAD;
       action.startX = this.odom.x;
       action.startY = this.odom.y;
       action.targetX = this.odom.x + action.targetInches * Math.sin(rad);
@@ -1303,29 +1349,42 @@ class VexRobotSimulator {
       this.linearLQR.reset();
       this.angularLQR.reset();
       this.linearPID.reset();
+      this.strafePID.reset();
       this.angularPID.reset();
     } else if (action.type === "strafe") {
-      const rad = action.heading * DEG_TO_RAD;
+      action.initialHeading = (action.heading !== undefined) ? action.heading : this.odom.theta;
+      action.targetHeading = action.initialHeading;
+      const rad = action.initialHeading * DEG_TO_RAD;
       action.targetX = this.odom.x + action.targetInches * Math.cos(rad);
       action.targetY = this.odom.y - action.targetInches * Math.sin(rad);
       this.linearLQR.reset();
       this.angularLQR.reset();
       this.linearPID.reset();
+      this.strafePID.reset();
       this.angularPID.reset();
     } else if (action.type === "diagonal") {
-      const rad = this.odom.theta * DEG_TO_RAD;
-      action.targetX = this.odom.x + action.strafeInches * Math.cos(rad) + action.forwardInches * Math.sin(rad);
-      action.targetY = this.odom.y - action.strafeInches * Math.sin(rad) + action.forwardInches * Math.cos(rad);
+      action.initialHeading = (action.endHeading !== undefined) ? action.endHeading : this.odom.theta;
+      const rad = action.initialHeading * DEG_TO_RAD;
+      if (action.targetX !== undefined && action.targetY !== undefined) {
+        // Absolute field waypoint target
+      } else {
+        action.targetX = this.odom.x + (action.strafeInches || 0) * Math.cos(rad) + (action.forwardInches || 0) * Math.sin(rad);
+        action.targetY = this.odom.y - (action.strafeInches || 0) * Math.sin(rad) + (action.forwardInches || 0) * Math.cos(rad);
+      }
       this.linearLQR.reset();
       this.angularLQR.reset();
       this.linearPID.reset();
+      this.strafePID.reset();
       this.angularPID.reset();
     } else if (action.type === "drivePoint" || action.type === "pose") {
+      action.initialHeading = this.odom.theta;
       this.linearLQR.reset();
       this.angularLQR.reset();
       this.linearPID.reset();
+      this.strafePID.reset();
       this.angularPID.reset();
     } else if (action.type === "turn") {
+      action.initialHeading = this.odom.theta;
       this.angularLQR.reset();
       this.angularPID.reset();
     } else if (action.type === "intake") {
@@ -1420,18 +1479,20 @@ class VexRobotSimulator {
       const errForward = dx * Math.sin(rad) + dy * Math.cos(rad);
       const errStrafe = dx * Math.cos(rad) - dy * Math.sin(rad);
 
-      const headErr = normalizeAngle((action.heading - this.odom.theta) * DEG_TO_RAD) * RAD_TO_DEG;
+      const targetHead = (action.targetHeading !== undefined) ? action.targetHeading : action.initialHeading;
+      const headErr = normalizeAngle((targetHead - this.odom.theta) * DEG_TO_RAD) * RAD_TO_DEG;
 
-      const vStrafe = clamp(this.linearPID.update(errStrafe, dt) * 0.75, -12.0, 12.0);
-      const vThrottle = clamp(this.linearPID.update(errForward, dt) * 0.75, -6.0, 6.0);
-      const vTurn = clamp(this.angularPID.update(headErr, dt) * 0.5, -8.0, 8.0);
+      const vStrafe = clamp(this.strafePID.update(errStrafe, dt), -12.0, 12.0);
+      const vThrottle = clamp(this.linearPID.update(errForward, dt), -6.0, 6.0);
+      // Limit turn authority during strafe to prevent motor budget starvation
+      const vTurn = clamp(this.angularPID.update(headErr, dt), -4.0, 4.0);
 
       this.actionThrottle = vThrottle;
       this.actionStrafe = vStrafe;
       this.actionTurn = vTurn;
 
-      // LemLib settlement condition
-      if (this.linearPID.isSettled || (distErr < 0.8 && Math.abs(this.v) < 0.05)) {
+      const isStopped = Math.abs(this.v) < 0.04 && Math.abs(this.w) < 0.04;
+      if (distErr < 0.6 && isStopped) {
         this.triggerRumble(".");
         this.controllerLcdLines[1] = `Strafe Err: ${distErr.toFixed(2)}in`;
         return true;
@@ -1453,10 +1514,11 @@ class VexRobotSimulator {
       const errStrafe = dx * Math.cos(rad) - dy * Math.sin(rad);
 
       this.actionThrottle = clamp(this.linearPID.update(errForward, dt), -12.0, 12.0);
-      this.actionStrafe = clamp(this.linearPID.update(errStrafe, dt), -12.0, 12.0);
+      this.actionStrafe = clamp(this.strafePID.update(errStrafe, dt), -12.0, 12.0);
       this.actionTurn = clamp(this.angularPID.update(headErr, dt), -8.0, 8.0);
 
-      if (distErr < 0.8 && Math.abs(headErr) < 1.5 && Math.abs(this.v) < 0.05) {
+      const isStopped = Math.abs(this.v) < 0.04 && Math.abs(this.w) < 0.04;
+      if (distErr < 0.6 && Math.abs(headErr) < 1.0 && isStopped) {
         this.triggerRumble(".");
         return true;
       }
@@ -1473,7 +1535,8 @@ class VexRobotSimulator {
       this.actionStrafe = 0;
       this.actionTurn = clamp(turnOutput, -12.0, 12.0);
 
-      if (this.angularLQR.isSettled || (Math.abs(headErr) < 0.8 && Math.abs(this.w) < 0.04)) {
+      const isStoppedRot = Math.abs(this.w) < 0.04;
+      if (Math.abs(headErr) < 0.8 && isStoppedRot) {
         this.triggerRumble(".");
         this.controllerLcdLines[1] = `Err: ${headErr.toFixed(1)}deg ${Math.round(elapsedMs)}ms`;
         return true;
@@ -1487,18 +1550,30 @@ class VexRobotSimulator {
       const dx = action.targetX - this.odom.x;
       const dy = action.targetY - this.odom.y;
       const distErr = Math.hypot(dx, dy);
-      const targetAngleDeg = Math.atan2(dx, dy) * RAD_TO_DEG;
-      let headErr = normalizeAngle((targetAngleDeg - this.odom.theta) * DEG_TO_RAD) * RAD_TO_DEG;
 
-      const forwardError = (action.targetInches !== undefined && action.targetInches < 0) ? -distErr : distErr;
-      const linOut = this.linearLQR.update(forwardError, dt);
-      const angOut = this.angularLQR.update(headErr, dt) * 0.45;
+      const rad = this.odom.theta * DEG_TO_RAD;
+      const forwardError = dx * Math.sin(rad) + dy * Math.cos(rad);
+      const lateralError = dx * Math.cos(rad) - dy * Math.sin(rad);
+
+      // Desired heading: for drivePoint aim at target; for pure drive maintain locked heading
+      let desiredHeading = (action.targetHeading !== undefined) ? action.targetHeading : (action.initialHeading || 0);
+      if (action.type === "drivePoint" && distErr > 3.0) {
+        desiredHeading = Math.atan2(dx, dy) * RAD_TO_DEG;
+      }
+      const headErr = normalizeAngle((desiredHeading - this.odom.theta) * DEG_TO_RAD) * RAD_TO_DEG;
+
+      const linOut = this.linearPID.update(forwardError, dt);
+      const strafeOut = this.strafePID.update(lateralError, dt);
+      const angCmd = this.angularPID.update(headErr, dt);
+      const angOut = (distErr > 3.0) ? angCmd : (angCmd * (distErr / 3.0));
 
       this.actionThrottle = clamp(linOut, -12.0, 12.0);
-      this.actionStrafe = 0;
+      this.actionStrafe = clamp(strafeOut, -4.0, 4.0); // Holonomic cross-track correction
       this.actionTurn = clamp(angOut, -8.0, 8.0);
 
-      if (this.linearLQR.isSettled || (Math.abs(distErr) < 0.8 && Math.abs(this.v) < 0.04)) {
+      // Settling: error must be small AND robot must be stopped (low velocity and low yaw rate)
+      const isStopped = Math.abs(this.v) < 0.04 && Math.abs(this.w) < 0.04;
+      if (Math.abs(forwardError) < 0.6 && isStopped) {
         this.triggerRumble(".");
         this.controllerLcdLines[1] = `Err: ${distErr.toFixed(2)}in ${Math.round(elapsedMs)}ms`;
         return true;
@@ -1512,16 +1587,22 @@ class VexRobotSimulator {
       const dx = action.targetX - this.odom.x;
       const dy = action.targetY - this.odom.y;
       const distErr = Math.hypot(dx, dy);
+
+      const rad = this.odom.theta * DEG_TO_RAD;
+      const forwardError = dx * Math.sin(rad) + dy * Math.cos(rad);
+      const lateralError = dx * Math.cos(rad) - dy * Math.sin(rad);
       let headErr = normalizeAngle((action.targetTheta - this.odom.theta) * DEG_TO_RAD) * RAD_TO_DEG;
 
-      const linOut = this.linearLQR.update(distErr, dt);
-      const angOut = this.angularLQR.update(headErr, dt);
+      const linOut = this.linearPID.update(forwardError, dt);
+      const strafeOut = this.strafePID.update(lateralError, dt);
+      const angOut = this.angularPID.update(headErr, dt);
 
       this.actionThrottle = clamp(linOut, -12.0, 12.0);
-      this.actionStrafe = 0;
+      this.actionStrafe = clamp(strafeOut, -12.0, 12.0);
       this.actionTurn = clamp(angOut, -8.0, 8.0);
 
-      if (distErr < 1.0 && Math.abs(headErr) < 1.5 && Math.abs(this.v) < 0.05) {
+      const isStopped = Math.abs(this.v) < 0.04 && Math.abs(this.w) < 0.04;
+      if (distErr < 0.6 && Math.abs(headErr) < 1.0 && isStopped) {
         return true;
       }
       if (elapsedMs > action.timeout) return true;

@@ -21,6 +21,17 @@ python -m http.server 8000 --directory ./simulator
 ```
 После чего откройте `http://localhost:8000`.
 
+### Проверка физики
+
+```bash
+node simulator/test_physics.js
+node simulator/test_holonomic_drive.js
+```
+
+Второй набор проверяет три траектории X-drive: прямую линию в координатах
+поля во время поворота корпуса, постоянную дугу при одновременных газе и
+повороте, а также плавный S-образный zig-zag со strafe.
+
 ---
 
 ## 🛡️ Изоляция от робота (Safety Guarantee)
