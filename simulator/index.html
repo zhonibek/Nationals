@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRAlib — VEX V5 Holonomic Robot & 3D Field Emulator (Jerry.io Planner)</title>
+  <meta name="description" content="Фотореалистичный 2D/3D симулятор соревновательного поля VEX V5 High Stakes и робота Holonomic X-Drive со встроенным интерактивным планировщиком траекторий Jerry.io.">
+  
+  <!-- Three.js, OrbitControls, and 3D Model Loaders -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+  
+  <link rel="stylesheet" href="simulator.css">
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="brand-badge">IRA v2.0-PRO</div>
+      <div class="brand-title">
+        IRAlib <span>Holonomic X-Drive & 3D Field Visualizer</span>
+      </div>
+    </div>
+    
+    <!-- 2D / 3D Mode Switcher -->
+    <div class="view-mode-tabs">
+      <button id="tab2D" class="view-tab active">🗺️ 2D Тактический</button>
+      <button id="tab3D" class="view-tab">🎮 3D Реалистичный</button>
+    </div>
+
+    <div class="header-status">
+      <div class="badge pulse">DRIVE: HOLONOMIC X-DRIVE</div>
+      <div class="badge">DARE LTV-LQR: ACTIVE</div>
+      <div class="badge">EKF: 5-STATE</div>
+    </div>
+  </header>
+
+  <!-- Workspace Container -->
+  <main class="emulator-workspace">
+
+    <!-- Left Column: Field Viewport & Direct Controls -->
+    <section class="field-viewport-card">
+      <div class="viewport-toolbar">
+        <div class="toolbar-group">
+          <!-- Planner vs Match Mode Toggle -->
+          <button id="btnToggleJerry" class="btn btn-secondary" title="Переключить в визуальный планировщик путей Jerry.io">
+            ✏️ Редактор Jerry.io
+          </button>
+
+          <div class="select-wrapper" id="routineSelectWrapper">
+            <select id="routineSelect" title="Выберите автономную программу">
+              <optgroup label="🌟 Holonomic 3-DOF Автономки">
+                <option value="autoHolonomicSkills" selected>Holonomic Skills (Strafes + Splines)</option>
+                <option value="autoHolonomicRedAWP">Holo Red Solo AWP (Lateral Flank)</option>
+                <option value="autoHolonomicGoalRush">Holo Goal Rush (Diagonal Dash)</option>
+              </optgroup>
+              <optgroup label="🏆 Классические соревновательные">
+                <option value="autoSkills">Skills 60s (Discrete LQR + Splines)</option>
+                <option value="autoRedAWP">Red Alliance Solo AWP (Win Point)</option>
+                <option value="autoBlueAWP">Blue Alliance Solo AWP (Mirrored)</option>
+                <option value="autoHybridDemo">Hybrid Demo (Spline + LQR + PID)</option>
+              </optgroup>
+              <optgroup label="🛠️ Калибровочные тесты (main.cpp)">
+                <option value="testTrackWidth">[ A ] Track Width 360° Spin</option>
+                <option value="testLinearDrive">[ B ] 24" Linear Drive Test</option>
+                <option value="testAngularTurn">[ Y ] 90° Turn Snap Test</option>
+                <option value="testQuinticSpline">[ RIGHT ] Jerk-Limited Quintic Spline</option>
+                <option value="testFeedforward">[ DOWN ] kS Static Friction Ramping</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <button id="btnPlay" class="btn btn-primary" title="Запустить программу">▶ Запуск</button>
+          <button id="btnPause" class="btn btn-secondary" title="Пауза">⏸ Пауза</button>
+          <button id="btnStep" class="btn btn-secondary" title="Один шаг симуляции (10 мс)">⏭ Шаг</button>
+          <button id="btnReset" class="btn btn-danger" title="Сброс в (0,0,0)">🔄 Сброс</button>
+        </div>
+
+        <div class="toolbar-group">
+          <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim);">Скорость:</span>
+          <div class="speed-selector">
+            <div class="speed-opt" data-speed="0.25">0.25x</div>
+            <div class="speed-opt active" data-speed="0.5">0.5x</div>
+            <div class="speed-opt" data-speed="0.75">0.75x</div>
+            <div class="speed-opt" data-speed="1.0">1.0x</div>
+            <div class="speed-opt" data-speed="1.5">1.5x</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Jerry.io Banner Hint -->
+      <div id="jerryBanner" class="mode-banner jerry-active" style="display: none;">
+        <span>🎯 <strong>Режим Jerry.io активен:</strong> Кликайте в любое место поля, чтобы добавить точку пути! Перетаскивайте точки мышью, настраивайте угол стрелки и запускайте путь робота!</span>
+        <button id="btnExitJerry" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">Закрыть редактор</button>
+      </div>
+
+      <!-- Canvas Field Container (2D & 3D) -->
+      <div class="field-canvas-wrapper" id="canvasWrapper">
+        <!-- 2D Canvas -->
+        <canvas id="fieldCanvas" width="680" height="680"></canvas>
+
+        <!-- 3D Viewport Container -->
+        <div id="threeCanvasContainer"></div>
+
+        <!-- 3D Camera Presets & CAD Model Controls (Visible only in 3D Mode) -->
+        <div class="camera-controls-3d" id="camera3DControls" style="display: none;">
+          <div class="cam-group">
+            <span class="cam-label">Камера:</span>
+            <button id="camIso" class="cam-btn active">📐 Изометрия</button>
+            <button id="camTop" class="cam-btn">⬆️ Сверху</button>
+            <button id="camFollow" class="cam-btn">🎥 Слежение</button>
+          </div>
+          <div class="cam-divider"></div>
+          <div class="cam-group">
+            <span class="cam-label">CAD робота:</span>
+            <button id="btnToggleCadModel" class="cam-btn" title="Переключить: CAD Onshape / Процедурный X-Drive">🤖 Режим: CAD</button>
+            <label for="cadFileInput" class="cam-btn cam-btn-upload" title="Загрузить .glb / .gltf / .stl / .obj файл робота из Onshape">
+              📂 Импорт CAD
+            </label>
+            <input type="file" id="cadFileInput" accept=".glb,.gltf,.stl,.obj" style="display: none;">
+            <button id="btnRotateCad" class="cam-btn" title="Повернуть CAD модель на 90° по часовой стрелке">🔄 90°</button>
+            <span id="cadStatusBadge" class="cad-badge">CAD: VEX High Stakes</span>
+          </div>
+        </div>
+
+        <!-- Dropzone Overlay for Drag-and-Drop CAD files -->
+        <div id="cadDropOverlay" class="cad-drop-overlay" style="display: none;">
+          <div class="cad-drop-modal">
+            <div class="drop-icon">🤖</div>
+            <h3>Перетащите CAD файл робота</h3>
+            <p>Экспортируйте из Onshape в <strong>.GLB</strong>, <strong>.GLTF</strong>, <strong>.STL</strong> или <strong>.OBJ</strong> и отпустите здесь</p>
+            <span class="drop-hint">Модель автоматически отмасштабируется под 18" VEX High Stakes шасси и привяжется к одометрии</span>
+          </div>
+        </div>
+        
+        <div class="canvas-hud-overlay">
+          <div class="hud-chip">FIELD: <strong>144" &times; 144" (VEX High Stakes)</strong></div>
+          <div class="hud-chip">DRIVE: <strong>HOLONOMIC X-DRIVE (4x 200 RPM @ 45&deg;)</strong></div>
+        </div>
+      </div>
+
+      <!-- Jerry.io Waypoints Panel -->
+      <div id="jerryPanel" class="jerry-panel">
+        <div class="jerry-header">
+          <h4>📍 Путевые точки маршрута Jerry.io (<span id="wpCount">0</span>)</h4>
+          <div class="jerry-actions">
+            <button id="btnRunJerryPath" class="btn btn-primary" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">▶ Запустить маршрут</button>
+            <button id="btnExportCpp" class="btn btn-secondary" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">📋 Экспорт C++</button>
+            <button id="btnClearJerry" class="btn btn-danger" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">🗑️ Очистить</button>
+          </div>
+        </div>
+
+        <div class="waypoint-table-wrapper">
+          <table class="waypoint-table">
+            <thead>
+              <tr>
+                <th style="width: 45px;">#</th>
+                <th>X (дюймы)</th>
+                <th>Y (дюймы)</th>
+                <th>Угол &theta;</th>
+                <th>Тип хода</th>
+                <th>Скорость</th>
+                <th style="text-align: right;">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="waypointTableBody">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1rem;">
+                  Кликните по полю, чтобы поставить первую точку!
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Layer Toggles -->
+      <div class="canvas-layer-toggles">
+        <label class="toggle-chip active">
+          <input type="checkbox" id="toggleTarget" checked> Траектория LTV
+        </label>
+        <label class="toggle-chip active">
+          <input type="checkbox" id="toggleTrail" checked> Трек робота
+        </label>
+        <label class="toggle-chip active">
+          <input type="checkbox" id="toggleEKF" checked> Эллипс EKF
+        </label>
+        <label class="toggle-chip active">
+          <input type="checkbox" id="toggleCoord" checked> Сетка координат
+        </label>
+      </div>
+    </section>
+
+    <!-- Right Column: Telemetry & Hardware HUD -->
+    <aside class="sidebar-column">
+
+      <!-- Live Telemetry Stats -->
+      <div class="panel-card">
+        <div class="panel-title">
+          Телеметрия в реальном времени <span>100 Hz</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">Позиция X</div>
+            <div class="stat-val highlight" id="statX">0.0"</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Позиция Y</div>
+            <div class="stat-val highlight" id="statY">0.0"</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Угол (Theta)</div>
+            <div class="stat-val" id="statTheta">0.0°</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Скорость (v)</div>
+            <div class="stat-val" id="statVel">0.00 m/s</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Напряжение L</div>
+            <div class="stat-val" id="statLeftVolt">0.0 V</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Напряжение R</div>
+            <div class="stat-val" id="statRightVolt">0.0 V</div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <canvas id="chartVel" class="telemetry-chart" width="400" height="110"></canvas>
+        </div>
+      </div>
+
+      <!-- V5 Brain LCD Display Replica -->
+      <div class="panel-card">
+        <div class="panel-title">
+          Экран V5 Brain LCD <span>480x272 px</span>
+        </div>
+        <div class="brain-lcd">
+          <div class="lcd-line" id="brainLcd0">EKF X:   0.0 in | Odom:   0.0</div>
+          <div class="lcd-line" id="brainLcd1">EKF Y:   0.0 in | Odom:   0.0</div>
+          <div class="lcd-line" id="brainLcd2">EKF Th:  0.0 deg</div>
+          <div class="lcd-line line-dim" id="brainLcd3">Drive: HOLONOMIC X-DRIVE</div>
+        </div>
+      </div>
+
+      <!-- Virtual V5 Controller Gamepad -->
+      <div class="panel-card">
+        <div class="panel-title">
+          Пульт управления V5 Controller <span>Интерактивный стенд</span>
+        </div>
+        
+        <div class="controller-shell" id="controllerShell">
+          <!-- Controller LCD -->
+          <div class="controller-lcd">
+            <div id="ctrlLcd0">Ready for Action</div>
+            <div id="ctrlLcd1">Holo Skills Active</div>
+            <div id="ctrlLcd2">Press Play or [L1]</div>
+          </div>
+
+          <!-- Face Buttons Grid -->
+          <div class="ctrl-btn-grid">
+            <button class="ctrl-btn" id="btnCtrlA">
+              [ A ]
+              <small>360° Spin</small>
+            </button>
+            <button class="ctrl-btn" id="btnCtrlB">
+              [ B ]
+              <small>24" Drive</small>
+            </button>
+            <button class="ctrl-btn" id="btnCtrlY">
+              [ Y ]
+              <small>90° Turn</small>
+            </button>
+            <button class="ctrl-btn" id="btnCtrlX">
+              [ X ]
+              <small>LQR/PID</small>
+            </button>
+
+            <button class="ctrl-btn" id="btnCtrlUP">
+              [ UP ]
+              <small>LTV S-Curve</small>
+            </button>
+            <button class="ctrl-btn" id="btnCtrlRIGHT">
+              [ RIGHT ]
+              <small>5th Spline</small>
+            </button>
+            <button class="ctrl-btn" id="btnCtrlDOWN">
+              [ DOWN ]
+              <small>kS Calib</small>
+            </button>
+            <button class="ctrl-btn" id="btnCtrlL1" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white;">
+              [ L1 ]
+              <small style="color: #cbd5e1;">Holo Skills</small>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- C++ Code Export Modal Dialog -->
+  <div id="exportModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📋 Экспорт траектории в C++ код (для src/main.cpp)</h3>
+        <button id="btnModalClose" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          Скопируйте сгенерированную функцию и вставьте ее в <code>src/main.cpp</code>. Код использует holonomic команды, сплайны и LQR повороты:
+        </p>
+        <div id="cppCodePreview" class="code-preview-box">// Код генерируется...</div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCopyCode" class="btn btn-primary">Скопировать в буфер</button>
+        <button id="btnModalDismiss" class="btn btn-secondary">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer Keyboard Hints -->
+  <footer class="footer-tips">
+    <div>
+      🎮 <strong>Полнонаправленное управление (Holonomic 3-DOF):</strong> <span class="kbd">W</span> / <span class="kbd">S</span> (газ вперед/назад), <span class="kbd">Q</span> / <span class="kbd">E</span> или <span class="kbd">A</span> / <span class="kbd">D</span> (боковой стрейф влево/вправо), стрелки влево/вправо (поворот).
+    </div>
+    <div>
+      Пауза / Возобновление: <span class="kbd">Пробел</span>
+    </div>
+  </footer>
+
+  <script src="simulator.js"></script>
+</body>
+</html>
