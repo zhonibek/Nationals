@@ -12,7 +12,8 @@ struct State {
     double y = 0.0;          // Global Y coordinate in meters
     double heading = 0.0;    // Target heading in radians
     double linear_vel = 0.0; // Target linear velocity in m/s
-    double angular_vel = 0.0;// Target angular velocity in rad/s
+    double angular_vel = 0.0;// Target angular velocity in rad/s, mathematical CCW
+    double time = 0.0;       // Seconds from start; strictly increasing after the first state
 };
 
 } // namespace lemlib

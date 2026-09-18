@@ -82,7 +82,7 @@ void FuzzyLogicController::computeMultipliers(double error, double rate, double&
     applyRule(e_ZE * std::max(r_NB, r_PB), 0.90, 1.60);
 
     // Error Zero, Low Velocity (Settling) -> Smooth holding
-    applyRule(e_ZE * e_ZE, 1.00, 1.05);
+    applyRule(e_ZE * r_ZE, 1.00, 1.05);
 
     if (den > 1e-4) {
         outKpMult = std::clamp(numKp / den, 0.70, 1.40);

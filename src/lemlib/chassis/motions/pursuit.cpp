@@ -76,12 +76,13 @@ std::vector<lemlib::Pose> getData(const asset& path) {
         if (pointInput.size() != 3) {
             lemlib::infoSink()->error("Failed to read path file! Are you using the right format? Raw line: {}",
                                       stringToHex(line));
-            break;
+            return {};
         }
         lemlib::Pose pathPoint(0, 0);
         pathPoint.x = std::stof(pointInput.at(0)); // x position
         pathPoint.y = std::stof(pointInput.at(1)); // y position
         pathPoint.theta = std::stof(pointInput.at(2)); // velocity
+        if(!std::isfinite(pathPoint.x)||!std::isfinite(pathPoint.y)||!std::isfinite(pathPoint.theta)||pathPoint.theta<0||pathPoint.theta>127) return {};
         robotPath.push_back(pathPoint); // save data
         lemlib::infoSink()->debug("read point {}", pathPoint);
     }
@@ -97,7 +98,7 @@ std::vector<lemlib::Pose> getData(const asset& path) {
  * @return int index to the closest point
  */
 int findClosest(lemlib::Pose pose, std::vector<lemlib::Pose> path) {
-    int closestPoint;
+    int closestPoint = 0;
     float closestDist = infinity();
 
     // loop through all path points
@@ -127,6 +128,7 @@ float circleIntersect(lemlib::Pose p1, lemlib::Pose p2, lemlib::Pose pose, float
     lemlib::Pose d = p2 - p1;
     lemlib::Pose f = p1 - pose;
     float a = d * d;
+    if(!std::isfinite(a)||a<1e-8f) return -1;
     float b = 2 * (f * d);
     float c = (f * f) - lookaheadDist * lookaheadDist;
     float discriminant = b * b - 4 * a * c;
@@ -189,37 +191,21 @@ lemlib::Pose lookaheadPoint(lemlib::Pose lastLookahead, lemlib::Pose pose, std::
  * @return float curvature
  */
 float findLookaheadCurvature(lemlib::Pose pose, float heading, lemlib::Pose lookahead) {
-    // calculate whether the robot is on the left or right side of the circle
-    float side = lemlib::sgn(std::sin(heading) * (lookahead.x - pose.x) - std::cos(heading) * (lookahead.y - pose.y));
-    // calculate center point and radius
-    float a = -std::tan(heading);
-    float c = std::tan(heading) * pose.x - pose.y;
-    float x = std::fabs(a * lookahead.x + lookahead.y + c) / std::sqrt((a * a) + 1);
-    float d = std::hypot(lookahead.x - pose.x, lookahead.y - pose.y);
-
-    // return curvature
-    return side * ((2 * x) / (d * d));
+    pose.theta=heading; return lemlib::getCurvature(pose,lookahead);
 }
 
-void lemlib::Chassis::follow(const asset& path, float lookahead, int timeout, bool forwards, bool async) {
-    this->requestMotionStart();
-    // were all motions cancelled?
-    if (!this->motionRunning) return;
-    // if the function is async, run it in a new task
-    if (async) {
-        pros::Task task([&]() { follow(path, lookahead, timeout, forwards, false); });
-        this->endMotion();
-        pros::delay(10); // delay to give the task time to start
-        return;
-    }
+void lemlib::Chassis::followImpl(const asset& path, float lookahead, int timeout, bool forwards, bool async) {
 
-    std::vector<lemlib::Pose> pathPoints = getData(path); // get list of path points
-    if (pathPoints.size() == 0) {
+
+    std::vector<lemlib::Pose> pathPoints;
+    try { pathPoints=getData(path); } catch(...) { result=MotionResult::InvalidInput; return; } // get list of path points
+    if (pathPoints.size() < 2) {
+        result=MotionResult::InvalidInput;
         infoSink()->error("No points in path! Do you have the right format? Skipping motion");
         // set distTraveled to -1 to indicate that the function has finished
         distTraveled = -1;
         // give the mutex back
-        this->endMotion();
+
         return;
     }
     Pose pose = this->getPose(true);
@@ -231,7 +217,7 @@ void lemlib::Chassis::follow(const asset& path, float lookahead, int timeout, bo
     float targetVel;
     float prevLeftVel = 0;
     float prevRightVel = 0;
-    int closestPoint;
+    int closestPoint = 0;
     float leftInput = 0;
     float rightInput = 0;
     float prevVel = 0;
@@ -239,7 +225,10 @@ void lemlib::Chassis::follow(const asset& path, float lookahead, int timeout, bo
     distTraveled = 0;
 
     // loop until the robot is within the end tolerance
-    for (int i = 0; i < timeout / 10 && pros::competition::get_status() == compState && this->motionRunning; i++) {
+    const auto startTime=pros::millis();
+    LoopClock loopClock;
+    while (pros::millis()-startTime<static_cast<uint32_t>(timeout) && pros::competition::get_status() == compState && motionAllowed()) {
+        const float dt=loopClock.tick();
         // get the current position of the robot
         pose = this->getPose(true);
         if (!forwards) pose.theta -= M_PI;
@@ -251,7 +240,9 @@ void lemlib::Chassis::follow(const asset& path, float lookahead, int timeout, bo
         // find the closest point on the path to the robot
         closestPoint = findClosest(pose, pathPoints);
         // if the robot is at the end of the path, then stop
-        if (pathPoints.at(closestPoint).theta == 0) break;
+        if (pathPoints.at(closestPoint).theta == 0) {
+            result=pose.distance(pathPoints.back())<1.0f ? MotionResult::Settled : MotionResult::TimedOut; break;
+        }
 
         // find the lookahead point
         lookaheadPose = lookaheadPoint(lastLookahead, pose, pathPoints, closestPoint, lookahead);
@@ -263,7 +254,7 @@ void lemlib::Chassis::follow(const asset& path, float lookahead, int timeout, bo
 
         // get the target velocity of the robot
         targetVel = pathPoints.at(closestPoint).theta;
-        targetVel = slew(targetVel, prevVel, lateralSettings.slew);
+        targetVel = slew(targetVel, prevVel, lateralSettings.slew * dt/0.01f);
         prevVel = targetVel;
 
         // calculate target left and right velocities
@@ -283,21 +274,28 @@ void lemlib::Chassis::follow(const asset& path, float lookahead, int timeout, bo
 
         // move the drivetrain
         if (forwards) {
-            drivetrain.leftMotors->move(targetLeftVel);
-            drivetrain.rightMotors->move(targetRightVel);
+            writeDrive(targetLeftVel, targetRightVel);
         } else {
-            drivetrain.leftMotors->move(-targetRightVel);
-            drivetrain.rightMotors->move(-targetLeftVel);
+            writeDrive(-targetRightVel, -targetLeftVel);
         }
 
         pros::delay(10);
     }
 
     // stop the robot
-    drivetrain.leftMotors->move(0);
-    drivetrain.rightMotors->move(0);
+    writeDrive(0, 0);
     // set distTraveled to -1 to indicate that the function has finished
     distTraveled = -1;
     // give the mutex back
-    this->endMotion();
+
+}
+
+void lemlib::Chassis::follow(const asset& path, float lookahead, int timeout, bool forwards, bool async) {
+    if (!path.buf || path.size==0 || path.size>1024*1024 || !std::isfinite(lookahead) || lookahead<=0 || timeout<=0) {
+        result=MotionResult::InvalidInput; return;
+    }
+    auto bytes=std::make_shared<std::vector<uint8_t>>(path.buf,path.buf+path.size);
+    submitMotion([this,bytes,lookahead,timeout,forwards] {
+        asset owned{bytes->data(),bytes->size()}; followImpl(owned,lookahead,timeout,forwards,false);
+    },async);
 }

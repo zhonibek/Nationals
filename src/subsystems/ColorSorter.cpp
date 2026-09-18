@@ -1,5 +1,6 @@
 #include "subsystems/ColorSorter.hpp"
 #include <cmath>
+#include "pros/misc.hpp"
 
 namespace lemlib {
 
@@ -17,24 +18,27 @@ ColorSorter::~ColorSorter() {
 }
 
 void ColorSorter::startTask(uint32_t periodMs) {
+    Lock lifecycle(lifecycleMutex);
     if (running) return;
-    checkPeriodMs = periodMs;
+    checkPeriodMs = std::clamp<uint32_t>(periodMs,5u,1000u);
     running = true;
     task = new pros::Task(task_fn, this, "ColorSortTask");
 }
 
 void ColorSorter::stopTask() {
-    if (!running) return;
+    Lock lifecycle(lifecycleMutex);
     running = false;
     if (task) {
-        task->remove();
+        task->join();
         delete task;
         task = nullptr;
     }
+    Lock guard(outputMutex); isEjecting=false; if(motor) motor->move(0);
 }
 
 void ColorSorter::setAlliance(AllianceColor newAlliance) {
     alliance = newAlliance;
+    if(newAlliance==AllianceColor::DISABLED) {Lock guard(outputMutex);isEjecting=false;if(motor) motor->move(0);}
 }
 
 AllianceColor ColorSorter::getAlliance() const {
@@ -43,6 +47,7 @@ AllianceColor ColorSorter::getAlliance() const {
 
 void ColorSorter::setEnabled(bool isEnabled) {
     enabled = isEnabled;
+    if(!isEnabled) {Lock guard(outputMutex);isEjecting=false;if(motor) motor->move(0);}
 }
 
 bool ColorSorter::isEnabled() const {
@@ -54,7 +59,7 @@ DetectedColor ColorSorter::detectColor() {
 
     // Check proximity to ensure a piece is actually in the intake
     int32_t proximity = optical->get_proximity();
-    if (proximity < 120) {
+    if (proximity == PROS_ERR || proximity < 120) {
         return DetectedColor::NONE;
     }
 
@@ -79,8 +84,12 @@ void ColorSorter::task_fn(void* param) {
     }
 }
 
+void ColorSorter::setIntakePower(int power) { Lock guard(outputMutex); intakePower=std::clamp(power,-127,127); }
+
 void ColorSorter::update() {
-    if (!enabled || alliance == AllianceColor::DISABLED || !optical || !motor) {
+    Lock guard(outputMutex);
+    if (pros::competition::is_disabled() || !enabled || alliance == AllianceColor::DISABLED || !optical || !motor) {
+        isEjecting=false; if(motor) motor->move(0);
         return;
     }
 
@@ -96,6 +105,7 @@ void ColorSorter::update() {
         }
     }
 
+    motor->move(intakePower);
     DetectedColor detected = detectColor();
 
     if (detected != DetectedColor::NONE) {

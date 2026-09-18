@@ -6,18 +6,9 @@
 #include "lemlib/chassis/odom.hpp"
 #include "pros/misc.hpp"
 
-void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, MoveToPoseParams params, bool async) {
+void lemlib::Chassis::moveToPoseImpl(float x, float y, float theta, int timeout, MoveToPoseParams params, bool async) {
     // take the mutex
-    this->requestMotionStart();
-    // were all motions cancelled?
-    if (!this->motionRunning) return;
-    // if the function is async, run it in a new task
-    if (async) {
-        pros::Task task([&]() { moveToPose(x, y, theta, timeout, params, false); });
-        this->endMotion();
-        pros::delay(10); // delay to give the task time to start
-        return;
-    }
+
 
     // reset controllers and exit conditions
     lateralPID.reset();
@@ -47,10 +38,13 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
     float prevAngularOut = 0; // previous angular power
     const int compState = pros::competition::get_status();
 
+    LoopClock loopClock;
     // main loop
     while (!timer.isDone() &&
            ((!lateralSettled || (!angularLargeExit.getExit() && !angularSmallExit.getExit())) || !close) &&
-           this->motionRunning) {
+           motionAllowed()) {
+        const float dt=loopClock.tick();
+        if(dt>0.1f) { result=MotionResult::SensorFault; break; }
         // update position
         const Pose pose = getPose(true, true);
 
@@ -64,7 +58,7 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
         // check if the robot is close enough to the target to start settling
         if (distTarget < 7.5 && close == false) {
             close = true;
-            params.maxSpeed = fmax(fabs(prevLateralOut), 60);
+            // Keep the caller's power cap during settling.
         }
 
         // check if the lateral controller has settled
@@ -112,7 +106,7 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
                 float kS_drive = 12.0f;
                 stictionLat = std::clamp(lateralError / 1.0f, -1.0f, 1.0f) * kS_drive;
             }
-            lateralOut = lateralPID.update(lateralError) + lqrLateralDamping + stictionLat;
+            lateralOut = lateralPID.update(lateralError, dt) + lqrLateralDamping + stictionLat;
 
             float angularVel = (sensors.imu != nullptr) ? -sensors.imu->get_gyro_rate().z : getLocalSpeed().theta;
             float lqrAngularDamping = -angularLQRSettings.kV * angularVel;
@@ -122,7 +116,7 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
                 float kS_turn = 8.5f;
                 stictionAng = std::clamp(angErrDeg / 1.2f, -1.0f, 1.0f) * kS_turn;
             }
-            angularOut = angularPID.update(angErrDeg) + lqrAngularDamping + stictionAng;
+            angularOut = angularPID.update(angErrDeg, dt) + lqrAngularDamping + stictionAng;
         } else if (motionControllerType == MotionControllerType::LQR) {
             float forwardVel = getLocalSpeed(true).y;
             float forwardAccel = 0;
@@ -130,7 +124,7 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
                 pros::imu_accel_s_t accel = sensors.imu->get_accel();
                 forwardAccel = accel.y * 386.08858f;
             }
-            lateralOut = lateralLQR.update(lateralError, forwardVel, forwardAccel, 0.01f);
+            lateralOut = lateralLQR.update(lateralError, forwardVel, forwardAccel, dt);
 
             float angularVel = 0;
             if (sensors.imu != nullptr) {
@@ -138,10 +132,10 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
             } else {
                 angularVel = getLocalSpeed().theta;
             }
-            angularOut = angularLQR.update(radToDeg(angularError), angularVel, 0, 0.01f);
+            angularOut = angularLQR.update(radToDeg(angularError), angularVel, 0, dt);
         } else {
-            lateralOut = lateralPID.update(lateralError);
-            angularOut = angularPID.update(radToDeg(angularError));
+            lateralOut = lateralPID.update(lateralError, dt);
+            angularOut = angularPID.update(radToDeg(angularError), dt);
         }
 
         // apply restrictions on angular speed
@@ -151,7 +145,7 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
         lateralOut = std::clamp(lateralOut, -params.maxSpeed, params.maxSpeed);
 
         // constrain lateral output by max accel
-        if (!close) lateralOut = slew(lateralOut, prevLateralOut, lateralSettings.slew);
+        if (!close) lateralOut = slew(lateralOut, prevLateralOut, lateralSettings.slew * dt / 0.01f);
 
         // constrain lateral output by the max speed it can travel at without
         // slipping
@@ -187,17 +181,23 @@ void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, Mov
         }
 
         // move the drivetrain
-        drivetrain.leftMotors->move(leftPower);
-        drivetrain.rightMotors->move(rightPower);
+        writeDrive(leftPower, rightPower);
 
         // delay to save resources
         pros::delay(10);
     }
 
+    if(result==MotionResult::Running) result = !motionRunning ? MotionResult::Cancelled : (timer.isDone() ? MotionResult::TimedOut : MotionResult::Settled);
     // stop the drivetrain
-    drivetrain.leftMotors->move(0);
-    drivetrain.rightMotors->move(0);
+    writeDrive(0, 0);
     // set distTraveled to -1 to indicate that the function has finished
     distTraveled = -1;
-    this->endMotion();
+
+}
+
+void lemlib::Chassis::moveToPose(float x, float y, float theta, int timeout, MoveToPoseParams params, bool async) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(theta) || timeout<=0 || !std::isfinite(params.maxSpeed) || !std::isfinite(params.minSpeed) || !std::isfinite(params.earlyExitRange) || params.maxSpeed<=0) { result=MotionResult::InvalidInput; return; }
+    params.maxSpeed=std::min<float>(params.maxSpeed,127.f);
+    params.minSpeed=std::clamp<float>(std::fabs(params.minSpeed),0.f,params.maxSpeed);
+    submitMotion([this,x,y,theta,timeout,params] { moveToPoseImpl(x,y,theta,timeout,params, false); },async);
 }

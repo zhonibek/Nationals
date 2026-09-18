@@ -78,16 +78,17 @@ lemlib::Chassis::Chassis(Drivetrain drivetrain, ControllerSettings linearSetting
  */
 void calibrateIMU(lemlib::OdomSensors& sensors) {
     int attempt = 1;
-    bool calibrated = false;
+
     // calibrate inertial, and if calibration fails, then repeat 5 times or until successful
     while (attempt <= 5) {
         sensors.imu->reset();
+        const auto calibrationStart=pros::millis();
         // wait until IMU is calibrated
         do pros::delay(10);
-        while (sensors.imu->get_status() != pros::ImuStatus::error && sensors.imu->is_calibrating());
+        while (sensors.imu->get_status() != pros::ImuStatus::error && sensors.imu->is_calibrating() && pros::millis()-calibrationStart<4000);
         // exit if imu has been calibrated
-        if (!isnanf(sensors.imu->get_heading()) && !isinf(sensors.imu->get_heading())) {
-            calibrated = true;
+        if (!sensors.imu->is_calibrating() && std::isfinite(sensors.imu->get_heading())) {
+
             break;
         }
         // indicate error
@@ -145,50 +146,81 @@ lemlib::Pose lemlib::Chassis::getPose(bool radians, bool standardPos) {
     return pose;
 }
 
+lemlib::Chassis::~Chassis() {
+    cancelAllMotions(); workerRunning=false;
+    if(worker) { worker->join(); delete worker; }
+}
+void lemlib::Chassis::submitMotion(std::function<void()> fn,bool async) {
+    uint32_t id;
+    {
+        Lock guard(mutex);
+        if(commands.size()>=16) { result=MotionResult::Busy; return; }
+        id=++submitted;
+        commands.push_back({id,generation,pros::competition::get_status(),std::move(fn)});
+        if(!worker) worker=new pros::Task([this]{runMotions();});
+    }
+    if(!async) while(completed.load()<id) pros::delay(5);
+}
+void lemlib::Chassis::runMotions() {
+    while(workerRunning) {
+        Command cmd{}; bool execute=false;
+        {
+            Lock guard(mutex);
+            if(!commands.empty()) {
+                cmd=std::move(commands.front()); commands.pop_front();
+                execute=cmd.generation==generation && cmd.mode==pros::competition::get_status();
+                active=cmd.id; motionRunning=execute; distTraveled=0;
+            }
+        }
+        if(!cmd.id) { pros::delay(5); continue; }
+        result=execute ? MotionResult::Running : MotionResult::Cancelled;
+        if(execute && motionRunning) {
+            driveOutput().configure(drivetrain.leftMotors,drivetrain.rightMotors);
+            driveToken=driveOutput().acquire();
+            if(!driveToken) result=getOdomStatus().valid ? MotionResult::Busy : MotionResult::SensorFault;
+            else {
+                try { cmd.fn(); } catch(...) { result=MotionResult::InvalidInput; }
+                driveOutput().release(driveToken); driveToken=0;
+            }
+        }
+        if(result==MotionResult::Running) result=motionRunning ? MotionResult::Settled : MotionResult::Cancelled;
+        motionRunning=false; distTraveled=-1; active=0; completed=cmd.id;
+    }
+}
+bool lemlib::Chassis::motionAllowed() {
+    if(!motionRunning) return false;
+    if(!getOdomStatus().valid) { result=MotionResult::SensorFault; motionRunning=false; return false; }
+    if(!driveOutput().owns(driveToken)) { result=MotionResult::Cancelled; motionRunning=false; return false; }
+    return true;
+}
+void lemlib::Chassis::writeDrive(float left,float right) {
+    if(!motionRunning || !driveOutput().tank(driveToken,left,right)) {
+        motionRunning=false;
+        if(result==MotionResult::Running) result=MotionResult::SensorFault;
+    }
+}
+void lemlib::Chassis::endMotion() {} // retained internally for source compatibility
 void lemlib::Chassis::waitUntil(float dist) {
-    // do while to give the thread time to start
-    do pros::delay(10);
-    while (distTraveled <= dist && distTraveled != -1);
+    if(!std::isfinite(dist) || dist<0) return;
+    const auto id=submitted.load();
+    while(completed.load()<id && (active.load()==0 || distTraveled.load()<dist)) pros::delay(5);
 }
-
 void lemlib::Chassis::waitUntilDone() {
-    do pros::delay(10);
-    while (distTraveled != -1);
+    const auto id=submitted.load();
+    while(completed.load()<id) pros::delay(5);
 }
-
-void lemlib::Chassis::requestMotionStart() {
-    if (this->isInMotion()) this->motionQueued = true; // indicate a motion is queued
-    else this->motionRunning = true; // indicate a motion is running
-
-    // wait until this motion is at front of "queue"
-    this->mutex.take(TIMEOUT_MAX);
-
-    // this->motionRunning should be true
-    // and this->motionQueued should be false
-    // indicating this motion is running
-}
-
-void lemlib::Chassis::endMotion() {
-    // move the "queue" forward 1
-    this->motionRunning = this->motionQueued;
-    this->motionQueued = false;
-
-    // permit queued motion to run
-    this->mutex.give();
-}
-
 void lemlib::Chassis::cancelMotion() {
-    this->motionRunning = false;
-    pros::delay(10); // give time for motion to stop
+    uint32_t id;
+    { Lock guard(mutex); id=active.load(); motionRunning=false; }
+    // The worker acknowledges completion before another writer can take over.
+    while(id && completed.load()<id) pros::delay(5);
 }
-
 void lemlib::Chassis::cancelAllMotions() {
-    this->motionRunning = false;
-    this->motionQueued = false;
-    pros::delay(10); // give time for motion to stop
+    uint32_t id;
+    { Lock guard(mutex); ++generation; id=submitted.load(); motionRunning=false; }
+    while(completed.load()<id) pros::delay(5);
 }
-
-bool lemlib::Chassis::isInMotion() const { return this->motionRunning; }
+bool lemlib::Chassis::isInMotion() const { return completed.load()<submitted.load(); }
 
 void lemlib::Chassis::resetLocalPosition() {
     float theta = this->getPose().theta;

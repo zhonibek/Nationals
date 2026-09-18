@@ -10,7 +10,7 @@ PID::PID(float kP, float kI, float kD, float windupRange, bool signFlipReset)
       signFlipReset(signFlipReset) {}
 
 float PID::update(const float error, float dt) {
-    if (dt <= 0) dt = 0.01f;
+    if(!std::isfinite(error)||!std::isfinite(dt)||dt<=0||dt>0.1f) { reset(); return 0; }
 
     // calculate integral with anti-windup clamping
     if (windupRange == 0 || std::fabs(error) <= windupRange) {
@@ -31,7 +31,7 @@ float PID::update(const float error, float dt) {
         isFirstStep = false;
     } else {
         float rawDerivative = (error - prevError) / dt;
-        filteredDerivative = ema(rawDerivative, filteredDerivative, 0.75f);
+        filteredDerivative = ema(rawDerivative, filteredDerivative, 1.0f-std::pow(0.25f,dt/0.01f));
         prevError = error;
     }
 

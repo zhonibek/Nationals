@@ -6,19 +6,10 @@
 #include "lemlib/chassis/odom.hpp"
 #include "pros/misc.hpp"
 
-void lemlib::Chassis::swingToHeading(float theta, DriveSide lockedSide, int timeout, SwingToHeadingParams params,
+void lemlib::Chassis::swingToHeadingImpl(float theta, DriveSide lockedSide, int timeout, SwingToHeadingParams params,
                                      bool async) {
     params.minSpeed = fabs(params.minSpeed);
-    this->requestMotionStart();
-    // were all motions cancelled?
-    if (!this->motionRunning) return;
-    // if the function is async, run it in a new task
-    if (async) {
-        pros::Task task([&]() { swingToHeading(theta, lockedSide, timeout, params, false); });
-        this->endMotion();
-        pros::delay(10); // delay to give the task time to start
-        return;
-    }
+
     float targetTheta;
     float deltaTheta;
     float motorPower;
@@ -42,8 +33,11 @@ void lemlib::Chassis::swingToHeading(float theta, DriveSide lockedSide, int time
     if (lockedSide == DriveSide::LEFT) this->drivetrain.leftMotors->set_brake_mode_all(pros::E_MOTOR_BRAKE_HOLD);
     else this->drivetrain.rightMotors->set_brake_mode_all(pros::E_MOTOR_BRAKE_HOLD);
 
+    LoopClock loopClock;
     // main loop
-    while (!timer.isDone() && !angularLargeExit.getExit() && !angularSmallExit.getExit() && this->motionRunning) {
+    while (!timer.isDone() && !angularLargeExit.getExit() && !angularSmallExit.getExit() && motionAllowed()) {
+        const float dt=loopClock.tick();
+        if(dt>0.1f) { result=MotionResult::SensorFault; break; }
         // update variables
         Pose pose = getPose();
         pose.theta = fmod(pose.theta, 360);
@@ -75,9 +69,9 @@ void lemlib::Chassis::swingToHeading(float theta, DriveSide lockedSide, int time
             } else {
                 angularVel = getLocalSpeed().theta;
             }
-            motorPower = angularLQR.update(deltaTheta, angularVel, 0, 0.01f);
+            motorPower = angularLQR.update(deltaTheta, angularVel, 0, dt);
         } else {
-            motorPower = angularPID.update(deltaTheta);
+            motorPower = angularPID.update(deltaTheta, dt);
         }
         angularLargeExit.update(deltaTheta);
         angularSmallExit.update(deltaTheta);
@@ -85,7 +79,7 @@ void lemlib::Chassis::swingToHeading(float theta, DriveSide lockedSide, int time
         // cap the speed
         if (motorPower > params.maxSpeed) motorPower = params.maxSpeed;
         else if (motorPower < -params.maxSpeed) motorPower = -params.maxSpeed;
-        if (fabs(deltaTheta) > 20) motorPower = slew(motorPower, prevMotorPower, angularSettings.slew);
+        if (fabs(deltaTheta) > 20) motorPower = slew(motorPower, prevMotorPower, angularSettings.slew * dt / 0.01f);
         if (motorPower < 0 && motorPower > -params.minSpeed) motorPower = -params.minSpeed;
         else if (motorPower > 0 && motorPower < params.minSpeed) motorPower = params.minSpeed;
         prevMotorPower = motorPower;
@@ -94,11 +88,9 @@ void lemlib::Chassis::swingToHeading(float theta, DriveSide lockedSide, int time
 
         // move the drivetrain
         if (lockedSide == DriveSide::LEFT) {
-            drivetrain.rightMotors->move(-motorPower);
-            drivetrain.leftMotors->brake();
+            writeDrive(0, -motorPower);
         } else {
-            drivetrain.leftMotors->move(motorPower);
-            drivetrain.rightMotors->brake();
+            writeDrive(motorPower, 0);
         }
 
         // delay to save resources
@@ -109,10 +101,17 @@ void lemlib::Chassis::swingToHeading(float theta, DriveSide lockedSide, int time
     // original value
     if (lockedSide == DriveSide::LEFT) this->drivetrain.leftMotors->set_brake_mode_all(brakeMode);
     else this->drivetrain.rightMotors->set_brake_mode_all(brakeMode);
+    if(result==MotionResult::Running) result = !motionRunning ? MotionResult::Cancelled : (timer.isDone() ? MotionResult::TimedOut : MotionResult::Settled);
     // stop the drivetrain
-    drivetrain.leftMotors->move(0);
-    drivetrain.rightMotors->move(0);
+    writeDrive(0, 0);
     // set distTraveled to -1 to indicate that the function has finished
     distTraveled = -1;
-    this->endMotion();
+
+}
+void lemlib::Chassis::swingToHeading(float theta, DriveSide lockedSide, int timeout, SwingToHeadingParams params,
+                                     bool async) {
+    if (!std::isfinite(theta) || timeout<=0 || !std::isfinite(params.maxSpeed) || !std::isfinite(params.minSpeed) || !std::isfinite(params.earlyExitRange) || params.maxSpeed<=0) { result=MotionResult::InvalidInput; return; }
+    params.maxSpeed=std::min<float>(params.maxSpeed,127.f);
+    params.minSpeed=std::clamp<float>(std::fabs(params.minSpeed),0.f,params.maxSpeed);
+    submitMotion([this,theta,lockedSide,timeout,params] { swingToHeadingImpl(theta,lockedSide,timeout,params, false); },async);
 }

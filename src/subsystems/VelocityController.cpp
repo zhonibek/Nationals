@@ -29,7 +29,9 @@ void VelocityController::setConfig(const VelocityControllerConfig& newConfig) {
 }
 
 DrivetrainVoltages VelocityController::update(double v_cmd, double w_cmd, double left_actual_mps, double right_actual_mps, double dt) {
-    if (dt <= 0.0001) dt = 0.01;
+    const double values[]={v_cmd,w_cmd,left_actual_mps,right_actual_mps,dt,config.trackWidthMeters,config.max_voltage,config.kV,config.KA_straight,config.KA_turn,config.KS_straight,config.KS_turn,config.KP_straight,config.KI_straight};
+    for(double v:values) if(!std::isfinite(v)) {reset();return {0,0};}
+    if(dt<=0||dt>0.1||config.trackWidthMeters<=0||config.max_voltage<=0||config.max_voltage>12) {reset();return {0,0};}
 
     // Convert unicycle velocities (v, w) into differential wheel velocities (v_left, v_right)
     double halfTrack = config.trackWidthMeters / 2.0;
@@ -76,28 +78,7 @@ DrivetrainVoltages VelocityController::update(double v_cmd, double w_cmd, double
     double total_left = ff_left + fb_left;
     double total_right = ff_right + fb_right;
 
-    // 4. Active Traction Control System (TCS)
-    // Prevents explosive tire spinout on slick foam tiles when accelerating hard
-    if (config.enableTCS) {
-        // Left wheel slip check
-        if (std::abs(v_left_target) > 0.3) {
-            double slipLeft = std::abs(err_left) / std::abs(v_left_target);
-            if (slipLeft > config.maxSlipRatio && (total_left * v_left_target > 0)) {
-                // Throttle back voltage to maintain static friction
-                double tcsScale = std::clamp(1.0 - (slipLeft - config.maxSlipRatio) * 1.5, 0.4, 1.0);
-                total_left *= tcsScale;
-            }
-        }
-        // Right wheel slip check
-        if (std::abs(v_right_target) > 0.3) {
-            double slipRight = std::abs(err_right) / std::abs(v_right_target);
-            if (slipRight > config.maxSlipRatio && (total_right * v_right_target > 0)) {
-                double tcsScale = std::clamp(1.0 - (slipRight - config.maxSlipRatio) * 1.5, 0.4, 1.0);
-                total_right *= tcsScale;
-            }
-        }
-    }
-
+    // True slip control requires an independent chassis velocity measurement.
     total_left = clamp(total_left, -config.max_voltage, config.max_voltage);
     total_right = clamp(total_right, -config.max_voltage, config.max_voltage);
 

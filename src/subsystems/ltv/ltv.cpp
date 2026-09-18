@@ -7,6 +7,7 @@
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include "lemlib/chassis/odom.hpp"
 
 namespace lemlib {
 
@@ -33,16 +34,21 @@ LTVPathFollower::LTVPathFollower(Chassis& chassis, pros::MotorGroup& leftMotors,
       rightMotors(rightMotors),
       controller(config) {
     // 3.25" wheel: circumference = pi * 3.25 * 0.0254 = 0.259339 m
-    double wheelDiameterMeters = 3.25 * INCH_TO_METER;
+    double wheelDiameterMeters = config.wheelDiameterMeters*config.externalGearRatio;
     rpm_to_mps_factor = (M_PI * wheelDiameterMeters) / 60.0f;
 }
 
+LTVPathFollower::~LTVPathFollower(){cancel();if(task){task->join();delete task;}}
+
 void LTVPathFollower::followPath(const std::string& path_name, const ltvConfig& l_config) {
+    Lock lifecycle(lifecycleMutex);
     if (is_running) {
         cancel();
         waitUntilDone();
     }
 
+    if(task) {task->join();delete task;task=nullptr;}
+    result=MotionResult::Running;
     is_running = true;
     cancel_request = false;
     distance_traveled_inches = 0.0f;
@@ -60,11 +66,14 @@ void LTVPathFollower::followPath(const std::string& path_name, const ltvConfig& 
 }
 
 void LTVPathFollower::followTrajectory(const std::vector<State>& trajectory, const ltvConfig& l_config) {
+    Lock lifecycle(lifecycleMutex);
     if (is_running) {
         cancel();
         waitUntilDone();
     }
 
+    if(task) {task->join();delete task;task=nullptr;}
+    result=MotionResult::Running;
     is_running = true;
     cancel_request = false;
     distance_traveled_inches = 0.0f;
@@ -96,7 +105,8 @@ double LTVPathFollower::getPathLength(const std::string& path_name) {
 void LTVPathFollower::task_trampoline(void* params) {
     TaskParams* p = static_cast<TaskParams*>(params);
     if (p && p->instance) {
-        p->instance->followPathImpl(p->path_name, p->config, p->dynamic_path);
+        try {p->instance->followPathImpl(p->path_name, p->config, p->dynamic_path);}
+        catch(...) {p->instance->result=MotionResult::InvalidInput;p->instance->is_running=false;}
     }
     delete p;
 }
@@ -134,6 +144,7 @@ bool LTVPathFollower::isRunning() {
 
 void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConfig& l_config, const std::vector<State>& dynamic_path) {
     std::vector<State> trajectory;
+    struct Completion {std::atomic<bool>& running;~Completion(){running=false;}} completion{is_running};
 
     if (abortAuton) {
         is_running = false;
@@ -142,22 +153,27 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
 
     if (!dynamic_path.empty()) {
         trajectory = dynamic_path;
-    } else if (precomputed_paths.count(path_name) > 0) {
-        if (!precomputed_paths[path_name].empty()) {
-            trajectory = precomputed_paths[path_name];
-        }
-    }
+    } else {Lock guard(cacheMutex);auto it=precomputed_paths.find(path_name);if(it!=precomputed_paths.end()) trajectory=it->second;}
 
     if (trajectory.empty() && !path_name.empty()) {
         trajectory = prepare_trajectory(path_name);
     }
 
     if (trajectory.empty()) {
-        std::cout << "[LTV] Error: Empty trajectory." << std::endl;
+        result=MotionResult::InvalidInput;
         is_running = false;
         return;
     }
 
+    if(chassis.getDrivebaseType()!=DrivebaseType::TANK || !std::isfinite(rpm_to_mps_factor)||rpm_to_mps_factor<=0) {result=MotionResult::InvalidInput;return;}
+    for(size_t i=0;i<trajectory.size();++i) {
+        const auto& t=trajectory[i];const double values[]={t.x,t.y,t.heading,t.linear_vel,t.angular_vel,t.time};
+        for(double v:values) if(!std::isfinite(v)) {result=MotionResult::InvalidInput;return;}
+        if(t.time<0 || (i>0&&t.time<=trajectory[i-1].time)) {result=MotionResult::InvalidInput;return;}
+    }
+    if(trajectory.back().time>120 || l_config.settleTimeout<=0 || l_config.settleTimeout>15) {result=MotionResult::InvalidInput;return;}
+    const float weights[]={l_config.q_x,l_config.q_y,l_config.q_theta,l_config.q_x_b,l_config.q_y_b,l_config.q_theta_b,l_config.r_vel,l_config.r_ang,l_config.r_vel_b,l_config.r_ang_b,l_config.q_scalar,l_config.max_lin_correction,l_config.max_ang_correction};
+    for(float value:weights) if(!std::isfinite(value)||value<=0) {result=MotionResult::InvalidInput;return;}
     if (l_config.test) {
         double start_theta = l_config.backwards ? trajectory[0].heading + M_PI : trajectory[0].heading;
         double gps_start_theta = M_PI_2 - start_theta;
@@ -169,6 +185,11 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
         chassis.waitUntilDone();
     }
 
+    if(cancel_request) {result=MotionResult::Cancelled;return;}
+    driveOutput().configure(&leftMotors,&rightMotors);
+    const uint32_t token=driveOutput().acquire();
+    if(!token) {result=getOdomStatus().valid?MotionResult::Busy:MotionResult::SensorFault;return;}
+    struct Release {uint32_t token;~Release(){driveOutput().release(token);}} release{token};
     std::vector<std::string> logs;
     int trajectory_size = trajectory.size();
     uint32_t prev_time = pros::millis();
@@ -185,24 +206,46 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
     cached_K.setZero();
     float last_solve_v = -9999.0f;
     float last_solve_w = -9999.0f;
+    float last_solve_dt = -1;
 
     controller.reset();
 
     uint32_t loop_time = pros::millis();
 
-    for (int i = 0; i < trajectory_size; ++i) {
-        if (cancel_request) break;
-
-        uint32_t current_time = pros::millis();
-        double measured_dt = (current_time - prev_time) / 1000.0;
-        if (measured_dt <= 0.002 || measured_dt > 0.1) measured_dt = 0.01;
-        prev_time = current_time;
-
-        const auto &target_state = trajectory[i];
-        lemlib::Pose current_pose = chassis.getPose(true);
-        
-        distance_traveled_inches = start_pose.distance(current_pose);
-
+    const uint32_t startTime=pros::millis();
+    bool settling=false;uint32_t settleStart=0;
+    result=MotionResult::TimedOut;
+    for(int i=0;;) {
+        if(cancel_request || !driveOutput().owns(token)) {result=MotionResult::Cancelled;break;}
+        if(!getOdomStatus().valid) {result=MotionResult::SensorFault;break;}
+        uint32_t current_time=pros::millis();
+        const double elapsed=(current_time-startTime)*0.001;
+        if(elapsed>trajectory.back().time+l_config.settleTimeout) break;
+        double measured_dt=(current_time-prev_time)*0.001;
+        if(measured_dt<=0) measured_dt=0.01;
+        if(measured_dt>0.1) {result=MotionResult::SensorFault;break;}
+        prev_time=current_time;
+        while(i+1<trajectory_size && trajectory[i+1].time<=elapsed) ++i;
+        State target_state=trajectory[i];
+        if(i+1<trajectory_size) {
+            const auto& b=trajectory[i+1];const double q=std::clamp((elapsed-target_state.time)/(b.time-target_state.time),0.0,1.0);
+            target_state.x+=(b.x-target_state.x)*q;target_state.y+=(b.y-target_state.y)*q;
+            target_state.heading+=std::remainder(b.heading-target_state.heading,2*M_PI)*q;
+            target_state.linear_vel+=(b.linear_vel-target_state.linear_vel)*q;
+            target_state.angular_vel+=(b.angular_vel-target_state.angular_vel)*q;
+        }
+        lemlib::Pose current_pose=chassis.getPose(true);
+        distance_traveled_inches+=start_pose.distance(current_pose);start_pose=current_pose;
+        const auto velocity=getLocalSpeed(true);
+        if(elapsed>=trajectory.back().time) {
+            target_state.linear_vel=0;target_state.angular_vel=0;
+            const float heading=M_PI_2-current_pose.theta+(l_config.backwards?M_PI:0);
+            const bool close=std::hypot(target_state.x-current_pose.x*INCH_TO_METER,target_state.y-current_pose.y*INCH_TO_METER)<l_config.positionTolerance &&
+                std::abs(std::remainder(target_state.heading-heading,2*M_PI))<l_config.headingTolerance &&
+                std::hypot(velocity.x,velocity.y)<1.0 && std::abs(velocity.theta)<0.1;
+            if(close) {if(!settling){settling=true;settleStart=current_time;}if(current_time-settleStart>=150){result=MotionResult::Settled;break;}}
+            else settling=false;
+        }
         current_pose.x *= INCH_TO_METER;
         current_pose.y *= INCH_TO_METER;
         
@@ -245,7 +288,7 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
         constexpr float eps = -1e-3f;
         
         // Fast DARE cache check: if (v_ref, w_ref) close to last solve, reuse K to save CPU
-        if (std::abs(v_ref - last_solve_v) > 0.05f || std::abs(w_ref - last_solve_w) > 0.05f) {
+        if (std::abs(v_ref - last_solve_v) > 0.05f || std::abs(w_ref - last_solve_w) > 0.05f || std::abs(measured_dt-last_solve_dt)>0.001f) {
             Eigen::Matrix3f A;
             A << eps, w_ref, 0,
                 -w_ref, eps, a_v_ref, 
@@ -263,18 +306,19 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
             cached_K = (R_reg + discAB.second.transpose() * X * discAB.second).ldlt().solve(discAB.second.transpose() * X * discAB.first);
             
             if (cached_K.hasNaN() || !cached_K.allFinite()) {
-                cached_K.setZero();
+                result=MotionResult::InvalidInput; break;
             }
 
             last_solve_v = v_ref;
             last_solve_w = w_ref;
+            last_solve_dt=measured_dt;
         }
         
         // Optimal control law: u = - K * e
         Eigen::Vector2f u = -cached_K * error.cast<float>();
         
         if (u.hasNaN() || !u.allFinite()) {
-            u.setZero();
+            result=MotionResult::InvalidInput; break;
         }
 
         float u_v = clamp(u(0), -l_config.max_lin_correction, l_config.max_lin_correction);
@@ -308,21 +352,19 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
         output_voltages.rightVoltage = clamp(output_voltages.rightVoltage, -12.0, 12.0);
         output_voltages.leftVoltage = clamp(output_voltages.leftVoltage, -12.0, 12.0);
 
-        // Apply voltages (move_voltage takes millivolts -12000 to +12000)
-        rightMotors.move_voltage(output_voltages.rightVoltage * 1000.0);
-        leftMotors.move_voltage(output_voltages.leftVoltage * 1000.0);
+        if(!std::isfinite(left_actual_mps)||!std::isfinite(right_actual_mps)) {result=MotionResult::SensorFault;break;}
+        if(!driveOutput().tank(token,output_voltages.leftVoltage*127/12,output_voltages.rightVoltage*127/12)) {result=MotionResult::SensorFault;break;}
         
         if (l_config.log && i % 5 == 0) {
             std::ostringstream ss;
             ss << Vector2(current_pose.x, current_pose.y).latex() << ",";
-            logs.push_back(ss.str());
+            if(logs.size()<512) logs.push_back(ss.str());
         }
         
         pros::Task::delay_until(&loop_time, 10);
     }
 
-    rightMotors.brake();
-    leftMotors.brake();
+    driveOutput().release(token);
 
     if (steps == 0) steps = 1; 
     double avg_lat_error = sum_lat_error / steps;
@@ -393,15 +435,10 @@ std::pair<Eigen::MatrixXf, Eigen::MatrixXf> LTVPathFollower::discretizeAB(
 }
 
 void LTVPathFollower::precompute_paths(const std::vector<std::string>& path_names) {
-    auto* stored = new std::vector<std::string>(path_names);
-    pros::Task t(precompute_paths_task, stored, "PathCompute");
+    Lock guard(cacheMutex);
+    for(const auto& data:path_names) precomputed_paths[data]=prepare_trajectory(data);
 }
-
-void LTVPathFollower::precompute_paths_task(void* param) {
-    auto* path_names = static_cast<std::vector<std::string>*>(param);
-    // Task implementation
-    delete path_names;
-}
+void LTVPathFollower::precompute_paths_task(void*) {}
 
 std::vector<std::vector<double>> LTVPathFollower::parse_tuples(const std::string& line) {
     std::vector<std::vector<double>> result;
@@ -432,23 +469,31 @@ std::vector<std::vector<double>> LTVPathFollower::parse_tuples(const std::string
 }
 
 std::vector<State> LTVPathFollower::prepare_trajectory(const std::string& data) {
+    if(data.size()>1024*1024) return {};
     std::istringstream ss(data);
     std::vector<std::vector<double>> P, V;
     std::string line;
     
     while (std::getline(ss, line)) {
         if (line.find("P =") != std::string::npos) {
+            if(line.find('{')==std::string::npos) return {};
             P = parse_tuples(line.substr(line.find('{')));
         } else if (line.find("V =") != std::string::npos) {
+            if(line.find('{')==std::string::npos) return {};
             V = parse_tuples(line.substr(line.find('{')));
         }
     }
     
-    size_t n = std::min(P.size(), V.size());
+    if(P.size()!=V.size()) return {};
+    size_t n = P.size();
     if (n == 0) return {};
     
     std::vector<State> states(n);
     for (size_t i = 0; i < n; i++) {
+        if(P[i].size()!=3||V[i].size()!=2) return {};
+        for(double v:P[i]) if(!std::isfinite(v)) return {};
+        for(double v:V[i]) if(!std::isfinite(v)) return {};
+        states[i].time=i*0.01; // Legacy text format explicitly uses 100Hz.
         if (P[i].size() >= 3) {
             states[i].x = P[i][0];
             states[i].y = P[i][1];

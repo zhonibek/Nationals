@@ -1,194 +1,76 @@
 #include "subsystems/ekf/EKF.hpp"
+#include "lemlib/safety.hpp"
 #include "lemlib/util.hpp"
 #include <cmath>
-
 namespace lemlib {
-
-constexpr double METER_TO_INCH = 39.37007874;
-constexpr double INCH_TO_METER = 0.0254;
-
-double RobotEKF::normalizeAngle(double angle) {
-    while (angle > M_PI) angle -= 2.0 * M_PI;
-    while (angle < -M_PI) angle += 2.0 * M_PI;
-    return angle;
+namespace {
+template<int M> bool correct(Eigen::Matrix<double,5,1>& x,Eigen::Matrix<double,5,5>& p,
+    const Eigen::Matrix<double,M,5>& h,const Eigen::Matrix<double,M,1>& z,
+    const Eigen::Matrix<double,M,M>& r,int angular=-1) {
+    Eigen::Matrix<double,M,1> residual=z-h*x;
+    if(angular>=0) residual(angular)=std::remainder(residual(angular),2*M_PI);
+    Eigen::Matrix<double,M,M> s=h*p*h.transpose()+r;
+    auto solve=s.ldlt();
+    if(solve.info()!=Eigen::Success || !solve.isPositive()) return false;
+    const auto normalized=solve.solve(residual).eval();
+    if(!normalized.allFinite() || residual.dot(normalized)>25.0+M) return false;
+    Eigen::Matrix<double,5,M> k=solve.solve((p*h.transpose()).transpose()).transpose();
+    auto candidate=(x+k*residual).eval();
+    candidate(2)=std::remainder(candidate(2),2*M_PI);
+    const Eigen::Matrix<double,5,5> a=Eigen::Matrix<double,5,5>::Identity()-k*h;
+    Eigen::Matrix<double,5,5> covariance=a*p*a.transpose()+k*r*k.transpose();
+    covariance=(0.5*(covariance+covariance.transpose())).eval();
+    if(!candidate.allFinite()||!covariance.allFinite()||!covariance.ldlt().isPositive()) return false;
+    x=candidate;p=covariance;return true;
 }
-
-RobotEKF::RobotEKF(const Pose& initialPose) {
-    reset(initialPose);
+bool positive(double v){return std::isfinite(v)&&v>0;}
 }
-
-void RobotEKF::reset(const Pose& resetPose) {
-    ekfMutex.take(TIMEOUT_MAX);
-
-    x_est.setZero();
-    x_est(0) = resetPose.x * INCH_TO_METER;
-    x_est(1) = resetPose.y * INCH_TO_METER;
-    x_est(2) = degToRad(resetPose.theta);
-    x_est(3) = 0.0;
-    x_est(4) = 0.0;
-
-    P_cov = Eigen::Matrix<double, 5, 5>::Identity();
-    P_cov(0, 0) = 0.01;
-    P_cov(1, 1) = 0.01;
-    P_cov(2, 2) = 0.005;
-    P_cov(3, 3) = 0.1;
-    P_cov(4, 4) = 0.1;
-
-    Q_noise = Eigen::Matrix<double, 5, 5>::Zero();
-    Q_noise(0, 0) = 0.0001; // pos x noise
-    Q_noise(1, 1) = 0.0001; // pos y noise
-    Q_noise(2, 2) = 0.00005; // heading noise
-    Q_noise(3, 3) = 0.01;   // linear vel noise
-    Q_noise(4, 4) = 0.01;   // angular vel noise
-
-    ekfMutex.give();
+double RobotEKF::normalizeAngle(double angle) {return std::isfinite(angle)?std::remainder(angle,2*M_PI):0;}
+RobotEKF::RobotEKF(const Pose& p) {reset(Pose(0,0,0));reset(p);}
+void RobotEKF::reset(const Pose& p) {
+    if(!std::isfinite(p.x)||!std::isfinite(p.y)||!std::isfinite(p.theta)) return;
+    Lock guard(ekfMutex);
+    x_est.setZero(); x_est(0)=p.x*0.0254; x_est(1)=p.y*0.0254; x_est(2)=normalizeAngle(M_PI_2-degToRad(p.theta));
+    P_cov.setZero(); P_cov.diagonal()<<0.01,0.01,0.005,0.1,0.1;
+    // Spectral densities per second; equivalent to old nominal 100Hz Q.
+    Q_noise.setZero(); Q_noise.diagonal()<<0.01,0.01,0.005,1,1;
 }
-
 void RobotEKF::predict(double dt) {
-    if (dt <= 1e-4) dt = 0.01;
-    ekfMutex.take(TIMEOUT_MAX);
-
-    double x = x_est(0);
-    double y = x_est(1);
-    double theta = x_est(2);
-    double v = x_est(3);
-    double w = x_est(4);
-
-    // 1. Non-linear state propagation (Unicycle kinematics)
-    x_est(0) = x + v * std::cos(theta) * dt;
-    x_est(1) = y + v * std::sin(theta) * dt;
-    x_est(2) = normalizeAngle(theta + w * dt);
-    // v and w are assumed constant velocity model + process noise
-
-    // 2. Jacobian of state transition function F
-    Eigen::Matrix<double, 5, 5> F = Eigen::Matrix<double, 5, 5>::Identity();
-    F(0, 2) = -v * std::sin(theta) * dt;
-    F(0, 3) = std::cos(theta) * dt;
-    F(1, 2) = v * std::cos(theta) * dt;
-    F(1, 3) = std::sin(theta) * dt;
-    F(2, 4) = dt;
-
-    // 3. Covariance propagation: P = F * P * F^T + Q
-    P_cov = F * P_cov * F.transpose() + Q_noise;
-    P_cov = 0.5 * (P_cov + P_cov.transpose()); // guarantee symmetry
-
-    ekfMutex.give();
+    if(!positive(dt)||dt>0.1) return;
+    Lock guard(ekfMutex);
+    const double t=x_est(2),v=x_est(3),w=x_est(4);
+    Eigen::Matrix<double,5,5> f=Eigen::Matrix<double,5,5>::Identity();
+    f(0,2)=-v*std::sin(t)*dt;f(0,3)=std::cos(t)*dt;
+    f(1,2)=v*std::cos(t)*dt;f(1,3)=std::sin(t)*dt;f(2,4)=dt;
+    x_est(0)+=v*std::cos(t)*dt;x_est(1)+=v*std::sin(t)*dt;x_est(2)=normalizeAngle(t+w*dt);
+    P_cov=(f*P_cov*f.transpose()+Q_noise*dt).eval();
+    P_cov=(0.5*(P_cov+P_cov.transpose())).eval();
 }
-
-void RobotEKF::updatePose(double odomXMeters, double odomYMeters, double odomThetaRad,
-                          double stdDevPos, double stdDevTheta) {
-    ekfMutex.take(TIMEOUT_MAX);
-
-    // Measurement matrix H: maps [x, y, theta, v, w] -> [x, y, theta]
-    Eigen::Matrix<double, 3, 5> H = Eigen::Matrix<double, 3, 5>::Zero();
-    H(0, 0) = 1.0;
-    H(1, 1) = 1.0;
-    H(2, 2) = 1.0;
-
-    Eigen::Matrix3d R = Eigen::Matrix3d::Zero();
-    R(0, 0) = stdDevPos * stdDevPos;
-    R(1, 1) = stdDevPos * stdDevPos;
-    R(2, 2) = stdDevTheta * stdDevTheta;
-
-    // Innovation (measurement residual)
-    Eigen::Vector3d z(odomXMeters, odomYMeters, odomThetaRad);
-    Eigen::Vector3d y = z - H * x_est;
-    y(2) = normalizeAngle(y(2)); // angle residual wrap
-
-    // Innovation covariance: S = H * P * H^T + R
-    Eigen::Matrix3d S = H * P_cov * H.transpose() + R;
-
-    // Kalman Gain: K = P * H^T * S^-1
-    Eigen::Matrix<double, 5, 3> K = P_cov * H.transpose() * S.inverse();
-
-    // State update: x = x + K * y
-    x_est = x_est + K * y;
-    x_est(2) = normalizeAngle(x_est(2));
-
-    // Covariance update: P = (I - K * H) * P
-    Eigen::Matrix<double, 5, 5> I = Eigen::Matrix<double, 5, 5>::Identity();
-    P_cov = (I - K * H) * P_cov;
-    P_cov = 0.5 * (P_cov + P_cov.transpose());
-
-    ekfMutex.give();
+void RobotEKF::updatePose(double x,double y,double heading,double sp,double sh) {
+    if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(heading)||!positive(sp)||!positive(sh)) return;
+    Lock guard(ekfMutex);
+    Eigen::Matrix<double,3,5> h=Eigen::Matrix<double,3,5>::Zero();h(0,0)=h(1,1)=h(2,2)=1;
+    Eigen::Vector3d z(x,y,normalizeAngle(M_PI_2-heading));
+    Eigen::Matrix3d r=Eigen::Matrix3d::Zero();r.diagonal()<<sp*sp,sp*sp,sh*sh;
+    correct<3>(x_est,P_cov,h,z,r,2);
 }
-
-void RobotEKF::updateIMU(double gyroRateRadPerSec, double stdDevGyro) {
-    ekfMutex.take(TIMEOUT_MAX);
-
-    // Measurement matrix H: maps [x, y, theta, v, w] -> [w]
-    Eigen::Matrix<double, 1, 5> H = Eigen::Matrix<double, 1, 5>::Zero();
-    H(0, 4) = 1.0;
-
-    double R = stdDevGyro * stdDevGyro;
-    double y = gyroRateRadPerSec - x_est(4);
-
-    double S = (H * P_cov * H.transpose())(0, 0) + R;
-    Eigen::Matrix<double, 5, 1> K = P_cov * H.transpose() / S;
-
-    x_est = x_est + K * y;
-    x_est(2) = normalizeAngle(x_est(2));
-
-    Eigen::Matrix<double, 5, 5> I = Eigen::Matrix<double, 5, 5>::Identity();
-    P_cov = (I - K * H) * P_cov;
-    P_cov = 0.5 * (P_cov + P_cov.transpose());
-
-    ekfMutex.give();
+void RobotEKF::updateIMU(double clockwiseRate,double stddev) {
+    if(!std::isfinite(clockwiseRate)||!positive(stddev)) return;
+    Lock guard(ekfMutex);
+    Eigen::Matrix<double,1,5> h=Eigen::Matrix<double,1,5>::Zero();h(0,4)=1;
+    Eigen::Matrix<double,1,1> z,r;z(0)=-clockwiseRate;r(0)=stddev*stddev;
+    correct<1>(x_est,P_cov,h,z,r);
 }
-
-void RobotEKF::updateWheelVelocities(double leftMps, double rightMps, double trackWidthMeters,
-                                     double stdDevVel) {
-    ekfMutex.take(TIMEOUT_MAX);
-
-    double forwardVel = (leftMps + rightMps) / 2.0;
-    double turnRate = (rightMps - leftMps) / (trackWidthMeters > 1e-4 ? trackWidthMeters : 0.3);
-
-    // Measurement matrix H: maps [x, y, theta, v, w] -> [v, w]
-    Eigen::Matrix<double, 2, 5> H = Eigen::Matrix<double, 2, 5>::Zero();
-    H(0, 3) = 1.0;
-    H(1, 4) = 1.0;
-
-    Eigen::Matrix2d R = Eigen::Matrix2d::Zero();
-    R(0, 0) = stdDevVel * stdDevVel;
-    R(1, 1) = (stdDevVel * stdDevVel) / (trackWidthMeters * trackWidthMeters);
-
-    Eigen::Vector2d z(forwardVel, turnRate);
-    Eigen::Vector2d y = z - H * x_est;
-
-    Eigen::Matrix2d S = H * P_cov * H.transpose() + R;
-    Eigen::Matrix<double, 5, 2> K = P_cov * H.transpose() * S.inverse();
-
-    x_est = x_est + K * y;
-    x_est(2) = normalizeAngle(x_est(2));
-
-    Eigen::Matrix<double, 5, 5> I = Eigen::Matrix<double, 5, 5>::Identity();
-    P_cov = (I - K * H) * P_cov;
-    P_cov = 0.5 * (P_cov + P_cov.transpose());
-
-    ekfMutex.give();
+void RobotEKF::updateWheelVelocities(double left,double right,double width,double stddev) {
+    if(!std::isfinite(left)||!std::isfinite(right)||!positive(width)||width<1e-4||!positive(stddev)) return;
+    Lock guard(ekfMutex);
+    Eigen::Matrix<double,2,5> h=Eigen::Matrix<double,2,5>::Zero();h(0,3)=h(1,4)=1;
+    Eigen::Vector2d z((left+right)/2,(right-left)/width);
+    Eigen::Matrix2d r=Eigen::Matrix2d::Zero();r.diagonal()<<0.5*stddev*stddev,2*stddev*stddev/(width*width);
+    correct<2>(x_est,P_cov,h,z,r);
 }
-
-Pose RobotEKF::getPose() const {
-    ekfMutex.take(TIMEOUT_MAX);
-    double x_in = x_est(0) * METER_TO_INCH;
-    double y_in = x_est(1) * METER_TO_INCH;
-    double theta_deg = radToDeg(x_est(2));
-    ekfMutex.give();
-    return Pose(x_in, y_in, theta_deg);
+Pose RobotEKF::getPose() const {Lock guard(ekfMutex);return {float(x_est(0)/0.0254),float(x_est(1)/0.0254),float(radToDeg(M_PI_2-x_est(2)))};}
+double RobotEKF::getLinearVelocity() const {Lock guard(ekfMutex);return x_est(3);}
+double RobotEKF::getAngularVelocity() const {Lock guard(ekfMutex);return -x_est(4);}
+Eigen::Matrix<double,5,5> RobotEKF::getCovariance() const {Lock guard(ekfMutex);return P_cov;}
 }
-
-double RobotEKF::getLinearVelocity() const {
-    ekfMutex.take(TIMEOUT_MAX);
-    double v = x_est(3);
-    ekfMutex.give();
-    return v;
-}
-
-double RobotEKF::getAngularVelocity() const {
-    ekfMutex.take(TIMEOUT_MAX);
-    double w = x_est(4);
-    ekfMutex.give();
-    return w;
-}
-
-} // namespace lemlib

@@ -6,18 +6,9 @@
 #include "lemlib/chassis/odom.hpp"
 #include "pros/misc.hpp"
 
-void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointParams params, bool async) {
+void lemlib::Chassis::moveToPointImpl(float x, float y, int timeout, MoveToPointParams params, bool async) {
     params.earlyExitRange = fabs(params.earlyExitRange);
-    this->requestMotionStart();
-    // were all motions cancelled?
-    if (!this->motionRunning) return;
-    // if the function is async, run it in a new task
-    if (async) {
-        pros::Task task([&]() { moveToPoint(x, y, timeout, params, false); });
-        this->endMotion();
-        pros::delay(10); // delay to give the task time to start
-        return;
-    }
+
 
     // reset controllers and exit conditions
     lateralPID.reset();
@@ -41,9 +32,12 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
     Pose target(x, y);
     target.theta = lastPose.angle(target);
 
+    LoopClock loopClock;
     // main loop
     while (!timer.isDone() && ((!lateralSmallExit.getExit() && !lateralLargeExit.getExit()) || !close) &&
-           this->motionRunning) {
+           motionAllowed()) {
+        const float dt=loopClock.tick();
+        if(dt>0.1f) { result=MotionResult::SensorFault; break; }
         // update position
         const Pose pose = getPose(true, true);
 
@@ -57,7 +51,7 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
         // check if the robot is close enough to the target to start settling
         if (distTarget < 7.5 && close == false) {
             close = true;
-            params.maxSpeed = fmax(fabs(prevLateralOut), 60);
+            // Keep the caller's power cap during settling.
         }
 
         // motion chaining
@@ -75,8 +69,8 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
         float lateralError = pose.distance(target) * cos(angleError(pose.theta, pose.angle(target)));
 
         // update exit conditions
-        lateralSmallExit.update(lateralError);
-        lateralLargeExit.update(lateralError);
+        lateralSmallExit.update(distTarget);
+        lateralLargeExit.update(distTarget);
 
         // get output from active controller (HYBRID, LQR, or PID)
         float lateralOut = 0;
@@ -93,7 +87,7 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
                 float kS_drive = 12.0f;
                 stictionLat = std::clamp(lateralError / 1.0f, -1.0f, 1.0f) * kS_drive;
             }
-            lateralOut = lateralPID.update(lateralError) + lqrLateralDamping + stictionLat;
+            lateralOut = lateralPID.update(lateralError, dt) + lqrLateralDamping + stictionLat;
 
             float angularVel = (sensors.imu != nullptr) ? -sensors.imu->get_gyro_rate().z : getLocalSpeed().theta;
             float lqrAngularDamping = -angularLQRSettings.kV * angularVel;
@@ -103,7 +97,7 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
                 float kS_turn = 8.5f;
                 stictionAng = std::clamp(angErrDeg / 1.2f, -1.0f, 1.0f) * kS_turn;
             }
-            angularOut = angularPID.update(angErrDeg) + lqrAngularDamping + stictionAng;
+            angularOut = angularPID.update(angErrDeg, dt) + lqrAngularDamping + stictionAng;
         } else if (motionControllerType == MotionControllerType::LQR) {
             float forwardVel = getLocalSpeed(true).y;
             float forwardAccel = 0;
@@ -111,7 +105,7 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
                 pros::imu_accel_s_t accel = sensors.imu->get_accel();
                 forwardAccel = accel.y * 386.08858f; // Gs to in/s^2 for 1-step prediction
             }
-            lateralOut = lateralLQR.update(lateralError, forwardVel, forwardAccel, 0.01f);
+            lateralOut = lateralLQR.update(lateralError, forwardVel, forwardAccel, dt);
 
             float angularVel = 0;
             if (sensors.imu != nullptr) {
@@ -119,22 +113,22 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
             } else {
                 angularVel = getLocalSpeed().theta;
             }
-            angularOut = angularLQR.update(radToDeg(angularError), angularVel, 0, 0.01f);
+            angularOut = angularLQR.update(radToDeg(angularError), angularVel, 0, dt);
         } else {
-            lateralOut = lateralPID.update(lateralError);
-            angularOut = angularPID.update(radToDeg(angularError));
+            lateralOut = lateralPID.update(lateralError, dt);
+            angularOut = angularPID.update(radToDeg(angularError), dt);
         }
-        if (close) angularOut = 0;
+        if (distTarget < lateralSettings.smallError) angularOut = 0;
 
         // apply restrictions on angular speed
         angularOut = std::clamp(angularOut, -params.maxSpeed, params.maxSpeed);
-        angularOut = slew(angularOut, prevAngularOut, angularSettings.slew);
+        angularOut = slew(angularOut, prevAngularOut, angularSettings.slew * dt / 0.01f);
 
         // apply restrictions on lateral speed
         lateralOut = std::clamp(lateralOut, -params.maxSpeed, params.maxSpeed);
         // constrain lateral output by max accel
         // but not for decelerating, since that would interfere with settling
-        if (!close) lateralOut = slew(lateralOut, prevLateralOut, lateralSettings.slew);
+        if (!close) lateralOut = slew(lateralOut, prevLateralOut, lateralSettings.slew * dt / 0.01f);
 
         // prevent moving in the wrong direction
         if (params.forwards && !close) lateralOut = std::fmax(lateralOut, 0);
@@ -161,17 +155,22 @@ void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointPara
         }
 
         // move the drivetrain
-        drivetrain.leftMotors->move(leftPower);
-        drivetrain.rightMotors->move(rightPower);
+        writeDrive(leftPower, rightPower);
 
         // delay to save resources
         pros::delay(10);
     }
 
+    if(result==MotionResult::Running) result = !motionRunning ? MotionResult::Cancelled : (timer.isDone() ? MotionResult::TimedOut : MotionResult::Settled);
     // stop the drivetrain
-    drivetrain.leftMotors->move(0);
-    drivetrain.rightMotors->move(0);
+    writeDrive(0, 0);
     // set distTraveled to -1 to indicate that the function has finished
     distTraveled = -1;
-    this->endMotion();
+
+}
+void lemlib::Chassis::moveToPoint(float x, float y, int timeout, MoveToPointParams params, bool async) {
+    if (!std::isfinite(x) || !std::isfinite(y) || timeout<=0 || !std::isfinite(params.maxSpeed) || !std::isfinite(params.minSpeed) || !std::isfinite(params.earlyExitRange) || params.maxSpeed<=0) { result=MotionResult::InvalidInput; return; }
+    params.maxSpeed=std::min<float>(params.maxSpeed,127.f);
+    params.minSpeed=std::clamp<float>(std::fabs(params.minSpeed),0.f,params.maxSpeed);
+    submitMotion([this,x,y,timeout,params] { moveToPointImpl(x,y,timeout,params, false); },async);
 }

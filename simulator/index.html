@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IRAlib — VEX V5 Holonomic Robot & 3D Field Emulator (Jerry.io Planner)</title>
-  <meta name="description" content="Фотореалистичный 2D/3D симулятор соревновательного поля VEX V5 High Stakes и робота Holonomic X-Drive со встроенным интерактивным планировщиком траекторий Jerry.io.">
+  <meta name="description" content="Фотореалистичный 2D/3D симулятор соревновательного поля VEX V5RC Override и робота Holonomic X-Drive со встроенным интерактивным планировщиком траекторий Jerry.io.">
   
   <!-- Three.js, OrbitControls, and 3D Model Loaders -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -12,6 +12,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+  <script src="override.js"></script>
   
   <link rel="stylesheet" href="simulator.css">
 </head>
@@ -78,6 +79,8 @@
           <button id="btnPause" class="btn btn-secondary" title="Пауза">⏸ Пауза</button>
           <button id="btnStep" class="btn btn-secondary" title="Один шаг симуляции (10 мс)">⏭ Шаг</button>
           <button id="btnReset" class="btn btn-danger" title="Сброс в (0,0,0)">🔄 Сброс</button>
+          <button id="btnOverrideStart" class="btn btn-primary" title="Начать матч Override">🏁 Override</button>
+          <button id="btnOverrideReset" class="btn btn-secondary" title="Сбросить матч Override">⏱ Сброс матча</button>
         </div>
 
         <div class="toolbar-group">
@@ -123,7 +126,7 @@
             </label>
             <input type="file" id="cadFileInput" accept=".glb,.gltf,.stl,.obj" style="display: none;">
             <button id="btnRotateCad" class="cam-btn" title="Повернуть CAD модель на 90° по часовой стрелке">🔄 90°</button>
-            <span id="cadStatusBadge" class="cad-badge">CAD: VEX High Stakes</span>
+            <span id="cadStatusBadge" class="cad-badge">CAD: VEX V5RC Override</span>
           </div>
         </div>
 
@@ -133,13 +136,14 @@
             <div class="drop-icon">🤖</div>
             <h3>Перетащите CAD файл робота</h3>
             <p>Экспортируйте из Onshape в <strong>.GLB</strong>, <strong>.GLTF</strong>, <strong>.STL</strong> или <strong>.OBJ</strong> и отпустите здесь</p>
-            <span class="drop-hint">Модель автоматически отмасштабируется под 18" VEX High Stakes шасси и привяжется к одометрии</span>
+            <span class="drop-hint">Модель автоматически отмасштабируется под стартовый лимит 18" VEX V5RC Override и привяжется к одометрии</span>
           </div>
         </div>
         
         <div class="canvas-hud-overlay">
-          <div class="hud-chip">FIELD: <strong>144" &times; 144" (VEX High Stakes)</strong></div>
+          <div class="hud-chip">FIELD: <strong>140.4" &times; 140.4" (VEX V5RC Override)</strong></div>
           <div class="hud-chip">DRIVE: <strong>HOLONOMIC X-DRIVE (4x 200 RPM @ 45&deg;)</strong></div>
+          <div class="hud-chip" id="overrideScoreboard">OVERRIDE: <strong><span id="overridePhase">PRE-MATCH</span> · <span id="overrideClock">0:00</span> · R <span id="overrideRed">0</span> : B <span id="overrideBlue">0</span></strong></div>
         </div>
       </div>
 

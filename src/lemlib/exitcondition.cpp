@@ -10,15 +10,19 @@ ExitCondition::ExitCondition(const float range, const int time)
 bool ExitCondition::getExit() { return done; }
 
 bool ExitCondition::update(const float input) {
-    const int curTime = pros::millis();
-    if (std::fabs(input) > range) startTime = -1;
-    else if (startTime == -1) startTime = curTime;
-    else if (curTime >= startTime + time) done = true;
+    const uint32_t curTime = pros::millis();
+    if (!std::isfinite(input) || !std::isfinite(range) || range<0 || time<0 || std::fabs(input)>range) {
+        timing=false; done=false;
+    } else {
+        if(!timing) { startTime=curTime; timing=true; }
+        done=curTime-startTime>=static_cast<uint32_t>(time);
+    }
     return done;
 }
 
 void ExitCondition::reset() {
-    startTime = -1;
+    startTime = 0;
+    timing=false;
     done = false;
 }
 } // namespace lemlib

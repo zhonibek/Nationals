@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 namespace lemlib {
 class ExitCondition {
@@ -62,7 +63,8 @@ class ExitCondition {
     protected:
         const float range;
         const int time;
-        int startTime = -1;
+        uint32_t startTime = 0;
+        bool timing = false;
         bool done = false;
 };
 } // namespace lemlib

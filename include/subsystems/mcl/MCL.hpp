@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <atomic>
 #include <random>
 #include "pros/rtos.hpp"
 #include "pros/distance.hpp"
@@ -17,7 +18,7 @@ struct Particle {
 };
 
 /**
- * @brief Adaptive Monte Carlo Localization (AMCL) Particle Filter.
+ * @brief Fixed-size Monte Carlo Localization (MCL) Particle Filter.
  * Estimates global 2D robot pose using distance sensor raycasts against known field walls.
  */
 class MCL {
@@ -41,6 +42,9 @@ public:
 
     Pose getEstimatedPose() const;
     bool isConverged() const;
+    void setSeed(uint32_t seed);
+    // Per-sensor mounting offset: right and forward inches. Angles are clockwise radians.
+    void setSensorOffsets(const std::vector<std::pair<double,double>>& offsets);
 
 private:
     Chassis& chassis;
@@ -51,11 +55,15 @@ private:
     std::vector<Particle> particles;
     Pose lastOdomPose = Pose(0, 0, 0);
     Pose estimatedPose = Pose(0, 0, 0);
-    bool converged = false;
+    std::atomic<bool> converged{false};
+    bool initialized=false;
+    unsigned convergenceSamples=0;
+    std::vector<std::pair<double,double>> offsets;
+    pros::Mutex lifecycleMutex;
     mutable pros::Mutex mclMutex;
 
     pros::Task* task = nullptr;
-    bool running = false;
+    std::atomic<bool> running{false};
     uint32_t checkPeriodMs = 33;
 
     std::mt19937 rng;

@@ -19,17 +19,18 @@ MotorMonitor::~MotorMonitor() {
 }
 
 void MotorMonitor::startTask(uint32_t periodMs) {
+    Lock lifecycle(lifecycleMutex);
     if (running) return;
-    checkPeriodMs = periodMs;
+    checkPeriodMs = std::clamp<uint32_t>(periodMs,5u,1000u);
     running = true;
     task = new pros::Task(task_fn, this, "MotorWatchdog");
 }
 
 void MotorMonitor::stopTask() {
-    if (!running) return;
+    Lock lifecycle(lifecycleMutex);
     running = false;
     if (task) {
-        task->remove();
+        task->join();
         delete task;
         task = nullptr;
     }
@@ -57,7 +58,7 @@ void MotorMonitor::check() {
 
         for (size_t i = 0; i < temps.size(); ++i) {
             // Disconnect check (PROS returns PROS_ERR / INT32_MAX on disconnected motors)
-            if (voltages[i] == INT32_MIN || voltages[i] == PROS_ERR) {
+            if (i>=voltages.size() || !std::isfinite(temps[i]) || voltages[i] == INT32_MIN || voltages[i] == PROS_ERR) {
                 alertMessage = "DISCONN: " + name + "[" + std::to_string(i) + "]";
                 isDisconnect = true;
                 break;

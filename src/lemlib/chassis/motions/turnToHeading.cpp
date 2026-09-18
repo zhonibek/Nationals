@@ -6,18 +6,9 @@
 #include "lemlib/chassis/odom.hpp"
 #include "pros/misc.hpp"
 
-void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParams params, bool async) {
+void lemlib::Chassis::turnToHeadingImpl(float theta, int timeout, TurnToHeadingParams params, bool async) {
     params.minSpeed = std::abs(params.minSpeed);
-    this->requestMotionStart();
-    // were all motions cancelled?
-    if (!this->motionRunning) return;
-    // if the function is async, run it in a new task
-    if (async) {
-        pros::Task task([&]() { turnToHeading(theta, timeout, params, false); });
-        this->endMotion();
-        pros::delay(10); // delay to give the task time to start
-        return;
-    }
+
     float targetTheta;
     float deltaTheta;
     float motorPower;
@@ -34,8 +25,11 @@ void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParam
     angularPID.reset();
     angularLQR.reset();
 
+    LoopClock loopClock;
     // main loop
-    while (!timer.isDone() && !angularLargeExit.getExit() && !angularSmallExit.getExit() && this->motionRunning) {
+    while (!timer.isDone() && !angularLargeExit.getExit() && !angularSmallExit.getExit() && motionAllowed()) {
+        const float dt=loopClock.tick();
+        if(dt>0.1f) { result=MotionResult::SensorFault; break; }
         // update variables
         Pose pose = getPose();
 
@@ -68,11 +62,11 @@ void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParam
                 angularVel = getLocalSpeed().theta;
             }
             // PID: setpoint tracking + integral lock
-            float pidOut = angularPID.update(deltaTheta);
+            float pidOut = angularPID.update(deltaTheta, dt);
             // LQR: optimal state velocity damping
             float lqrDamping = -angularLQRSettings.kV * angularVel;
 
-            // Stiction feedforward: overcomes Coulomb friction to eliminate ~2.5° stall
+            // Stiction feedforward: overcomes Coulomb friction to eliminate ~2.5В° stall
             float stiction = 0.0f;
             if (std::fabs(deltaTheta) > 0.15f) {
                 float kS_turn = 9.0f;
@@ -87,9 +81,9 @@ void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParam
             } else {
                 angularVel = getLocalSpeed().theta;
             }
-            motorPower = angularLQR.update(deltaTheta, angularVel, 0, 0.01f);
+            motorPower = angularLQR.update(deltaTheta, angularVel, 0, dt);
         } else {
-            motorPower = angularPID.update(deltaTheta);
+            motorPower = angularPID.update(deltaTheta, dt);
         }
         angularLargeExit.update(deltaTheta);
         angularSmallExit.update(deltaTheta);
@@ -97,7 +91,7 @@ void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParam
         // cap the speed
         if (motorPower > params.maxSpeed) motorPower = params.maxSpeed;
         else if (motorPower < -params.maxSpeed) motorPower = -params.maxSpeed;
-        if (angularSettings.slew > 0) motorPower = slew(motorPower, prevMotorPower, angularSettings.slew);
+        if (angularSettings.slew > 0) motorPower = slew(motorPower, prevMotorPower, angularSettings.slew * dt / 0.01f);
         if (motorPower < 0 && motorPower > -params.minSpeed) motorPower = -params.minSpeed;
         else if (motorPower > 0 && motorPower < params.minSpeed) motorPower = params.minSpeed;
         prevMotorPower = motorPower;
@@ -105,16 +99,21 @@ void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParam
         infoSink()->debug("Turn Motor Power: {} ", motorPower);
 
         // move the drivetrain
-        drivetrain.leftMotors->move(motorPower);
-        drivetrain.rightMotors->move(-motorPower);
+        writeDrive(motorPower, -motorPower);
 
         pros::delay(10);
     }
 
+    if(result==MotionResult::Running) result = !motionRunning ? MotionResult::Cancelled : (timer.isDone() ? MotionResult::TimedOut : MotionResult::Settled);
     // stop the drivetrain
-    drivetrain.leftMotors->move(0);
-    drivetrain.rightMotors->move(0);
+    writeDrive(0, 0);
     // set distTraveled to -1 to indicate that the function has finished
     distTraveled = -1;
-    this->endMotion();
+
+}
+void lemlib::Chassis::turnToHeading(float theta, int timeout, TurnToHeadingParams params, bool async) {
+    if (!std::isfinite(theta) || timeout<=0 || !std::isfinite(params.maxSpeed) || !std::isfinite(params.minSpeed) || !std::isfinite(params.earlyExitRange) || params.maxSpeed<=0) { result=MotionResult::InvalidInput; return; }
+    params.maxSpeed=std::min<float>(params.maxSpeed,127.f);
+    params.minSpeed=std::clamp<float>(std::fabs(params.minSpeed),0.f,params.maxSpeed);
+    submitMotion([this,theta,timeout,params] { turnToHeadingImpl(theta,timeout,params, false); },async);
 }

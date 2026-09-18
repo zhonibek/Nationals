@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 
 #include <deque>
 #include <functional>
@@ -65,8 +66,9 @@ class Buffer {
         std::deque<std::string> buffer = {};
 
         pros::Mutex mutex;
+        std::atomic<uint32_t> rate{50};
+        std::atomic<bool> running{true};
+        std::atomic<uint32_t> dropped{0};
         pros::Task task;
-
-        uint32_t rate;
 };
 } // namespace lemlib

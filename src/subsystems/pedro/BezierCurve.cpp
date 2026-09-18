@@ -91,11 +91,10 @@ Vector2D BezierCurve::getSecondDerivative(float t) const {
         return a + b;
     }
 
-    // Numerical finite-difference approximation for arbitrary orders
-    const float dt = 1e-3f;
-    Vector2D d1 = getDerivative(std::clamp(t - dt, 0.0f, 1.0f));
-    Vector2D d2 = getDerivative(std::clamp(t + dt, 0.0f, 1.0f));
-    return (d2 - d1) / (2.0f * dt);
+    std::vector<Point> second(n-2);
+    const float factor=(n-1)*(n-2);
+    for(size_t i=0;i<n-2;++i) second[i]=(controlPoints[i+2]-controlPoints[i+1]*2.f+controlPoints[i])*factor;
+    return BezierCurve(second).getPoint(t);
 }
 
 Vector2D BezierCurve::getTangent(float t) const {
@@ -136,7 +135,7 @@ float BezierCurve::getLength(int samples) const {
 
 float BezierCurve::getRemainingDistance(float t, int samples) const {
     t = std::clamp(t, 0.0f, 1.0f);
-    if (t >= 0.999f) return 0.0f;
+    if (t >= 1.0f) return 0.0f;
     if (samples < 2) samples = 2;
 
     float remaining = 0.0f;
@@ -168,29 +167,18 @@ float BezierCurve::project(const Point& robotPose, float tGuess) const {
         }
     }
 
-    // Step 2: Newton-Raphson Optimization for exact closest point
-    // Objective: minimize f(t) = 0.5 * ||P(t) - R||^2
-    // f'(t)  = (P(t) - R) . P'(t) = 0
-    // f''(t) = ||P'(t)||^2 + (P(t) - R) . P''(t)
-    float t = bestT;
-    for (int iter = 0; iter < 5; ++iter) {
-        Point p = getPoint(t);
-        Vector2D pPrime = getDerivative(t);
-        Vector2D pDoublePrime = getSecondDerivative(t);
-        Vector2D diff = p - robotPose;
-
-        float fPrime = diff.dot(pPrime);
-        float fDoublePrime = pPrime.dot(pPrime) + diff.dot(pDoublePrime);
-
-        if (std::abs(fDoublePrime) < 1e-6f) break;
-
-        float delta = fPrime / fDoublePrime;
-        t = std::clamp(t - delta, 0.0f, 1.0f);
-
-        if (std::abs(delta) < 1e-4f) break;
+    // Refine every sampled local basin; always keep the best distance found.
+    // Golden-section search is bounded even at cusps or vanishing second derivatives.
+    for(int j=0;j<numSamples;++j) {
+        float lo=float(j)/numSamples, hi=float(j+1)/numSamples;
+        for(int k=0;k<18;++k) {
+            float u=lo+(hi-lo)*0.381966f, v=lo+(hi-lo)*0.618034f;
+            if(getPoint(u).distanceSqTo(robotPose)<getPoint(v).distanceSqTo(robotPose)) hi=v; else lo=u;
+        }
+        const float t=(lo+hi)/2, d=getPoint(t).distanceSqTo(robotPose);
+        if(d<minDistSq) { minDistSq=d; bestT=t; }
     }
-
-    return t;
+    return bestT;
 }
 
 } // namespace pedro

@@ -10,6 +10,7 @@ enum class HeadingMode {
     TANGENT,      // Align robot heading with curve tangent vector
     CONSTANT,     // Hold fixed heading throughout trajectory
     FACING_POINT, // Continuously aim at a designated point on the field (e.g. goal / goal stake)
+    LONG_LINEAR,  // Explicit multi-turn interpolation
     LINEAR        // Linearly interpolate between start heading and end heading
 };
 
@@ -54,6 +55,9 @@ public:
         endHeading = endDeg;
     }
 
+    void setLongLinearHeading(float startDeg,float endDeg) {
+        setLinearHeading(startDeg,endDeg); headingMode=HeadingMode::LONG_LINEAR;
+    }
     const std::vector<BezierCurve>& getSegments() const { return curves; }
     size_t getSegmentCount() const { return curves.size(); }
 
@@ -77,8 +81,17 @@ public:
                 return angleDeg;
             }
 
+            case HeadingMode::LONG_LINEAR:
             case HeadingMode::LINEAR: {
-                return startHeading + (endHeading - startHeading) * t;
+                float total=0, done=0;
+                for(size_t i=0;i<curves.size();++i) {
+                    const float length=curves[i].getLength(); total+=length;
+                    if(i<segmentIdx) done+=length;
+                    else if(i==segmentIdx) done+=length-curves[i].getRemainingDistance(t);
+                }
+                const float fraction=total>1e-6f ? std::clamp(done/total,0.f,1.f) : 1.f;
+                const float delta=headingMode==HeadingMode::LINEAR ? std::remainder(endHeading-startHeading,360.f) : endHeading-startHeading;
+                return startHeading + delta*fraction;
             }
 
             case HeadingMode::TANGENT:

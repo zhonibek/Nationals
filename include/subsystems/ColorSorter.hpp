@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include "lemlib/safety.hpp"
 
 #include "pros/rtos.hpp"
 #include "pros/optical.hpp"
@@ -43,13 +45,18 @@ public:
      * @brief Sort step executed in loop or task
      */
     void update();
+    // This subsystem is the sole writer of its intake motor.
+    void setIntakePower(int power);
 
 private:
     pros::Optical* optical;
     pros::MotorGroup* motor;
-    AllianceColor alliance;
-    bool enabled = true;
-    bool running = false;
+    std::atomic<AllianceColor> alliance;
+    pros::Mutex outputMutex;
+    int intakePower=0;
+    std::atomic<bool> enabled{true};
+    std::atomic<bool> running{false};
+    pros::Mutex lifecycleMutex;
     uint32_t checkPeriodMs = 10;
     pros::Task* task = nullptr;
 

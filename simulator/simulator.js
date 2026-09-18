@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * IRAlib VEX V5 High Stakes Robot & Field Emulator — Core Engine
+ * IRAlib VEX V5RC Override Robot & Field Emulator — Core Engine
  * 2D/3D Viewport, Holonomic X-Drive, Jerry.io Visual Waypoint Planner,
  * LTV DARE Riccati Solver, Quintic Hermite Splines, EKF & Autonomous Engine
  * ============================================================================
@@ -761,30 +761,44 @@ class VexRobotSimulator {
       time: [], vActual: [], leftVolt: [], rightVolt: [], slipAlert: false
     };
 
-    // Scaled-down realistic game elements
+    // Official V5RC Override match state and field inventory.
+    this.override = typeof OverrideGame === "function" ? new OverrideGame() : null;
     this.initFieldElements();
   }
 
   initFieldElements() {
-    this.mobileGoals = [
-      { x: 0, y: 48, theta: 0, vx: 0, vy: 0, color: "neutral" },
-      { x: -24, y: 24, theta: 0, vx: 0, vy: 0, color: "red" },
-      { x: 24, y: 24, theta: 0, vx: 0, vy: 0, color: "blue" },
-      { x: 0, y: -48, theta: 0, vx: 0, vy: 0, color: "neutral" },
-      { x: -48, y: 0, theta: 0, vx: 0, vy: 0, color: "red" },
-      { x: 48, y: 0, theta: 0, vx: 0, vy: 0, color: "blue" }
-    ];
-
-    this.rings = [
-      { x: -12, y: 24, color: "red" },
-      { x: 12, y: 24, color: "blue" },
-      { x: -36, y: 48, color: "red" },
-      { x: 36, y: 48, color: "blue" },
-      { x: 0, y: 14, color: "red" },
-      { x: 0, y: -14, color: "blue" },
-      { x: -24, y: 48, color: "red" },
-      { x: 24, y: 48, color: "blue" }
-    ];
+    if (!this.override) {
+      // Node physics tests load simulator.js without the browser rules bundle.
+      this.mobileGoals = [
+        { x: 0, y: 48, theta: 0, vx: 0, vy: 0, color: "neutral" },
+        { x: -24, y: 24, theta: 0, vx: 0, vy: 0, color: "red" },
+        { x: 24, y: 24, theta: 0, vx: 0, vy: 0, color: "blue" },
+        { x: 0, y: -48, theta: 0, vx: 0, vy: 0, color: "neutral" },
+        { x: -48, y: 0, theta: 0, vx: 0, vy: 0, color: "red" },
+        { x: 48, y: 0, theta: 0, vx: 0, vy: 0, color: "blue" }
+      ];
+      this.rings = [
+        { x: -12, y: 24, color: "red" }, { x: 12, y: 24, color: "blue" },
+        { x: -36, y: 48, color: "red" }, { x: 36, y: 48, color: "blue" }
+      ];
+      this.cups = [];
+      this.toggles = [];
+      this.loaders = [];
+      return;
+    }
+    this.mobileGoals = this.override.goals.map(goal => ({
+      x: goal.x, y: goal.y, theta: 0, vx: 0, vy: 0,
+      color: goal.alliance || "neutral", id: goal.id, height: goal.height, stack: goal.stack
+    }));
+    this.rings = this.override.pins.map(pin => ({
+      x: pin.x, y: pin.y, color: pin.color, id: pin.id, kind: pin.kind
+    }));
+    this.cups = this.override.cups.map(cup => ({
+      x: cup.x, y: cup.y, color: cup.kind === "transparent" ? "clear" : "gray",
+      id: cup.id, kind: cup.kind
+    }));
+    this.toggles = this.override.toggles;
+    this.loaders = this.override.loaders;
   }
 
   setPose(x, y, thetaDeg) {
@@ -822,6 +836,7 @@ class VexRobotSimulator {
     this.activeTrajectory = [];
     this.trajectoryIndex = 0;
     this.setPose(0, 0, 0);
+    if (this.override) this.override.reset();
     this.initFieldElements();
     this.telemetry = { time: [], vActual: [], leftVolt: [], rightVolt: [], slipAlert: false };
     this.controllerLcdLines = ["Reset Complete", "Pose: (0, 0, 0 deg)", "Physics: Ready"];
@@ -1044,6 +1059,8 @@ class VexRobotSimulator {
   }
 
   updateMobileGoalsPhysics(dt) {
+    // Override goals are fixed field elements; scoring and placement live in OverrideGame.
+    if (this.override) return;
     const rad = this.theta * DEG_TO_RAD;
     const clampWorldX = this.x - 7.5 * Math.sin(rad);
     const clampWorldY = this.y - 7.5 * Math.cos(rad);
@@ -1321,6 +1338,20 @@ class VexRobotSimulator {
     }
 
     this.stepHolonomicPhysics(throttle_v, strafe_v, turn_v, dt);
+    if (this.override) {
+      this.override.setRobotPose("red-1", {
+        x: this.x, y: this.y, theta: this.theta,
+        perimeterContact: Math.abs(this.x) > 61 || Math.abs(this.y) > 61
+      });
+      this.override.tick(dt);
+      this.override.goals.forEach((goal, i) => {
+        if (this.mobileGoals[i]) {
+          this.mobileGoals[i].x = goal.x;
+          this.mobileGoals[i].y = goal.y;
+          this.mobileGoals[i].stack = goal.stack;
+        }
+      });
+    }
     this.simTime += dt;
     this.updateTelemetry(dt, throttle_v, turn_v);
     this.updateLCDDisplays();
@@ -1678,7 +1709,7 @@ class FieldRenderer {
     const size = Math.min(rect.width, rect.height || rect.width);
     this.canvas.width = size * window.devicePixelRatio;
     this.canvas.height = size * window.devicePixelRatio;
-    this.scale = this.canvas.width / 144.0;
+    this.scale = this.canvas.width / 140.4;
   }
 
   toCanvas(xInches, yInches) {
@@ -1716,7 +1747,7 @@ class FieldRenderer {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
-    const tileSize = 24.0 * this.scale;
+    const tileSize = 23.4 * this.scale;
 
     for (let r = 0; r < 6; r++) {
       for (let c = 0; c < 6; c++) {
@@ -1734,8 +1765,8 @@ class FieldRenderer {
     ctx.lineWidth = 3;
 
     // Autonomous line (Y=0)
-    const leftMid = this.toCanvas(-72, 0);
-    const rightMid = this.toCanvas(72, 0);
+    const leftMid = this.toCanvas(-70.2, 0);
+    const rightMid = this.toCanvas(70.2, 0);
     ctx.beginPath();
     ctx.moveTo(leftMid.x, leftMid.y);
     ctx.lineTo(rightMid.x, rightMid.y);
@@ -1789,7 +1820,7 @@ class FieldRenderer {
     for (const ring of this.sim.rings) {
       const pt = this.toCanvas(ring.x, ring.y);
       const rSize = 1.8 * this.scale;
-      ctx.fillStyle = ring.color === 'red' ? '#e11d48' : '#2563eb';
+      ctx.fillStyle = ring.color === "red" ? "#e11d48" : (ring.color === "blue" ? "#2563eb" : "#facc15");
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.2;
       ctx.beginPath();
@@ -1803,7 +1834,20 @@ class FieldRenderer {
       ctx.fill();
     }
 
-    // Mobile Goals: reduced from 5.5 to 3.6 inches
+    // Cups are neutral scoring objects: they affect placement but carry no points.
+    for (const cup of (this.sim.cups || [])) {
+      const pt = this.toCanvas(cup.x, cup.y);
+      const rSize = 2.1 * this.scale;
+      ctx.fillStyle = cup.color === "clear" ? "rgba(180,220,255,0.25)" : "#94a3b8";
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.rect(pt.x - rSize, pt.y - rSize, rSize * 2, rSize * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Override goals, with alliance-colored and neutral/tall variants.
     for (const goal of this.sim.mobileGoals) {
       const pt = this.toCanvas(goal.x, goal.y);
       const goalRadius = 3.6 * this.scale;
@@ -2137,15 +2181,15 @@ class ThreeFieldRenderer {
     fillLight.position.set(-50, 60, 40);
     this.scene.add(fillLight);
 
-    // 6x6 Field Tiles: 144" x 144"
-    const fieldGeom = new THREE.PlaneGeometry(144, 144, 6, 6);
+    // 6x6 Field Tiles: 140.4" x 140.4" (Override)
+    const fieldGeom = new THREE.PlaneGeometry(140.4, 140.4, 6, 6);
     const tileMatA = new THREE.MeshStandardMaterial({ color: 0x131926, roughness: 0.8 });
     const fieldMesh = new THREE.Mesh(fieldGeom, tileMatA);
     fieldMesh.receiveShadow = true;
     this.scene.add(fieldMesh);
 
     // Grid wireframe
-    const grid = new THREE.GridHelper(144, 6, 0x384661, 0x222a3d);
+    const grid = new THREE.GridHelper(140.4, 6, 0x384661, 0x222a3d);
     grid.rotation.x = Math.PI / 2;
     grid.position.z = 0.05;
     this.scene.add(grid);
@@ -2164,12 +2208,12 @@ class ThreeFieldRenderer {
       this.scene.add(m);
     };
 
-    makeWall(144, wallThick, 0, 72);
-    makeWall(144, wallThick, 0, -72);
-    makeWall(wallThick, 144, -72, 0);
-    makeWall(wallThick, 144, 72, 0);
+    makeWall(140.4, wallThick, 0, 70.2);
+    makeWall(140.4, wallThick, 0, -70.2);
+    makeWall(wallThick, 140.4, -70.2, 0);
+    makeWall(wallThick, 140.4, 70.2, 0);
 
-    // 3D Mobile Goals (authentic High Stakes hexagonal base)
+    // 3D Mobile Goals (procedural Override goal base)
     const goalBaseGeom = new THREE.CylinderGeometry(3.6, 3.6, 2.5, 6);
     const postGeom = new THREE.CylinderGeometry(0.5, 0.5, 12, 16);
     const goalMat = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.3, metalness: 0.4 });
@@ -2201,7 +2245,7 @@ class ThreeFieldRenderer {
     this.cadRobot = new THREE.Group();
     this.robot3D.add(this.cadRobot);
 
-    // Container for Detailed Procedural VEX High Stakes Robot Model
+    // Container for Detailed Procedural VEX Override Robot Model
     this.proceduralRobot = new THREE.Group();
     this.buildDetailedProceduralRobot();
     this.robot3D.add(this.proceduralRobot);
@@ -2282,7 +2326,7 @@ class ThreeFieldRenderer {
     add3DOmniWheel(-6.2, -6.0, -Math.PI / 4);
     add3DOmniWheel(6.2, -6.0, Math.PI / 4);
 
-    // 5. Front High Stakes Intake Mechanism (Uprights + Compliant Rollers)
+    // 5. Front Override Intake Mechanism (Uprights + Compliant Rollers)
     const towerGeom = new THREE.BoxGeometry(1.0, 1.0, 9.0);
     const leftTower = new THREE.Mesh(towerGeom, alumMat);
     leftTower.position.set(-3.5, 4.5, 5.5);
@@ -2304,7 +2348,7 @@ class ThreeFieldRenderer {
     upperRoller.position.set(0, 4.0, 8.5);
     this.proceduralRobot.add(upperRoller);
 
-    // 6. Rear Mobile Goal Pneumatic Clamp (Brass cylinders + Steel hooks)
+    // 6. Rear Override Object Mechanism (Brass cylinders + Steel hooks)
     const cylGeom = new THREE.CylinderGeometry(0.4, 0.4, 4.0, 12);
     const leftCyl = new THREE.Mesh(cylGeom, pneumaticMat);
     leftCyl.rotation.x = Math.PI / 2;
@@ -2438,7 +2482,7 @@ class ThreeFieldRenderer {
     this.cadRobot.visible = false;
     this.proceduralRobot.visible = true;
     const badge = document.getElementById('cadStatusBadge');
-    if (badge) badge.textContent = "CAD: VEX High Stakes";
+    if (badge) badge.textContent = "CAD: VEX V5RC Override";
   }
 
   loadCadFile(file) {
@@ -2529,7 +2573,7 @@ class ThreeFieldRenderer {
     const initialBox = new THREE.Box3().setFromObject(modelObject);
     const initialSize = initialBox.getSize(new THREE.Vector3());
 
-    // Scale to standard 17.5" VEX High Stakes envelope
+    // Scale to standard 18" VEX Override starting envelope
     const maxHorizontal = Math.max(initialSize.x, initialSize.y, initialSize.z);
     const targetSize = 17.5;
     const scale = (maxHorizontal > 0) ? (targetSize / maxHorizontal) : 1.0;
@@ -2968,6 +3012,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPlay = document.getElementById('btnPlay');
   const btnPause = document.getElementById('btnPause');
   const btnReset = document.getElementById('btnReset');
+  const btnOverrideStart = document.getElementById('btnOverrideStart');
+  const btnOverrideReset = document.getElementById('btnOverrideReset');
   const btnStep = document.getElementById('btnStep');
   const speedButtons = document.querySelectorAll('.speed-opt');
 
@@ -3009,6 +3055,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnReset.addEventListener('click', () => {
     sim.resetSimulation();
+  });
+
+  btnOverrideStart?.addEventListener('click', () => {
+    if (sim.override) {
+      sim.override.startMatch();
+      sim.isPaused = false;
+      sim.triggerRumble("..");
+    }
+  });
+
+  btnOverrideReset?.addEventListener('click', () => {
+    if (sim.override) {
+      sim.override.reset();
+      sim.initFieldElements();
+      sim.triggerRumble(".");
+    }
   });
 
   btnStep.addEventListener('click', () => {
@@ -3118,7 +3180,21 @@ document.addEventListener('DOMContentLoaded', () => {
       threeRenderer.render();
     }
 
-    // Update Telemetry UI
+    // Update Override scoreboard and telemetry UI.
+    if (sim.override) {
+      const overrideState = sim.override.getState();
+      const phase = document.getElementById("overridePhase");
+      const clock = document.getElementById("overrideClock");
+      const red = document.getElementById("overrideRed");
+      const blue = document.getElementById("overrideBlue");
+      if (phase) phase.textContent = overrideState.phase.replace("_", " ").toUpperCase();
+      if (clock) {
+        const remaining = Math.max(0, overrideState.rules.matchSeconds - overrideState.clock);
+        clock.textContent = Math.floor(remaining / 60) + ":" + String(Math.floor(remaining % 60)).padStart(2, "0");
+      }
+      if (red) red.textContent = String(overrideState.score.red);
+      if (blue) blue.textContent = String(overrideState.score.blue);
+    }    // Update Telemetry UI
     statX.textContent = `${sim.x.toFixed(1)}"`;
     statY.textContent = `${sim.y.toFixed(1)}"`;
     statTheta.textContent = `${sim.theta.toFixed(1)}°`;

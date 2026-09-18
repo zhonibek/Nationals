@@ -19,7 +19,7 @@ uint32_t Timer::getTimeLeft() {
     const uint32_t time = pros::millis(); // get time from RTOS
     if (!paused) timeWaited += time - lastTime; // don't update if paused
     lastTime = time; // update last time
-    const int delta = period - timeWaited; // calculate how much time is left
+    const uint32_t delta = timeWaited < period ? period - timeWaited : 0; // calculate how much time is left
     return (delta > 0) ? delta : 0; // return 0 if timer is done
 }
 
@@ -34,13 +34,14 @@ bool Timer::isDone() {
     const uint32_t time = pros::millis(); // get time from RTOS
     if (!paused) timeWaited += time - lastTime; // don't update if paused
     lastTime = time; // update last time
-    const int delta = period - timeWaited; // calculate how much time is left
+    const uint32_t delta = timeWaited < period ? period - timeWaited : 0; // calculate how much time is left
     return delta <= 0;
 }
 
 bool Timer::isPaused() {
     const uint32_t time = pros::millis(); // get time from RTOS
     if (!paused) timeWaited += time - lastTime; // don't update if paused
+    lastTime = time;
     return paused;
 }
 
@@ -55,7 +56,7 @@ void Timer::reset() {
 }
 
 void Timer::pause() {
-    if (!paused) lastTime = pros::millis();
+    getTimePassed();
     paused = true;
 }
 

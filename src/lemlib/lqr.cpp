@@ -13,8 +13,9 @@ LQR::LQR(float kP, float kV, float kA, float kI, float windupRange, bool signFli
       signFlipReset(signFlipReset) {}
 
 float LQR::update(float error, float velocity, float accel, float dt) {
-    if (dt <= 0) dt = 0.01f;
+    if(!std::isfinite(error)||!std::isfinite(dt)||dt<=0||dt>0.1f) { reset(); return 0; }
 
+    if(!std::isfinite(velocity)||!std::isfinite(accel)) { reset(); return 0; }
     // update integral with anti-windup clamping
     if (windupRange == 0 || std::fabs(error) <= windupRange) {
         integral += error * dt;
@@ -39,7 +40,7 @@ float LQR::update(float error, float velocity, float accel, float dt) {
 }
 
 float LQR::update(float error, float dt) {
-    if (dt <= 0) dt = 0.01f;
+    if(!std::isfinite(error)||!std::isfinite(dt)||dt<=0||dt>0.1f) { reset(); return 0; }
 
     // If external velocity is not provided, estimate from change in position error with kick prevention
     if (isFirstStep) {
@@ -49,7 +50,6 @@ float LQR::update(float error, float dt) {
     } else {
         float derivative = (prevError - error) / dt; // rate of closing the error
         filteredVelocity = ema(derivative, filteredVelocity, 0.75f);
-        prevError = error;
     }
 
     return update(error, filteredVelocity, 0, dt);

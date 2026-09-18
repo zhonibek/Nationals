@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include "lemlib/safety.hpp"
 
 #include <vector>
 #include <string>
@@ -35,7 +37,8 @@ private:
     float tempThreshold;
 
     pros::Task* task = nullptr;
-    bool running = false;
+    std::atomic<bool> running{false};
+    pros::Mutex lifecycleMutex;
     uint32_t checkPeriodMs = 500;
     uint32_t lastAlertTime = 0;
 

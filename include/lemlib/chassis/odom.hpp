@@ -4,6 +4,13 @@
 #include "lemlib/pose.hpp"
 
 namespace lemlib {
+enum class OdomFault { None, Uninitialized, Configuration, UnsupportedDrive, Sensor, Stale, Discontinuity, InvalidPose };
+struct OdomStatus { bool valid; OdomFault fault; uint32_t timestamp; uint32_t epoch; };
+// All snapshots use inches, seconds, radians, clockwise heading from +Y; local.x points right.
+struct OdomSnapshot { Pose pose, speed, localSpeed; OdomStatus status; };
+OdomStatus getOdomStatus();
+OdomSnapshot getOdomSnapshot();
+
 /**
  * @brief Set the sensors to be used for odometry
  *

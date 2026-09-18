@@ -1,6 +1,11 @@
 #pragma once
 
 #include "pros/rtos.hpp"
+#include "lemlib/safety.hpp"
+#include <deque>
+#include <functional>
+#include <atomic>
+#include <memory>
 #include "pros/imu.hpp"
 #include "lemlib/asset.hpp"
 #include "lemlib/chassis/trackingWheel.hpp"
@@ -1007,20 +1012,33 @@ class Chassis {
          * LQRs are exposed for advanced state-space control and predictive estimation
          */
         LQR angularLQR;
+        ~Chassis();
+        Chassis(const Chassis&) = delete;
+        Chassis& operator=(const Chassis&) = delete;
+        MotionResult getMotionResult() const { return result.load(); }
     protected:
         /**
          * @brief Indicates that this motion is queued and blocks current task until this motion reaches front of queue
          */
-        void requestMotionStart();
+        void submitMotion(std::function<void()> fn, bool async);
+        void runMotions();
+        bool motionAllowed();
+        void writeDrive(float left, float right);
         /**
          * @brief Dequeues this motion and permits queued task to run
          */
         void endMotion();
 
-        bool motionRunning = false;
-        bool motionQueued = false;
-
-        float distTraveled = 0;
+        std::atomic<bool> motionRunning{false};
+        std::atomic<float> distTraveled{-1};
+        std::atomic<MotionResult> result{MotionResult::Idle};
+        uint32_t driveToken = 0;
+        struct Command { uint32_t id, generation; int mode; std::function<void()> fn; };
+        std::deque<Command> commands;
+        std::atomic<uint32_t> submitted{0}, completed{0}, active{0};
+        uint32_t generation = 0;
+        std::atomic<bool> workerRunning{true};
+        pros::Task* worker = nullptr;
 
         MotionControllerType motionControllerType = MotionControllerType::HYBRID;
         DrivebaseType drivebaseType = DrivebaseType::TANK;
@@ -1039,5 +1057,14 @@ class Chassis {
         ExitCondition angularSmallExit;
     private:
         pros::Mutex mutex;
+        void moveToPointImpl(float x, float y, int timeout, MoveToPointParams params, bool async);
+        void moveToPoseImpl(float x, float y, float theta, int timeout, MoveToPoseParams params, bool async);
+        void followImpl(const asset& path, float lookahead, int timeout, bool forwards, bool async);
+        void swingToHeadingImpl(float theta, DriveSide lockedSide, int timeout, SwingToHeadingParams params,
+                                     bool async);
+        void swingToPointImpl(float x, float y, DriveSide lockedSide, int timeout, SwingToPointParams params,
+                                   bool async);
+        void turnToHeadingImpl(float theta, int timeout, TurnToHeadingParams params, bool async);
+        void turnToPointImpl(float x, float y, int timeout, TurnToPointParams params, bool async);
 };
 } // namespace lemlib

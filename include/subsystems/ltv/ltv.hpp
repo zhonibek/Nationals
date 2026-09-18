@@ -44,6 +44,9 @@ struct ltvConfig {
     bool turnFirst = false;
     bool test = false;
     bool log = true;
+    float settleTimeout = 2.f; // additional seconds after the final sample
+    float positionTolerance = 0.02f; // meters
+    float headingTolerance = 0.035f; // radians
 };
 
 /**
@@ -67,6 +70,8 @@ public:
     /**
      * @brief Asynchronously follow a precomputed or parsed trajectory
      */
+    ~LTVPathFollower();
+    MotionResult getResult() const {return result.load();}
     void followPath(const std::string& path_name, const ltvConfig& l_config = {});
 
     /**
@@ -75,7 +80,7 @@ public:
     void followTrajectory(const std::vector<State>& trajectory, const ltvConfig& l_config = {});
 
     /**
-     * @brief Precompute and parse path trajectories in the background to save runtime CPU cycles
+     * @brief Parse and cache path strings before a match (synchronous and deterministic)
      */
     void precompute_paths(const std::vector<std::string>& path_names);
 
@@ -118,10 +123,12 @@ private:
     VelocityController controller;
 
     float rpm_to_mps_factor;
-    bool is_running = false;
-    bool cancel_request = false;
-    bool abortAuton = false;
-    float distance_traveled_inches = 0.0f;
+    std::atomic<bool> is_running{false};
+    std::atomic<MotionResult> result{MotionResult::Idle};
+    pros::Mutex lifecycleMutex, cacheMutex;
+    std::atomic<bool> cancel_request{false};
+    std::atomic<bool> abortAuton{false};
+    std::atomic<float> distance_traveled_inches{0};
 
     std::unordered_map<std::string, std::vector<State>> precomputed_paths;
     pros::Task* task = nullptr;

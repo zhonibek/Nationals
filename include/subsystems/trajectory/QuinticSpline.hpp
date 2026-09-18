@@ -8,8 +8,8 @@
 namespace lemlib {
 
 /**
- * @brief Smooth C^2 Continuous Jerk-Limited Quintic Hermite Spline Generator.
- * Generates optimal, continuous trajectory profiles for LTV-LQR path followers on-the-fly.
+ * @brief Quintic Hermite geometry with arc-length timing and bounded tangential speed/acceleration/jerk.
+ * Generates stop-at-waypoint trajectory profiles for LTV-LQR path followers on-the-fly.
  */
 class QuinticSplineGenerator {
 public:
@@ -32,7 +32,7 @@ public:
     static std::vector<State> generateTrajectory(const SplineWaypoints& params, double dt = 0.02);
 
     /**
-     * @brief Generate an S-curve trajectory passing through multiple sequential waypoints
+     * @brief Generate a trajectory that stops at each intermediate waypoint
      */
     static std::vector<State> generateMultiPointTrajectory(const std::vector<Pose>& waypoints,
                                                            double maxVel = 1.2,

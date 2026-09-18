@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pros/adi.hpp"
+#include <array>
 #include "pros/distance.hpp"
 #include "lemlib/chassis/chassis.hpp"
 #include "lemlib/pose.hpp"
@@ -45,7 +46,9 @@ public:
                               float fieldWidthInches = 144.0f,
                               float fieldHeightInches = 144.0f,
                               float maxValidDistanceInches = 60.0f,
-                              bool autoApplyPose = true);
+                              bool autoApplyPose = false,
+                              std::array<Pose,4> sensorOffsets = {Pose(0,0,0), Pose(0,0,0), Pose(0,0,0), Pose(0,0,0)}, // front,back,left,right; local x right/y forward
+                              float maxCorrectionInches = 6.0f);
 };
 
 } // namespace lemlib

@@ -34,7 +34,7 @@ float lemlib::angleError(float target, float position, bool radians, AngularDire
 float lemlib::avg(std::vector<float> values) {
     float sum = 0;
     for (float value : values) { sum += value; }
-    return sum / values.size();
+    return values.empty() ? 0.f : sum / values.size();
 }
 
 float lemlib::ema(float current, float previous, float smooth) {
@@ -42,14 +42,8 @@ float lemlib::ema(float current, float previous, float smooth) {
 }
 
 float lemlib::getCurvature(Pose pose, Pose other) {
-    // calculate whether the pose is on the left or right side of the circle
-    float side = lemlib::sgn(std::sin(pose.theta) * (other.x - pose.x) - std::cos(pose.theta) * (other.y - pose.y));
-    // calculate center point and radius
-    float a = -std::tan(pose.theta);
-    float c = std::tan(pose.theta) * pose.x - pose.y;
-    float x = std::fabs(a * other.x + other.y + c) / std::sqrt((a * a) + 1);
-    float d = std::hypot(other.x - pose.x, other.y - pose.y);
-
-    // return curvature
-    return side * ((2 * x) / (d * d));
+    const float dx=other.x-pose.x, dy=other.y-pose.y;
+    const float d2=dx*dx+dy*dy;
+    if(!std::isfinite(d2) || d2<1e-10f || !std::isfinite(pose.theta)) return 0;
+    return 2.f*(std::sin(pose.theta)*dx-std::cos(pose.theta)*dy)/d2;
 }

@@ -3,27 +3,40 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include "pros/misc.hpp"
 
 namespace pedro {
 
 PedroFollower::PedroFollower(FollowerConfig config) : config(config) {}
 
-void PedroFollower::follow(const BezierCurve& curve,
+lemlib::MotionResult PedroFollower::follow(const BezierCurve& curve,
                            HeadingMode headingMode,
                            float targetHeadingDeg,
                            int timeoutMs,
                            std::function<void(int forward, int strafe, int turn)> driveFn,
                            std::function<void()> brakeFn) {
     PedroPath path(curve, headingMode, targetHeadingDeg);
-    follow(path, timeoutMs, driveFn, brakeFn);
+    return follow(path, timeoutMs, driveFn, brakeFn);
 }
 
-void PedroFollower::follow(const PedroPath& path,
+lemlib::MotionResult PedroFollower::follow(const PedroPath& path,
                            int timeoutMs,
                            std::function<void(int forward, int strafe, int turn)> driveFn,
                            std::function<void()> brakeFn) {
+    if(running.exchange(true)) return lemlib::MotionResult::Busy;
+    struct Finish { std::atomic<bool>& running; std::function<void()>& brake; ~Finish(){ if(brake) brake(); running=false; } } finish{running,brakeFn};
+    const FollowerConfig config=getConfig();
     const auto& segments = path.getSegments();
-    if (segments.empty()) return;
+    if(segments.empty() || timeoutMs<=0 || !driveFn || !brakeFn ||
+       !std::isfinite(config.maxVel)||config.maxVel<=0||config.maxVel>127 ||
+       !std::isfinite(config.maxAccel)||config.maxAccel<=0 || config.minVel<0||config.minVel>config.maxVel ||
+       config.exitDistance<=0 || config.exitHeadingError<=0 || config.settleTimeoutMs<0)
+        return lemlib::MotionResult::InvalidInput;
+    for(const auto& segment:segments) if(!std::isfinite(segment.getLength())) return lemlib::MotionResult::InvalidInput;
+    const auto mode=pros::competition::get_status();
+    lemlib::LoopClock loopClock;
+    bool firstHeading=true;
+    float filteredDerivative=0;
 
     cancelled = false;
     uint32_t startTime = pros::millis();
@@ -37,10 +50,14 @@ void PedroFollower::follow(const PedroPath& path,
     bool isSettling = false;
 
     // Loop at 10ms (100 Hz)
-    constexpr float dt = 0.01f;
+
 
     while (pros::millis() - startTime < static_cast<uint32_t>(timeoutMs) && !cancelled) {
-        lemlib::Pose curPose = lemlib::getPose();
+        const float dt=loopClock.tick();
+        if(pros::competition::get_status()!=mode || pros::competition::is_disabled()) return lemlib::MotionResult::Cancelled;
+        const auto snapshot=lemlib::getOdomSnapshot();
+        if(!snapshot.status.valid || dt>0.1f) return lemlib::MotionResult::SensorFault;
+        lemlib::Pose curPose = snapshot.pose; curPose.theta=lemlib::radToDeg(curPose.theta);
         Point robotPos(curPose.x, curPose.y);
         float robotHeadingDeg = curPose.theta;
         float robotHeadingRad = lemlib::degToRad(robotHeadingDeg);
@@ -55,7 +72,7 @@ void PedroFollower::follow(const PedroPath& path,
         float curvature = curve.getCurvature(currentT);
 
         // 2. Segment transition logic for multi-curve paths
-        if (currentT >= 0.96f && currentSegment < segments.size() - 1) {
+        if (currentT >= 0.999f && robotPos.distanceTo(curve.getPoint(1))<=config.exitDistance && currentSegment < segments.size() - 1) {
             currentSegment++;
             currentT = 0.0f;
             continue;
@@ -94,7 +111,7 @@ void PedroFollower::follow(const PedroPath& path,
         float localStrafe  = fieldDemand.x * std::cos(robotHeadingRad) - fieldDemand.y * std::sin(robotHeadingRad);
 
         // LQR Optimal Velocity State Damping (cancels physical momentum and prevents jitter)
-        lemlib::Pose localVel = lemlib::getLocalSpeed(true);
+        lemlib::Pose localVel = snapshot.localSpeed;
         localForward -= config.kD_lqr * localVel.y;
         localStrafe  -= config.kD_lqr * localVel.x;
 
@@ -124,13 +141,16 @@ void PedroFollower::follow(const PedroPath& path,
             headingIntegral = 0.0f;
         }
 
-        float headingDerivative = (headingError - prevHeadingError) / dt;
+        const float rawDerivative=firstHeading?0:std::remainder(headingError-prevHeadingError,360.f)/dt;
+        firstHeading=false;
+        filteredDerivative+=(1-std::exp(-dt/0.03f))*(rawDerivative-filteredDerivative);
+        float headingDerivative=filteredDerivative;
         prevHeadingError = headingError;
 
         float turnCmd = config.headingKp * headingError +
                         config.headingKi * headingIntegral +
                         config.headingKd * headingDerivative -
-                        0.18f * localVel.theta; // LQR yaw rate damping
+                        0.18f * lemlib::radToDeg(localVel.theta); // LQR yaw rate damping
         turnCmd = std::clamp(turnCmd, -90.0f, 90.0f);
 
         // 11. Exit & Settle Evaluation (only on final segment)
@@ -138,25 +158,30 @@ void PedroFollower::follow(const PedroPath& path,
         float posError = errorVector.magnitude();
 
         if (onFinalSegment && remainingDist <= config.exitDistance &&
-            posError <= config.exitDistance && std::abs(headingError) <= config.exitHeadingError) {
+            posError <= config.exitDistance && std::abs(headingError) <= config.exitHeadingError &&
+            std::hypot(localVel.x,localVel.y)<=config.exitVelocity && std::abs(lemlib::radToDeg(localVel.theta))<=config.exitAngularVelocity) {
             if (!isSettling) {
                 isSettling = true;
                 settleStartTime = pros::millis();
             } else if (pros::millis() - settleStartTime >= static_cast<uint32_t>(config.settleTimeoutMs)) {
-                break; // Target cleanly reached and settled
+                return lemlib::MotionResult::Settled;
             }
         } else {
             isSettling = false;
         }
 
         // 12. Send motor command via callback
+        if(!std::isfinite(localForward)||!std::isfinite(localStrafe)||!std::isfinite(turnCmd)) return lemlib::MotionResult::InvalidInput;
+        const float wheelPeak=std::max({std::abs(localForward+localStrafe+turnCmd),std::abs(localForward-localStrafe+turnCmd),std::abs(localForward-localStrafe-turnCmd),std::abs(localForward+localStrafe-turnCmd)});
+        const float scale=std::max(1.f,wheelPeak/config.maxVel);
+        localForward/=scale; localStrafe/=scale; turnCmd/=scale;
         driveFn(static_cast<int>(localForward), static_cast<int>(localStrafe), static_cast<int>(turnCmd));
 
         pros::delay(10);
     }
 
     // Motion complete: apply brakes
-    brakeFn();
+    return cancelled ? lemlib::MotionResult::Cancelled : lemlib::MotionResult::TimedOut;
 }
 
 } // namespace pedro

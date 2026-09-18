@@ -10,7 +10,8 @@ namespace lemlib {
  * @brief 5-State Extended Kalman Filter (EKF) for Robot Localization and Sensor Fusion.
  *
  * State vector: x = [X (m), Y (m), Theta (rad), v (m/s), w (rad/s)]^T
- * Fuses motor encoders, tracking wheels, and IMU gyro/accel.
+ * Differential-drive model: does not estimate independent holonomic strafe.
+ * Internal heading is mathematical CCW from +X. Public heading/rates are LemLib CW from +Y.
  */
 class RobotEKF {
 public:
@@ -35,7 +36,7 @@ public:
      * @brief Measurement update from odometry pose
      * @param odomXMeters Odometry X position in meters
      * @param odomYMeters Odometry Y position in meters
-     * @param odomThetaRad Odometry Theta in radians
+     * @param odomThetaRad LemLib clockwise heading in radians
      * @param stdDevPos Position measurement standard deviation in meters
      * @param stdDevTheta Heading measurement standard deviation in radians
      */
@@ -44,7 +45,7 @@ public:
 
     /**
      * @brief Measurement update from IMU Gyroscope rate
-     * @param gyroRateRadPerSec Angular velocity around Z axis in radians/sec
+     * @param gyroRateRadPerSec Clockwise angular velocity in radians/sec (convert the mounted IMU axes before calling)
      * @param stdDevGyro Gyro measurement standard deviation
      */
     void updateIMU(double gyroRateRadPerSec, double stdDevGyro = 0.01);
@@ -74,6 +75,7 @@ public:
      */
     double getAngularVelocity() const;
 
+    Eigen::Matrix<double,5,5> getCovariance() const;
 private:
     // State vector: [x, y, theta, v, w]
     Eigen::Matrix<double, 5, 1> x_est;
