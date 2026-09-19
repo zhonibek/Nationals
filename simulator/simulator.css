@@ -1,5 +1,5 @@
 /* ==========================================================================
-   IRAlib VEX V5 High Stakes Robot & Field Emulator — Stylesheet
+   Nationals VEX V5 Override simulator — Stylesheet
    Modern Cybernetic Dark Glassmorphism Theme
    ========================================================================== */
 
@@ -70,6 +70,8 @@ body {
 /* Header */
 .app-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   justify-content: space-between;
   align-items: center;
   padding: 1rem 2rem;
@@ -83,6 +85,7 @@ body {
 
 .brand-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1rem;
 }
@@ -103,6 +106,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
@@ -115,6 +119,7 @@ body {
 
 .header-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1.5rem;
 }
@@ -149,7 +154,7 @@ body {
 /* Main Layout Grid */
 .emulator-workspace {
   display: grid;
-  grid-template-columns: 1fr 440px;
+  grid-template-columns: minmax(0, 1fr) 440px;
   gap: 1.5rem;
   padding: 1.5rem 2rem;
   max-width: 1800px;
@@ -158,8 +163,18 @@ body {
 
 @media (max-width: 1280px) {
   .emulator-workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.emulator-workspace > * { min-width: 0; }
+.select-wrapper { min-width: 0; max-width: 100%; }
+
+@media (max-width: 768px) {
+  .app-header { position: static; padding: 0.75rem; }
+  .emulator-workspace { padding: 0.75rem; }
+  .header-status { gap: 0.5rem; }
+  .footer-tips { flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem; }
 }
 
 /* Left Column: Canvas & Direct Controls */
@@ -185,11 +200,14 @@ body {
 
 .toolbar-group {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
   gap: 0.5rem;
 }
 
 .select-wrapper select {
+  max-width: 100%;
   appearance: none;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-main);
@@ -709,6 +727,8 @@ canvas.telemetry-chart {
   left: 0.85rem;
   right: 0.85rem;
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
   justify-content: space-between;
   align-items: center;
   z-index: 15;
@@ -717,6 +737,8 @@ canvas.telemetry-chart {
 
 .cam-group {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
   gap: 0.4rem;
   background: rgba(9, 13, 22, 0.88);
