@@ -12,8 +12,9 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-  <script src="override.js?v=cascade-20260919"></script>
-  <script src="override-view.js?v=cascade-20260919"></script>
+  <script src="override-geometry.js?v=field-20260920"></script>
+  <script src="override.js?v=field-20260920"></script>
+  <script src="override-view.js?v=field-20260920"></script>
   
   <link rel="stylesheet" href="simulator.css?v=cascade-20260919">
 </head>
@@ -82,7 +83,7 @@
           <button id="btnPause" class="btn btn-secondary" title="Пауза">⏸ Пауза</button>
           <button id="btnStep" class="btn btn-secondary" title="Один шаг симуляции (10 мс)">⏭ Шаг</button>
           <button id="btnReset" class="btn btn-danger" title="Сброс в (0,0,0)">🔄 Сброс</button>
-          <button id="btnOverrideStart" class="btn btn-primary" title="Начать матч Override">🏁 Override</button>
+          <button id="btnOverrideStart" class="btn btn-primary" title="Начать выбранный режим Override">🏁 Override</button>
           <button id="btnOverrideReset" class="btn btn-secondary" title="Сбросить матч Override">⏱ Сброс матча</button>
         </div>
 
@@ -151,6 +152,7 @@
       </div>
 
       <div class="viewport-toolbar" style="flex-wrap:wrap">
+        <label>Режим <select id="gameMode"><option value="practice">Тренировка ∞</option><option value="match">Матч 2:00</option></select></label>
         <label>Робот <select id="gameRobot"><option>red-1</option><option>red-2</option><option>blue-1</option><option>blue-2</option></select></label>
         <label>Предмет <select id="gameObject"><option value="pin">Pin</option><option value="cup">Cup</option></select></label>
         <button class="btn btn-secondary" data-game-action="pickup">Взять</button>
@@ -356,6 +358,6 @@
 
   <script src="robot-config.js?v=cascade-20260919"></script>
   <script src="control-runtime.js?v=cascade-20260919"></script>
-  <script src="simulator.js?v=cascade-20260919"></script>
+  <script src="simulator.js?v=field-20260920"></script>
 </body>
 </html>

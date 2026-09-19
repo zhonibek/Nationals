@@ -1001,12 +1001,14 @@ class VexRobotSimulator {
     this.y += dy_m * METER_TO_INCH;
     this.theta = normalizeAngle(thetaRad + dTheta_rad) * RAD_TO_DEG;
 
-    // Perimeter Wall Collision (Soft Inelastic Restitution in field frame)
-    const fieldLimit = 70.2 - (this.matchMode?9:this.trackWidthInches / 2.0);
-    if (this.x > fieldLimit) { this.x = fieldLimit; if (this.Vx > 0) this.Vx *= -0.15; }
-    if (this.x < -fieldLimit) { this.x = -fieldLimit; if (this.Vx < 0) this.Vx *= -0.15; }
-    if (this.y > fieldLimit) { this.y = fieldLimit; if (this.Vy > 0) this.Vy *= -0.15; }
-    if (this.y < -fieldLimit) { this.y = -fieldLimit; if (this.Vy < 0) this.Vy *= -0.15; }
+    // Legacy fallback for stand-alone plant tests without Override geometry.
+    if(!this.override){
+      const fieldLimit = 70.2 - this.trackWidthInches / 2.0;
+      if (this.x > fieldLimit) { this.x = fieldLimit; if (this.Vx > 0) this.Vx *= -0.15; }
+      if (this.x < -fieldLimit) { this.x = -fieldLimit; if (this.Vx < 0) this.Vx *= -0.15; }
+      if (this.y > fieldLimit) { this.y = fieldLimit; if (this.Vy > 0) this.Vy *= -0.15; }
+      if (this.y < -fieldLimit) { this.y = -fieldLimit; if (this.Vy < 0) this.Vy *= -0.15; }
+    }
 
     // Encoder odometry matches the four-wheel fallback fitted in main.cpp.
     // Slip corrupts this estimate; ground-truth translation is never a sensor.
@@ -1047,12 +1049,16 @@ class VexRobotSimulator {
   updateMobileGoalsPhysics(dt) {
     // Override goals are fixed field elements; scoring and placement live in OverrideGame.
     if (this.override){
-      if(!this.matchMode)return;
-      // Circle contact proxy; encoders continue to slip against a fixed obstruction.
-      const obstacles=[...this.override.goals.map(g=>({...g,radius:3})),...this.override.robots.filter(r=>r.id!==this.activeRobotId).map(r=>({...r,radius:9}))];
-      for(const o of obstacles){const dx=this.x-o.x,dy=this.y-o.y,d=Math.hypot(dx,dy),radius=7.5+o.radius;
-        if(d<radius){const nx=d>1e-8?dx/d:1,ny=d>1e-8?dy/d:0;this.x=o.x+nx*radius;this.y=o.y+ny*radius;const v=this.Vx*nx+this.Vy*ny;if(v<0){this.Vx-=v*nx;this.Vy-=v*ny;}}
-      }return;
+      // Rotated body contacts affect truth/velocity, never encoder feedback.
+      const pose={x:this.x,y:this.y,theta:this.theta};
+      if(!this.matchMode){pose.width=this.trackWidthInches;pose.length=this.trackWidthInches;}
+      const contact=this.override.resolveRobotContact(this.activeRobotId,pose,this.matchMode);
+      this.x=contact.x;this.y=contact.y;
+      for(const n of contact.normals){
+        const inward=this.Vx*n.x+this.Vy*n.y;
+        if(inward<0){this.Vx-=inward*n.x;this.Vy-=inward*n.y;}
+      }
+      return;
     }
     const rad = this.theta * DEG_TO_RAD;
     const clampWorldX = this.x - 7.5 * Math.sin(rad);
@@ -1564,7 +1570,7 @@ class FieldRenderer {
       for (let c = 0; c < 6; c++) {
         const x = c * tileSize;
         const y = r * tileSize;
-        ctx.fillStyle = (r + c) % 2 === 0 ? '#131926' : '#0f1420';
+        ctx.fillStyle = (r + c) % 2 === 0 ? '#737982' : '#808791';
         ctx.fillRect(x, y, tileSize, tileSize);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
         ctx.lineWidth = 1;
@@ -1983,11 +1989,13 @@ class ThreeFieldRenderer {
     this.scene.add(fillLight);
 
     // 6x6 Field Tiles: 140.4" x 140.4" (Override)
-    const fieldGeom = new THREE.PlaneGeometry(140.4, 140.4, 6, 6);
-    const tileMatA = new THREE.MeshStandardMaterial({ color: 0x131926, roughness: 0.8 });
-    const fieldMesh = new THREE.Mesh(fieldGeom, tileMatA);
-    fieldMesh.receiveShadow = true;
-    this.scene.add(fieldMesh);
+    const fieldGeom = new THREE.PlaneGeometry(23.4, 23.4);
+    const tileMaterials=[0x747a82,0x858b93].map(color=>new THREE.MeshStandardMaterial({color,roughness:.8}));
+    for(let row=0;row<6;row++)for(let col=0;col<6;col++){
+      const tile=new THREE.Mesh(fieldGeom,tileMaterials[(row+col)%2]);
+      tile.position.set(-70.2+(col+.5)*23.4,-70.2+(row+.5)*23.4,0);
+      tile.receiveShadow=true;this.scene.add(tile);
+    }
 
     // Grid wireframe
     const grid = new THREE.GridHelper(140.4, 6, 0x384661, 0x222a3d);
@@ -2821,7 +2829,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (sim.override) {
       sim.resetSimulation();sim.matchMode=true;
       const robot=sim.override.robots.find(r=>r.id===sim.activeRobotId);
-      sim.setPose(robot.x,robot.y,robot.theta);sim.override.startMatch();
+      sim.setPose(robot.x,robot.y,robot.theta);
+      const mode=document.getElementById('gameMode').value;
+      sim.override.startMatch(mode);
+      sim.controllerLcdLines=[mode==='practice'?'Override Practice':'Override Match',`Robot: ${robot.id}`,'Manual: driver phase'];
+      document.getElementById('gameFeedback').textContent=mode==='practice'?'Тренировка без таймера. Движение и предметы доступны.':'Матч начат. Ручное управление доступно после автономной фазы.';
       sim.isPaused = false;
       sim.triggerRumble("..");
     }
@@ -2953,10 +2965,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const clock = document.getElementById("overrideClock");
       const red = document.getElementById("overrideRed");
       const blue = document.getElementById("overrideBlue");
-      if (phase) phase.textContent = overrideState.phase.replace("_", " ").toUpperCase();
+      if (phase) phase.textContent = overrideState.mode==='practice'&&!overrideState.matchEnded?'PRACTICE':overrideState.phase.replace("_", " ").toUpperCase();
       if (clock) {
         const remaining = Math.max(0, overrideState.rules.matchSeconds - overrideState.clock);
-        clock.textContent = Math.floor(remaining / 60) + ":" + String(Math.floor(remaining % 60)).padStart(2, "0");
+        clock.textContent = overrideState.mode==='practice'?'∞':Math.floor(remaining / 60) + ":" + String(Math.floor(remaining % 60)).padStart(2, "0");
       }
       if (red) red.textContent = String(overrideState.score.red);
       if (blue) blue.textContent = String(overrideState.score.blue);

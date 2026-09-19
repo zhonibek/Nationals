@@ -4,19 +4,19 @@
  * The scoring model follows the public VEX manual: 2026-2027, v2.0.
  */
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else root.OverrideGame = factory();
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  if (typeof module === "object" && module.exports) module.exports = factory(require('./override-geometry'));
+  else root.OverrideGame = factory(root.OverrideGeometry);
+})(typeof globalThis !== "undefined" ? globalThis : this, function (Geometry) {
   "use strict";
 
-  const FIELD_WIDTH_IN = 140.40;
+  const FIELD_WIDTH_IN = Geometry.FIELD_HALF*2;
   const HALF = FIELD_WIDTH_IN / 2;
   const AUTO_SECONDS = 15;
   const DRIVER_SECONDS = 105;
   const MATCH_SECONDS = AUTO_SECONDS + DRIVER_SECONDS;
   const ENDGAME_SECONDS = 10;
   const MIDFIELD_HALF = 23.11; // Diamond vertex distance, not axis-aligned half-width.
-  const GOAL_RADIUS_IN = 4.25;
+  const GOAL_RADIUS_IN = Geometry.OBJECTS.goalRadius;
   const POINTS = Object.freeze({ alliancePin: 5, yellowPin: 10, midfieldRobot: 8, autonomousBonus: 12 });
 
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -53,11 +53,11 @@
     const pin=(halves,x,y,location="field",alliance=null,goalId=null)=>{
       const id="pin-"+String(pins.length+1).padStart(2,"0");
       pins.push({id,kind:halves.join("-"),halves,color:halves[0],allianceColor:alliance,
-        x,y,location,status:goalId?"placed":"field",placed:!!goalId,goalId,upIndex:0,visibleHalves:null});return id;
+        x,y,location,status:goalId?"placed":"field",placed:!!goalId,goalId,upIndex:0,visibleHalves:null,supportId:null,lying:false,yaw:0});return id;
     };
     const cup=(x,y,up="opaque",location="field",alliance=null)=>{
       cups.push({id:"cup-"+String(cups.length+1).padStart(2,"0"),kind:"cup",halves:["opaque","transparent"],
-        up,x,y,location,alliance,status:"field",placed:false,goalId:null});
+        up,x,y,location,alliance,status:"field",placed:false,goalId:null});return cups.at(-1).id;
     };
     for(const [color,side] of [["red",-1],["blue",1]]){
       for(let i=0;i<12;i++)pin([color,"yellow"],side*78,55-i*10,i<2?"preload":"alliance-station",color);
@@ -66,15 +66,20 @@
     }
     for(const [x,y] of [[-47.09,47.09],[-23.54,23.54],[23.54,-23.54],[47.09,-47.09]]){
       cup(x,y,"transparent");
-      for(const [dx,dy,color] of [[0,5,"blue"],[5,0,"blue"],[0,-5,"red"],[-5,0,"red"]])pin([color,"yellow"],x+dx,y+dy);
+      for(const [dx,dy,color] of [[0,5,"blue"],[5,0,"blue"],[0,-5,"red"],[-5,0,"red"]]){
+        pin([color,"yellow"],x+dx,y+dy);
+        Object.assign(pins.at(-1),{lying:true,yaw:Math.atan2(dx,dy)*180/Math.PI});
+      }
     }
     for(const a of [-23.54,23.54])for(const side of [-1,1]){
       for(const d of [-8,0,8]){cup(a+d,side*68);cup(side*68,a+d);}
-      pin(["yellow","yellow"],a,side*68);pin(["yellow","yellow"],side*68,a);
+      for(const [x,y] of [[a,side*68],[side*68,a]]){
+        pin(["yellow","yellow"],x,y);pins.at(-1).supportId=cups.find(c=>c.x===x&&c.y===y).id;
+      }
     }
-    for(const a of [-47.09,-23.54,23.54,47.09]){cup(a,a,"transparent");pin(["yellow","yellow"],a,a);}
+    for(const a of [-47.09,-23.54,23.54,47.09]){const supportId=cup(a,a,"transparent");pin(["yellow","yellow"],a,a);pins.at(-1).supportId=supportId;}
     for(const [x,y,color] of [[-23.54,0,"red"],[0,-23.54,"red"],[23.54,0,"blue"],[0,23.54,"blue"]]){
-      cup(x,y,"transparent");pin([color,color==="red"?"blue":"red"],x,y);
+      const supportId=cup(x,y,"transparent");pin([color,color==="red"?"blue":"red"],x,y);pins.at(-1).supportId=supportId;
     }
     for(const g of GOAL_LAYOUT.filter(g=>!g.alliance)){const p=centered(g.x,g.y);pin(["yellow","yellow"],p.x,p.y,"goal",null,g.id);}
     return {pins,cups};
@@ -96,6 +101,7 @@
     }
 
     reset() {
+      this.mode='match';
       this.clock = 0;
       this.phase = "pre_match";
       this.matchEnded = false;
@@ -122,10 +128,12 @@
       return this.getState();
     }
 
-    startMatch() {
+    startMatch(mode='match') {
       if (this.phase !== "pre_match") return false;
+      if(!['match','practice'].includes(mode))return false;
+      this.mode=mode;
       this.clock = 0;
-      this.phase = "autonomous";
+      this.phase = mode==='practice'?'driver':"autonomous";
       this.matchEnded = false;
       return true;
     }
@@ -134,11 +142,11 @@
 
     stopMatch() {
       if (this.matchEnded) return;
-      this.clock = MATCH_SECONDS;
+      if(this.mode==='match')this.clock = MATCH_SECONDS;
       this.phase = "post_match";
       this.matchEnded = true;
       this.postMatchSeconds = 0;
-      if(!this.autoFrozen)this.freezeAutonomous();
+      if(this.mode==='match'&&!this.autoFrozen)this.freezeAutonomous();
       this.finalScore=this.score();
     }
 
@@ -148,6 +156,7 @@
         if (this.phase === "post_match") this.postMatchSeconds = clamp(this.postMatchSeconds + dt, 0, 5);
         return this.getState();
       }
+      if(this.mode==='practice'){this.clock+=dt;return this.getState();}
       this.clock = clamp(this.clock + dt, 0, MATCH_SECONDS);
       if (this.clock >= AUTO_SECONDS && this.phase === "autonomous") {this.freezeAutonomous();this.phase = "driver";}
       if (this.clock >= MATCH_SECONDS) this.stopMatch();
@@ -186,9 +195,7 @@
     }
 
     touchesPerimeter(robot) {
-      const a=robot.theta*Math.PI/180,c=Math.abs(Math.cos(a)),s=Math.abs(Math.sin(a));
-      return Math.abs(robot.x)+(robot.width*c+robot.length*s)/2>=HALF-1e-6 ||
-        Math.abs(robot.y)+(robot.width*s+robot.length*c)/2>=HALF-1e-6;
+      return Geometry.touchesPerimeter(robot);
     }
 
     isInMidfield(robot) {
@@ -211,6 +218,16 @@
       if (cupId && this.robots.some(r => r.id !== robotId && r.possession.cupId === cupId)) return { ok: false, error: "cup already possessed" };
       if(pinId&&(!this.pin(pinId)||this.pin(pinId).placed))return {ok:false,error:"pin unavailable"};
       if(cupId&&(!this.cup(cupId)||this.cup(cupId).placed))return {ok:false,error:"cup unavailable"};
+      const passenger=cupId?this.pins.find(p=>p.supportId===cupId):null;
+      if(passenger&&passenger.id!==pinId)return {ok:false,error:"supported Pin must move with its Cup"};
+      for(const kind of ['pin','cup']){
+        const old=this[kind](robot.possession[kind+'Id']);
+        const next=kind==='pin'?pinId:cupId;
+        if(old&&old.id!==next){Object.assign(old,{status:'field',location:'field',x:robot.x,y:robot.y,supportId:null});}
+        const object=this[kind](next);
+        if(object){object.status='held';object.lying=false;}
+      }
+      if(pinId&&this.pin(pinId).supportId!==cupId)this.pin(pinId).supportId=null;
       robot.possession = { pinId, cupId };
       return { ok: true, possession: { ...robot.possession } };
     }
@@ -228,6 +245,34 @@
     pin(id) { return this.pins.find(p => p.id === id) || null; }
     cup(id) { return this.cups.find(c => c.id === id) || null; }
 
+    objectPose(object){
+      const holder=this.robots.find(r=>r.possession.pinId===object.id||r.possession.cupId===object.id);
+      const support=this.cup(object.supportId);
+      if(support&&(support.status==='field'||(holder&&holder.possession.cupId===support.id))){
+        const p=this.objectPose(support);
+        return {...p,z:p.z+Geometry.OBJECTS.halfHeight,lying:false};
+      }
+      if(holder){
+        const offset=Geometry.rotate(holder.possession.cupId&&object.id===holder.possession.pinId?4:0,10,holder.theta);
+        return {x:holder.x+offset.x,y:holder.y+offset.y,z:10,lying:false,yaw:holder.theta};
+      }
+      const goal=this.goal(object.goalId);
+      if(goal){
+        const index=goal.stack.findIndex(i=>i.id===object.id);
+        return {x:goal.x,y:goal.y,z:goal.height-Geometry.OBJECTS.halfHeight+index*Geometry.OBJECTS.halfHeight,lying:false,yaw:0};
+      }
+      return {x:object.x,y:object.y,z:object.lying?Geometry.OBJECTS.pinRadius:0,lying:!!object.lying,yaw:object.yaw||0};
+    }
+
+    resolveRobotContact(robotId,pose,withObstacles=true){
+      const robot=this.robots.find(r=>r.id===robotId);
+      const obstacles=withObstacles?[
+        ...this.goals.map(g=>({x:g.x,y:g.y,radius:GOAL_RADIUS_IN})),
+        ...this.robots.filter(r=>r.id!==robotId)
+      ]:[];
+      return Geometry.resolveRobot({...robot,...pose},obstacles);
+    }
+
     interact(robotId,action,kind="pin"){
       const robot=this.robots.find(r=>r.id===robotId);
       if(!robot||this.matchEnded)return {ok:false,error:"match ended or unknown robot"};
@@ -239,7 +284,12 @@
         if(held)return {ok:false,error:"already holding this object type"};
         const object=near(objects.filter(o=>o.status==="field"&&o.location!=="alliance-station"&&o.location!=="preload"),14);
         if(!object)return {ok:false,error:"no reachable object"};
-        object.status="held";robot.possession[key]=object.id;return {ok:true};
+        const passenger=kind==='cup'?this.pins.find(p=>p.supportId===object.id):null;
+        if(passenger&&robot.possession.pinId)return {ok:false,error:"free the Pin slot before lifting this stack"};
+        object.status="held";object.lying=false;robot.possession[key]=object.id;
+        if(kind==='pin')object.supportId=null;
+        if(passenger){passenger.status='held';robot.possession.pinId=passenger.id;}
+        return {ok:true};
       }
       if(action==="load"){
         if(this.phase!=="driver")return {ok:false,error:"match loads are driver-period only"};
@@ -252,20 +302,29 @@
       }
       if(action==="flip"){
         if(!held)return {ok:false,error:"nothing held"};
+        if(kind==='cup'&&this.pins.some(p=>p.supportId===held.id))return {ok:false,error:"remove the supported Pin before flipping the Cup"};
         if(kind==="pin")held.upIndex=1-held.upIndex;else held.up=held.up==="opaque"?"transparent":"opaque";
         return {ok:true};
       }
       if(action==="drop"){
         if(!held)return {ok:false,error:"nothing held"};
         held.x=robot.x+10*Math.sin(robot.theta*Math.PI/180);held.y=robot.y+10*Math.cos(robot.theta*Math.PI/180);
-        held.status="field";held.location="field";robot.possession[key]=null;return {ok:true};
+        held.status="field";held.location="field";held.lying=false;robot.possession[key]=null;
+        if(kind==='pin')held.supportId=null;
+        else{
+          const passenger=this.pins.find(p=>p.supportId===held.id);
+          if(passenger){Object.assign(passenger,{x:held.x,y:held.y,status:'field',location:'field'});robot.possession.pinId=null;}
+        }
+        return {ok:true};
       }
       if(action==="place"){
         if(!held)return {ok:false,error:"nothing held"};
         const goal=near(this.goals,16);
         if(!goal)return {ok:false,error:"no goal within reach"};
         if(goal.alliance&&goal.alliance!==robot.alliance)return {ok:false,error:"opposing alliance goal is protected"};
+        const passenger=kind==='cup'?this.pins.find(p=>p.supportId===held.id&&p.status==='held'):null;
         const result=kind==="pin"?this.placePin(held.id,goal.id):this.placeCup(held.id,goal.id);
+        if(result.ok&&passenger)this.placePin(passenger.id,goal.id);
         if(result.ok){held.x=goal.x;held.y=goal.y;robot.possession[key]=null;}return result;
       }
       if(action==="toggle"){
@@ -285,6 +344,9 @@
       if(visible){const available=[...pin.halves];for(const half of visible){const i=available.indexOf(half);if(i<0)return {ok:false,error:"invalid visible half"};available.splice(i,1);}}
       const stackIndex = goal.stack.length;
       pin.status = "placed";
+      pin.location='goal';
+      pin.supportId=null;pin.lying=false;
+      for(const r of this.robots)if(r.possession.pinId===pin.id)r.possession.pinId=null;
       pin.placed = true;
       pin.goalId = goalId;
       pin.owner = options.owner || this.ownerForPin(pin, goal);
@@ -306,8 +368,11 @@
       const goal = this.goal(goalId);
       if (!cup || !goal) return { ok: false, error: "unknown scoring object or goal" };
       if (cup.status === "placed") return { ok: false, error: "cup already placed" };
+      if(this.pins.some(p=>p.supportId===cup.id&&p.status!=='held'))return {ok:false,error:"pick up or remove the supported Pin first"};
       if(!goal.stack.length||goal.stack.at(-1).type!=="pin")return {ok:false,error:"cup needs a supporting pin"};
       cup.status = "placed";
+      cup.location='goal';
+      for(const r of this.robots)if(r.possession.cupId===cup.id)r.possession.cupId=null;
       cup.placed = true;
       cup.goalId = goalId;
       cup.stackIndex = goal.stack.length;
@@ -412,8 +477,9 @@
         field: { width: FIELD_WIDTH_IN, half: HALF, midfieldHalf: MIDFIELD_HALF },
         rules: { season: "2026-2027", manualVersion: "2.0", autoSeconds: AUTO_SECONDS, driverSeconds: DRIVER_SECONDS, endgameSeconds: ENDGAME_SECONDS, matchSeconds: MATCH_SECONDS, points: POINTS },
         phase: this.phase,
+        mode: this.mode,
         clock: this.clock,
-        endgame: this.clock >= MATCH_SECONDS - ENDGAME_SECONDS && this.clock < MATCH_SECONDS,
+        endgame: this.mode==='match'&&this.clock >= MATCH_SECONDS - ENDGAME_SECONDS && this.clock < MATCH_SECONDS,
         matchEnded: this.matchEnded,
         goals: clone(this.goals),
         toggles: clone(this.toggles),
