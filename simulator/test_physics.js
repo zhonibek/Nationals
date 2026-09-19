@@ -1,4 +1,4 @@
-// Physical Digital Twin Validation Script
+// Regression checks for the approximate simulator plant (not hardware validation).
 // Tests rigid body mechanics, motor electromechanics, traction limits, sensor drift, and controllers
 
 const fs = require('fs');
@@ -20,10 +20,10 @@ const headlessCode = simCode.split('document.addEventListener')[0];
 vm.runInThisContext(headlessCode);
 
 console.log("================================================================================");
-console.log("       VEX HIGH STAKES DIGITAL TWIN: PHYSICAL FIDELITY VALIDATION SUITE        ");
+console.log("       NATIONALS SIMULATOR: APPROXIMATE PLANT REGRESSION SUITE        ");
 console.log("================================================================================");
 
-const sim = new VexRobotSimulator();
+const sim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 
 function assertFinitePhysics(simulator, label) {
   for (const value of [simulator.x, simulator.y, simulator.theta, simulator.vx, simulator.vy, simulator.w]) {
@@ -61,10 +61,10 @@ console.log(`- Motor RPM (200 RPM max):   Left=${(sim.wheelOmega[0]*60/(2*Math.P
 
 // Test 3: Mobile Goal Clamping & Parallel Axis Inertial Shift
 console.log("\n[TEST 3] Mobile Goal Pneumatic Clamping & Inertial Shift:");
-const simUnclamped = new VexRobotSimulator();
+const simUnclamped = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 console.log(`- Unclamped State: Mass = ${simUnclamped.massKg.toFixed(2)} kg, Jz = ${simUnclamped.moiKgM2.toFixed(4)} kg*m^2`);
 
-const simClamped = new VexRobotSimulator();
+const simClamped = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 simClamped.clampedGoalIndex = 0;
 simClamped.isPneumaticClamped = true;
 // Step physics to integrate with clamped goal
@@ -75,8 +75,8 @@ console.log(`- Clamped MOI Jz:  ${expectedClampedJz.toFixed(4)} kg*m^2 (Parallel
 
 // Test 4: Angular Dynamic Comparison (Turn Responsiveness Under Clamped Mass)
 console.log("\n[TEST 4] Turn Responsiveness (Pure Spin Step Response 10V):");
-const spinSimUnclamped = new VexRobotSimulator();
-const spinSimClamped = new VexRobotSimulator();
+const spinSimUnclamped = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
+const spinSimClamped = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 spinSimClamped.clampedGoalIndex = 0;
 spinSimClamped.isPneumaticClamped = true;
 
@@ -97,7 +97,7 @@ console.log(`- Rotational Inertia Ratio:   ${(wClampedDeg / wUnclampedDeg).toFix
 
 // Test 5: Odometry Decoupling, Sensor Scrub & IMU Drift vs EKF
 console.log("\n[TEST 5] Sensor Simulation & Active EKF Filtering:");
-const odomSim = new VexRobotSimulator();
+const odomSim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 for (let step = 0; step < 200; step++) {
   odomSim.stepHolonomicPhysics(8.0, 0.0, 2.0, 0.01); // Combined forward + turn
 }
@@ -112,7 +112,7 @@ console.log(`- Sensor decoupling verified:   ${odomDrift > 0.01}`);
 console.log(`- EKF covariance P trace:        Trace(P) = ${(odomSim.ekf.P.get(0, 0) + odomSim.ekf.P.get(1, 1) + odomSim.ekf.P.get(2, 2)).toFixed(4)} (Covariance bounded)`);
 
 // Test 6: LemLib PID Controller Parity with src/main.cpp
-console.log("\n[TEST 6] LemLib PID Controller (Exact Parity with src/main.cpp):");
+console.log("\n[TEST 6] Legacy JS PID helper (active C++ cascade is tested separately):");
 const pid = new LemLibPIDController({
   kP: 16.0, kI: 0.0, kD: 4.8, windupRange: 3.0,
   smallError: 0.8, smallErrorTimeout: 100,
@@ -133,7 +133,7 @@ console.log(`- Deadband active when error < 0.5": Output = ${pid.update(0.2, 0.0
 // Test 7: walls are fixed in field coordinates, not robot coordinates.
 // At 90 degrees, body vx is aligned with the field Y axis.
 console.log("\n[TEST 7] Field-Space Wall Collision at 90 Degrees:");
-const wallSim = new VexRobotSimulator();
+const wallSim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 wallSim.setPose(0, 66.7, 90);
 wallSim.stepHolonomicPhysics(0.0, -12.0, 0.0, 0.1); // Move toward +Y in field space.
 const wallTheta = wallSim.theta * DEG_TO_RAD;
@@ -144,5 +144,5 @@ console.log(`- Field Y after impact:       ${wallSim.y.toFixed(2)} in (limit: 66
 console.log(`- Reflected field Y velocity: ${wallWorldVy.toFixed(3)} m/s (must be <= 0)`);
 
 console.log("\n================================================================================");
-console.log("   >>> ALL 7 PHYSICAL TWIN TESTS PASSED <<<                                      ");
+console.log("   >>> ALL 7 APPROXIMATE PLANT REGRESSION TESTS PASSED <<<                      ");
 console.log("================================================================================");

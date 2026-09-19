@@ -15,7 +15,7 @@
   const DRIVER_SECONDS = 105;
   const MATCH_SECONDS = AUTO_SECONDS + DRIVER_SECONDS;
   const ENDGAME_SECONDS = 10;
-  const MIDFIELD_HALF = 23.11;
+  const MIDFIELD_HALF = 23.11; // Diamond vertex distance, not axis-aligned half-width.
   const GOAL_RADIUS_IN = 4.25;
   const POINTS = Object.freeze({ alliancePin: 5, yellowPin: 10, midfieldRobot: 8, autonomousBonus: 12 });
 
@@ -24,103 +24,68 @@
   const centered = (x, y) => ({ x: x - HALF, y: y - HALF });
   const clone = value => JSON.parse(JSON.stringify(value));
 
+  // FO-1/FO-2 arrangement. Tile coordinates approximate Appendix A tolerances.
   const GOAL_LAYOUT = [
-    { id: "g-red-sw", type: "alliance", alliance: "red", x: 23.11, y: 23.11, height: 12 },
-    { id: "g-red-w", type: "alliance", alliance: "red", x: 46.66, y: 46.66, height: 12 },
-    { id: "g-neutral-se", type: "neutral", alliance: null, x: 93.75, y: 46.66, height: 12 },
-    { id: "g-blue-se", type: "alliance", alliance: "blue", x: 117.30, y: 23.11, height: 12 },
-    { id: "g-blue-e", type: "alliance", alliance: "blue", x: 117.30, y: 93.75, height: 12 },
-    { id: "g-neutral-ne", type: "neutral", alliance: null, x: 93.75, y: 117.30, height: 12 },
-    { id: "g-red-n", type: "alliance", alliance: "red", x: 46.66, y: 117.30, height: 12 },
-    { id: "g-neutral-sw", type: "neutral", alliance: null, x: 23.11, y: 93.75, height: 12 },
-    { id: "g-neutral-tall", type: "neutral", alliance: null, x: 70.20, y: 70.20, height: 24 }
-  ];
-
+    {id:"g-red-sw",alliance:"red",x:23.11,y:46.66,height:3.25},
+    {id:"g-red-s",alliance:"red",x:46.66,y:23.11,height:3.25},
+    {id:"g-blue-ne",alliance:"blue",x:117.29,y:93.74,height:3.25},
+    {id:"g-blue-n",alliance:"blue",x:93.74,y:117.29,height:3.25},
+    {id:"g-neutral-nw",alliance:null,x:46.66,y:117.29,height:5.8},
+    {id:"g-neutral-w",alliance:null,x:23.11,y:93.74,height:5.8},
+    {id:"g-neutral-se",alliance:null,x:93.74,y:23.11,height:5.8},
+    {id:"g-neutral-e",alliance:null,x:117.29,y:46.66,height:5.8},
+    {id:"g-neutral-tall",alliance:null,x:70.2,y:70.2,height:8.7}
+  ].map(g=>({...g,type:g.alliance?"alliance":"neutral"}));
   const TOGGLE_LAYOUT = [
-    { id: "toggle-west", quadrant: "west", x: 0, y: HALF - 4.0, wall: "north" },
-    { id: "toggle-east", quadrant: "east", x: 0, y: -HALF + 4.0, wall: "south" },
-    { id: "toggle-south", quadrant: "south", x: -HALF + 4.0, y: 0, wall: "west" },
-    { id: "toggle-north", quadrant: "north", x: HALF - 4.0, y: 0, wall: "east" }
+    {id:"toggle-north",quadrant:"north",x:0,y:HALF,wall:"north"},
+    {id:"toggle-south",quadrant:"south",x:0,y:-HALF,wall:"south"},
+    {id:"toggle-west",quadrant:"west",x:-HALF,y:0,wall:"west"},
+    {id:"toggle-east",quadrant:"east",x:HALF,y:0,wall:"east"}
   ];
-
-  const LOADER_LAYOUT = [
-    { id: "loader-red-west", alliance: "red", x: -58, y: 64, wall: "north" },
-    { id: "loader-red-east", alliance: "red", x: 58, y: 64, wall: "north" },
-    { id: "loader-blue-west", alliance: "blue", x: -58, y: -64, wall: "south" },
-    { id: "loader-blue-east", alliance: "blue", x: 58, y: -64, wall: "south" }
+  const LOADER_LAYOUT=[
+    {id:"loader-red-n",alliance:"red",x:-64,y:60},
+    {id:"loader-red-s",alliance:"red",x:-64,y:-60},
+    {id:"loader-blue-n",alliance:"blue",x:64,y:60},
+    {id:"loader-blue-s",alliance:"blue",x:64,y:-60}
   ];
-
-  function makePins() {
-    const pins = [];
-    let sequence = 1;
-    const add = (kind, allianceColor, location, x, y, visibleHalf) => {
-      pins.push({
-        id: "pin-" + String(sequence++).padStart(2, "0"),
-        kind,
-        color: kind === "yellow-yellow" ? "yellow" : allianceColor,
-        allianceColor: allianceColor || null,
-        halves: kind === "red-yellow" ? ["red", "yellow"] : kind === "blue-yellow" ? ["blue", "yellow"] : kind === "yellow-yellow" ? ["yellow", "yellow"] : ["red", "blue"],
-        visibleHalf: visibleHalf || allianceColor || "yellow",
-        visibleHalves: [visibleHalf || allianceColor || "yellow"],
-        location,
-        x, y,
-        status: "field",
-        placed: false,
-        goalId: null,
-        owner: null,
-        stackIndex: 0
-      });
+  function inventory(){
+    const pins=[],cups=[];
+    const pin=(halves,x,y,location="field",alliance=null,goalId=null)=>{
+      const id="pin-"+String(pins.length+1).padStart(2,"0");
+      pins.push({id,kind:halves.join("-"),halves,color:halves[0],allianceColor:alliance,
+        x,y,location,status:goalId?"placed":"field",placed:!!goalId,goalId,upIndex:0,visibleHalves:null});return id;
     };
-    for (let i = 0; i < 20; i++) {
-      const x = -60 + (i % 5) * 8;
-      const y = i < 10 ? 62 : 52 - Math.floor(i / 5) * 9;
-      add("red-yellow", "red", i < 12 ? "alliance-station" : "field", x, y, i % 2 ? "yellow" : "red");
+    const cup=(x,y,up="opaque",location="field",alliance=null)=>{
+      cups.push({id:"cup-"+String(cups.length+1).padStart(2,"0"),kind:"cup",halves:["opaque","transparent"],
+        up,x,y,location,alliance,status:"field",placed:false,goalId:null});
+    };
+    for(const [color,side] of [["red",-1],["blue",1]]){
+      for(let i=0;i<12;i++)pin([color,"yellow"],side*78,55-i*10,i<2?"preload":"alliance-station",color);
+      pin(["yellow","yellow"],side*84,0,"alliance-station",color);
+      for(let i=0;i<10;i++)cup(side*88,45-i*10,"opaque","alliance-station",color);
     }
-    for (let i = 0; i < 20; i++) {
-      const x = 60 - (i % 5) * 8;
-      const y = i < 10 ? -62 : -52 + Math.floor(i / 5) * 9;
-      add("blue-yellow", "blue", i < 12 ? "alliance-station" : "field", x, y, i % 2 ? "yellow" : "blue");
+    for(const [x,y] of [[-47.09,47.09],[-23.54,23.54],[23.54,-23.54],[47.09,-47.09]]){
+      cup(x,y,"transparent");
+      for(const [dx,dy,color] of [[0,5,"blue"],[5,0,"blue"],[0,-5,"red"],[-5,0,"red"]])pin([color,"yellow"],x+dx,y+dy);
     }
-    for (let i = 0; i < 19; i++) {
-      const a = (i / 19) * Math.PI * 2;
-      const radius = i < 4 ? 26 : 48;
-      const p = centered(70.2 + Math.cos(a) * radius, 70.2 + Math.sin(a) * radius);
-      add("yellow-yellow", null, i < 4 ? "goal" : "field", p.x, p.y, "yellow");
+    for(const a of [-23.54,23.54])for(const side of [-1,1]){
+      for(const d of [-8,0,8]){cup(a+d,side*68);cup(side*68,a+d);}
+      pin(["yellow","yellow"],a,side*68);pin(["yellow","yellow"],side*68,a);
     }
-    // Four red/blue pins are pre-placed around the midfield cup.
-    for (let i = 0; i < 4; i++) {
-      const a = i * Math.PI / 2;
-      const p = { x: Math.cos(a) * 18, y: Math.sin(a) * 18 };
-      add("red-blue", i % 2 === 0 ? "red" : "blue", "midfield", p.x, p.y, i % 2 === 0 ? "red" : "blue");
+    for(const a of [-47.09,-23.54,23.54,47.09]){cup(a,a,"transparent");pin(["yellow","yellow"],a,a);}
+    for(const [x,y,color] of [[-23.54,0,"red"],[0,-23.54,"red"],[23.54,0,"blue"],[0,23.54,"blue"]]){
+      cup(x,y,"transparent");pin([color,color==="red"?"blue":"red"],x,y);
     }
-    return pins;
-  }
-
-  function makeCups() {
-    const cups = [];
-    let sequence = 1;
-    const add = (kind, location, x, y) => cups.push({
-      id: "cup-" + String(sequence++).padStart(2, "0"),
-      kind, location, x, y, status: "field", placed: false, goalId: null, stackIndex: 0
-    });
-    for (let i = 0; i < 20; i++) add("opaque", "alliance-station", -60 + (i % 10) * 12, i < 10 ? 66 : -66);
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      add("opaque", "field", Math.cos(a) * 42, Math.sin(a) * 42);
-    }
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      add("transparent", "field", Math.cos(a) * 18, Math.sin(a) * 18);
-    }
-    return cups;
+    for(const g of GOAL_LAYOUT.filter(g=>!g.alliance)){const p=centered(g.x,g.y);pin(["yellow","yellow"],p.x,p.y,"goal",null,g.id);}
+    return {pins,cups};
   }
 
   function makeRobots() {
     return [
-      { id: "red-1", alliance: "red", x: -54, y: -54, theta: 0, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } },
-      { id: "red-2", alliance: "red", x: -54, y: 54, theta: 0, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } },
-      { id: "blue-1", alliance: "blue", x: 54, y: 54, theta: 180, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } },
-      { id: "blue-2", alliance: "blue", x: 54, y: -54, theta: 180, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } }
+      { id: "red-1", alliance: "red", x: -61.2, y: -40, theta: 0, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } },
+      { id: "red-2", alliance: "red", x: -61.2, y: 40, theta: 0, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } },
+      { id: "blue-1", alliance: "blue", x: 61.2, y: 40, theta: 180, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } },
+      { id: "blue-2", alliance: "blue", x: 61.2, y: -40, theta: 180, width: 18, length: 18, height: 18, perimeterContact: true, midfield: false, possession: { pinId: null, cupId: null } }
     ];
   }
 
@@ -145,9 +110,14 @@
       });
       this.toggles = TOGGLE_LAYOUT.map(t => ({ ...t, state: "yellow", seated: true, robotContact: false }));
       this.loaders = LOADER_LAYOUT.map(l => ({ ...l }));
-      this.cups = makeCups();
-      this.pins = makePins();
+      const objects=inventory();this.cups=objects.cups;this.pins=objects.pins;
+      for(const pin of this.pins.filter(p=>p.placed))this.goal(pin.goalId).stack.push({type:"pin",id:pin.id});
+      this.autoFrozen=false;this.finalScore=null;
       this.robots = makeRobots();
+      for(const robot of this.robots){
+        const preload=this.pins.find(p=>p.location==="preload"&&p.allianceColor===robot.alliance&&p.status!=="held");
+        preload.status="held";robot.possession.pinId=preload.id;
+      }
       this.events = [];
       return this.getState();
     }
@@ -168,7 +138,8 @@
       this.phase = "post_match";
       this.matchEnded = true;
       this.postMatchSeconds = 0;
-      this.evaluateAutonomousBonus();
+      if(!this.autoFrozen)this.freezeAutonomous();
+      this.finalScore=this.score();
     }
 
     tick(dt) {
@@ -178,7 +149,7 @@
         return this.getState();
       }
       this.clock = clamp(this.clock + dt, 0, MATCH_SECONDS);
-      if (this.clock >= AUTO_SECONDS && this.phase === "autonomous") this.phase = "driver";
+      if (this.clock >= AUTO_SECONDS && this.phase === "autonomous") {this.freezeAutonomous();this.phase = "driver";}
       if (this.clock >= MATCH_SECONDS) this.stopMatch();
       return this.getState();
     }
@@ -193,7 +164,7 @@
       robot.x = finite(pose.x, robot.x);
       robot.y = finite(pose.y, robot.y);
       robot.theta = finite(pose.theta, robot.theta);
-      robot.perimeterContact = Boolean(pose.perimeterContact);
+      robot.perimeterContact = this.touchesPerimeter(robot);
       robot.midfield = this.isInMidfield(robot);
       return { ok: true, robot: clone(robot) };
     }
@@ -205,17 +176,30 @@
       const width = finite(size.width, robot.width);
       const length = finite(size.length, robot.length);
       const height = finite(size.height, robot.height);
-      if (width > max || length > max || height > (this.phase === "pre_match" ? 18 : 50)) return { ok: false, error: "robot envelope exceeds Override limit" };
+      if (width <= 0 || length <= 0 || height <= 0 || width > max || length > max || height > (this.phase === "pre_match" ? 18 : 50)) return { ok: false, error: "invalid robot envelope" };
       robot.width = Math.max(0, width);
       robot.length = Math.max(0, length);
       robot.height = Math.max(0, height);
       robot.midfield = this.isInMidfield(robot);
+      robot.perimeterContact = this.touchesPerimeter(robot);
       return { ok: true, robot: clone(robot) };
     }
 
+    touchesPerimeter(robot) {
+      const a=robot.theta*Math.PI/180,c=Math.abs(Math.cos(a)),s=Math.abs(Math.sin(a));
+      return Math.abs(robot.x)+(robot.width*c+robot.length*s)/2>=HALF-1e-6 ||
+        Math.abs(robot.y)+(robot.width*s+robot.length*c)/2>=HALF-1e-6;
+    }
+
     isInMidfield(robot) {
-      const half = MIDFIELD_HALF + Math.max(robot.width, robot.length) / 2;
-      return Math.abs(robot.x) <= half && Math.abs(robot.y) <= half;
+      // Separating axis test: rotated robot rectangle against the midfield diamond.
+      const a=robot.theta*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+      const body=[[-1,-1],[-1,1],[1,1],[1,-1]].map(([u,v])=>({x:robot.x+u*robot.width/2*c+v*robot.length/2*s,y:robot.y-u*robot.width/2*s+v*robot.length/2*c}));
+      const diamond=[{x:MIDFIELD_HALF,y:0},{x:0,y:MIDFIELD_HALF},{x:-MIDFIELD_HALF,y:0},{x:0,y:-MIDFIELD_HALF}];
+      for(const [nx,ny] of [[1,1],[1,-1],[c,-s],[s,c]]){
+        const b=body.map(p=>p.x*nx+p.y*ny),d=diamond.map(p=>p.x*nx+p.y*ny);
+        if(Math.max(...b)<=Math.min(...d)||Math.max(...d)<=Math.min(...b))return false;
+      }return true;
     }
 
     setPossession(robotId, possession = {}) {
@@ -225,6 +209,8 @@
       const cupId = possession.cupId || null;
       if (pinId && this.robots.some(r => r.id !== robotId && r.possession.pinId === pinId)) return { ok: false, error: "pin already possessed" };
       if (cupId && this.robots.some(r => r.id !== robotId && r.possession.cupId === cupId)) return { ok: false, error: "cup already possessed" };
+      if(pinId&&(!this.pin(pinId)||this.pin(pinId).placed))return {ok:false,error:"pin unavailable"};
+      if(cupId&&(!this.cup(cupId)||this.cup(cupId).placed))return {ok:false,error:"cup unavailable"};
       robot.possession = { pinId, cupId };
       return { ok: true, possession: { ...robot.possession } };
     }
@@ -242,11 +228,61 @@
     pin(id) { return this.pins.find(p => p.id === id) || null; }
     cup(id) { return this.cups.find(c => c.id === id) || null; }
 
+    interact(robotId,action,kind="pin"){
+      const robot=this.robots.find(r=>r.id===robotId);
+      if(!robot||this.matchEnded)return {ok:false,error:"match ended or unknown robot"};
+      if(!["pin","cup"].includes(kind))return {ok:false,error:"unknown object type"};
+      const key=kind+"Id",objects=kind==="pin"?this.pins:this.cups;
+      const held=objects.find(o=>o.id===robot.possession[key]);
+      const near=(list,range)=>list.filter(o=>Math.hypot(o.x-robot.x,o.y-robot.y)<=range).sort((a,b)=>Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
+      if(action==="pickup"){
+        if(held)return {ok:false,error:"already holding this object type"};
+        const object=near(objects.filter(o=>o.status==="field"&&o.location!=="alliance-station"&&o.location!=="preload"),14);
+        if(!object)return {ok:false,error:"no reachable object"};
+        object.status="held";robot.possession[key]=object.id;return {ok:true};
+      }
+      if(action==="load"){
+        if(this.phase!=="driver")return {ok:false,error:"match loads are driver-period only"};
+        const loader=near(this.loaders.filter(l=>l.alliance===robot.alliance),18);
+        if(!loader)return {ok:false,error:"approach an alliance loader"};
+        const object=objects.find(o=>o.location==="alliance-station"&&(o.alliance||o.allianceColor)===robot.alliance);
+        if(!object)return {ok:false,error:"no match loads remain"};
+        if([...this.pins,...this.cups].some(o=>o.location==="field"&&Math.hypot(o.x-loader.x,o.y-loader.y)<3))return {ok:false,error:"loader outlet is occupied"};
+        object.location="field";object.status="field";object.x=loader.x;object.y=loader.y;return {ok:true};
+      }
+      if(action==="flip"){
+        if(!held)return {ok:false,error:"nothing held"};
+        if(kind==="pin")held.upIndex=1-held.upIndex;else held.up=held.up==="opaque"?"transparent":"opaque";
+        return {ok:true};
+      }
+      if(action==="drop"){
+        if(!held)return {ok:false,error:"nothing held"};
+        held.x=robot.x+10*Math.sin(robot.theta*Math.PI/180);held.y=robot.y+10*Math.cos(robot.theta*Math.PI/180);
+        held.status="field";held.location="field";robot.possession[key]=null;return {ok:true};
+      }
+      if(action==="place"){
+        if(!held)return {ok:false,error:"nothing held"};
+        const goal=near(this.goals,16);
+        if(!goal)return {ok:false,error:"no goal within reach"};
+        if(goal.alliance&&goal.alliance!==robot.alliance)return {ok:false,error:"opposing alliance goal is protected"};
+        const result=kind==="pin"?this.placePin(held.id,goal.id):this.placeCup(held.id,goal.id);
+        if(result.ok){held.x=goal.x;held.y=goal.y;robot.possession[key]=null;}return result;
+      }
+      if(action==="toggle"){
+        const toggle=near(this.toggles,16);if(!toggle)return {ok:false,error:"no toggle within reach"};
+        this.setToggle(toggle.id,robot.alliance);return {ok:true};
+      }
+      return {ok:false,error:"unknown action"};
+    }
+
     placePin(pinId, goalId, options = {}) {
       const pin = this.pin(pinId);
       const goal = this.goal(goalId);
       if (!pin || !goal) return { ok: false, error: "unknown scoring object or goal" };
-      if (pin.status === "placed" && !options.replace) return { ok: false, error: "pin already placed" };
+      if (pin.status === "placed") return { ok: false, error: "pin already placed" };
+      if(goal.stack.length&&goal.stack.at(-1).type!=="cup")return {ok:false,error:"a cup is needed above the previous pin"};
+      const visible=options.visibleHalves||(options.visibleHalf?[options.visibleHalf]:null);
+      if(visible){const available=[...pin.halves];for(const half of visible){const i=available.indexOf(half);if(i<0)return {ok:false,error:"invalid visible half"};available.splice(i,1);}}
       const stackIndex = goal.stack.length;
       pin.status = "placed";
       pin.placed = true;
@@ -269,7 +305,8 @@
       const cup = this.cup(cupId);
       const goal = this.goal(goalId);
       if (!cup || !goal) return { ok: false, error: "unknown scoring object or goal" };
-      if (cup.status === "placed" && !options.replace) return { ok: false, error: "cup already placed" };
+      if (cup.status === "placed") return { ok: false, error: "cup already placed" };
+      if(!goal.stack.length||goal.stack.at(-1).type!=="pin")return {ok:false,error:"cup needs a supporting pin"};
       cup.status = "placed";
       cup.placed = true;
       cup.goalId = goalId;
@@ -281,21 +318,25 @@
 
     ownerForPin(pin, goal) {
       if (!pin.halves.includes("yellow")) return pin.allianceColor || null;
-      if (Math.abs(goal.x) <= MIDFIELD_HALF && Math.abs(goal.y) <= MIDFIELD_HALF) {
+      if (Math.abs(goal.x)+Math.abs(goal.y) < MIDFIELD_HALF) {
         const red = this.robots.filter(r => r.alliance === "red" && this.isInMidfield(r)).length;
         const blue = this.robots.filter(r => r.alliance === "blue" && this.isInMidfield(r)).length;
         return red === blue ? null : red > blue ? "red" : "blue";
       }
-      const quadrant = goal.x < 0 ? (goal.y < 0 ? "west" : "north") : (goal.y < 0 ? "south" : "east");
+      const quadrant = Math.abs(goal.x)>Math.abs(goal.y)?(goal.x<0?"west":"east"):(goal.y<0?"south":"north");
       const toggle = this.toggles.find(t => t.quadrant === quadrant);
       return toggle && (toggle.state === "red" || toggle.state === "blue") ? toggle.state : null;
     }
 
-    pinScore(pin, goal) {
+    pinScore(pin, goal, includeMidfield=true) {
       const totals = { red: 0, blue: 0 };
       if (!pin || !pin.placed || !goal) return { alliance: null, points: 0, totals };
-      const visibleHalves = Array.isArray(pin.visibleHalves) ? pin.visibleHalves : [pin.visibleHalf];
-      const yellowOwner = pin.halves.includes("yellow") ? this.ownerForPin(pin, goal) : null;
+      const index=goal.stack.findIndex(item=>item.id===pin.id),below=goal.stack[index-1],above=goal.stack[index+1];
+      const visibleHalves = Array.isArray(pin.visibleHalves) ? pin.visibleHalves : pin.halves.filter((half,i)=>{
+        const top=i===pin.upIndex;
+        return top?(!above||this.cup(above.id)?.up==="opaque"):(!below||this.cup(below.id)?.up==="transparent");
+      });
+      const yellowOwner = pin.halves.includes("yellow") && (includeMidfield||Math.abs(goal.x)+Math.abs(goal.y)>=MIDFIELD_HALF) ? this.ownerForPin(pin, goal) : null;
       for (const half of visibleHalves) {
         if (half === "red" || half === "blue") totals[half] += POINTS.alliancePin;
         else if (half === "yellow" && yellowOwner) totals[yellowOwner] += POINTS.yellowPin;
@@ -312,25 +353,16 @@
       for (const goal of this.goals) {
         for (const item of goal.stack) {
           if (item.type !== "pin") continue;
-          const result = this.pinScore(this.pin(item.id), goal);
+          const result = this.pinScore(this.pin(item.id), goal, includeMidfield);
           score.red += result.totals.red;
           score.blue += result.totals.blue;
-        }
-      }
-      if (!includeMidfield) {
-        for (const goal of this.goals.filter(g => Math.abs(g.x) <= MIDFIELD_HALF && Math.abs(g.y) <= MIDFIELD_HALF)) {
-          for (const item of goal.stack) {
-            if (item.type !== "pin") continue;
-            const result = this.pinScore(this.pin(item.id), goal);
-            score.red -= result.totals.red;
-            score.blue -= result.totals.blue;
-          }
         }
       }
       return score;
     }
 
     score() {
+      if(this.finalScore)return {...this.finalScore};
       const score = this.scorePins(true);
       for (const robot of this.robots) if (robot.midfield) score[robot.alliance] += POINTS.midfieldRobot;
       score.red += this.autonomousBonus.red;
@@ -339,7 +371,9 @@
     }
 
     evaluateAutonomousBonus() {
+      if(this.autoFrozen)return {...this.autonomousBonus};
       const score = this.scorePins(false);
+      this.autonomousScores={...score};
       if (score.red === score.blue) this.autonomousBonus = { red: 6, blue: 6 };
       else this.autonomousBonus = score.red > score.blue ? { red: POINTS.autonomousBonus, blue: 0 } : { red: 0, blue: POINTS.autonomousBonus };
       if (this.violations.red && this.violations.blue) this.autonomousBonus = { red: 0, blue: 0 };
@@ -348,12 +382,25 @@
       return { ...this.autonomousBonus };
     }
 
+    freezeAutonomous(){
+      if(this.autoFrozen)return;
+      this.evaluateAutonomousBonus();this.qualifiesAWP("red",this.world==="worlds");this.qualifiesAWP("blue",this.world==="worlds");this.autoFrozen=true;
+    }
     qualifiesAWP(alliance, worlds = false) {
+      if(this.autoFrozen)return this.awp[alliance];
       const requiredPins = worlds ? 7 : 6;
       const requiredGoals = worlds ? 3 : 2;
       const allianceRobots = this.robots.filter(r => r.alliance === alliance);
-      const scoredPins = this.goals.reduce((n, goal) => n + goal.stack.filter(item => item.type === "pin" && this.pinScore(this.pin(item.id), goal).totals[alliance] > 0).length, 0);
-      const goals = this.goals.filter(goal => goal.stack.filter(item => item.type === "pin" && this.pinScore(this.pin(item.id), goal).totals[alliance] > 0).length >= 2).length;
+      const eligible=this.goals.filter(g=>alliance==="red"?g.x+g.y<=0:g.x+g.y>=0);
+      // SC3 defines a scored Pin as a visible half, not a physical two-half object.
+      const count=goal=>goal.stack.reduce((n,item)=>{
+        if(item.type!=="pin")return n;
+        const p=this.pin(item.id),v=this.pinScore(p,goal,false).totals[alliance];
+        const copy={...p,halves:p.halves.map(h=>h==="yellow"?"none":h),visibleHalves:p.visibleHalves?.map(h=>h==="yellow"?"none":h)};
+        const colored=this.pinScore(copy,goal,false).totals[alliance];return n+colored/5+(v-colored)/10;
+      },0);
+      const scoredPins=eligible.reduce((n,g)=>n+count(g),0);
+      const goals=eligible.filter(g=>count(g)>=2).length;
       const clearPerimeter = allianceRobots.every(r => !r.perimeterContact);
       const qualifies = scoredPins >= requiredPins && goals >= requiredGoals && clearPerimeter && !this.violations[alliance];
       this.awp[alliance] = qualifies;

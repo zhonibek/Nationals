@@ -7,7 +7,9 @@
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include <new>
 #include "lemlib/chassis/odom.hpp"
+#include "subsystems/control/HolonomicMotion.hpp"
 
 namespace lemlib {
 
@@ -32,7 +34,7 @@ LTVPathFollower::LTVPathFollower(Chassis& chassis, pros::MotorGroup& leftMotors,
     : chassis(chassis),
       leftMotors(leftMotors),
       rightMotors(rightMotors),
-      controller(config) {
+      controller(config), velocityConfig(config) {
     // 3.25" wheel: circumference = pi * 3.25 * 0.0254 = 0.259339 m
     double wheelDiameterMeters = config.wheelDiameterMeters*config.externalGearRatio;
     rpm_to_mps_factor = (M_PI * wheelDiameterMeters) / 60.0f;
@@ -53,11 +55,13 @@ void LTVPathFollower::followPath(const std::string& path_name, const ltvConfig& 
     cancel_request = false;
     distance_traveled_inches = 0.0f;
 
-    TaskParams* params = new TaskParams{this, path_name, l_config, {}};
-    task = new pros::Task(task_trampoline, params, "LTVTask");
+    TaskParams* params = new (std::nothrow) TaskParams{this, path_name, l_config, {}};
+    task = params ? new (std::nothrow) pros::Task(task_trampoline, params, "LTVTask") : nullptr;
     
-    if (task == nullptr) {
+    if (task == nullptr || static_cast<pros::task_t>(*task) == nullptr) {
         delete params;
+        delete task; task=nullptr;
+        result=MotionResult::Busy;
         is_running = false;
         std::cout << "[LTV] Failed to start task!" << std::endl;
         return;
@@ -78,11 +82,13 @@ void LTVPathFollower::followTrajectory(const std::vector<State>& trajectory, con
     cancel_request = false;
     distance_traveled_inches = 0.0f;
 
-    TaskParams* params = new TaskParams{this, "", l_config, trajectory};
-    task = new pros::Task(task_trampoline, params, "LTVTask");
+    TaskParams* params = new (std::nothrow) TaskParams{this, "", l_config, trajectory};
+    task = params ? new (std::nothrow) pros::Task(task_trampoline, params, "LTVTask") : nullptr;
     
-    if (task == nullptr) {
+    if (task == nullptr || static_cast<pros::task_t>(*task) == nullptr) {
         delete params;
+        delete task; task=nullptr;
+        result=MotionResult::Busy;
         is_running = false;
         std::cout << "[LTV] Failed to start task!" << std::endl;
         return;
@@ -147,6 +153,7 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
     struct Completion {std::atomic<bool>& running;~Completion(){running=false;}} completion{is_running};
 
     if (abortAuton) {
+        result=MotionResult::Cancelled;
         is_running = false;
         return;
     }
@@ -165,7 +172,7 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
         return;
     }
 
-    if(chassis.getDrivebaseType()!=DrivebaseType::TANK || !std::isfinite(rpm_to_mps_factor)||rpm_to_mps_factor<=0) {result=MotionResult::InvalidInput;return;}
+    if(chassis.getDrivebaseType()==DrivebaseType::MECANUM || !std::isfinite(rpm_to_mps_factor)||rpm_to_mps_factor<=0) {result=MotionResult::InvalidInput;return;}
     for(size_t i=0;i<trajectory.size();++i) {
         const auto& t=trajectory[i];const double values[]={t.x,t.y,t.heading,t.linear_vel,t.angular_vel,t.time};
         for(double v:values) if(!std::isfinite(v)) {result=MotionResult::InvalidInput;return;}
@@ -178,7 +185,7 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
         double start_theta = l_config.backwards ? trajectory[0].heading + M_PI : trajectory[0].heading;
         double gps_start_theta = M_PI_2 - start_theta;
         chassis.setPose(trajectory[0].x / INCH_TO_METER, trajectory[0].y / INCH_TO_METER, lemlib::radToDeg(gps_start_theta));
-    } else if (l_config.turnFirst) {
+    } else if (l_config.turnFirst && chassis.getDrivebaseType()!=DrivebaseType::XDRIVE) {
         double start_theta = l_config.backwards ? trajectory[0].heading + M_PI : trajectory[0].heading;
         double gps_target = lemlib::radToDeg(M_PI_2 - start_theta);
         chassis.turnToHeading(gps_target, 1000);
@@ -186,6 +193,43 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
     }
 
     if(cancel_request) {result=MotionResult::Cancelled;return;}
+    if(chassis.getDrivebaseType()==DrivebaseType::XDRIVE){
+        auto config=l_config.xdriveControl;
+        const auto hardware=nationals::configuredCascade();
+        config.radius=hardware.radius;config.maxWheelSpeed=hardware.maxWheelSpeed;
+        config.kS=velocityConfig.KS_straight;config.kA=velocityConfig.KA_straight;
+        config.kV=velocityConfig.kV;config.wheelKp=velocityConfig.KP_straight;config.wheelKi=velocityConfig.KI_straight;
+        config.maxVoltage=velocityConfig.max_voltage;
+        if(l_config.turnFirst && !l_config.test){
+            const auto p=chassis.getPose(true);
+            const nationals::Pose start{p.x*INCH_TO_METER,p.y*INCH_TO_METER,p.theta};
+            const nationals::Pose end{start.x,start.y,M_PI_2-trajectory.front().heading+(l_config.backwards?M_PI:0)};
+            const double seconds=nationals::duration(start,end);
+            result=nationals::followReference(leftMotors,rightMotors,velocityConfig.wheelDiameterMeters,
+                velocityConfig.externalGearRatio,config,seconds,seconds+l_config.settleTimeout,
+                [&](double time){return nationals::pointReference(start,end,time,seconds);},
+                [&]{return cancel_request.load();});
+            if(result!=MotionResult::Settled)return;
+            result=MotionResult::Running;
+        }
+        size_t index=0; auto previousPose=chassis.getPose();
+        result=nationals::followReference(leftMotors,rightMotors,velocityConfig.wheelDiameterMeters,
+            velocityConfig.externalGearRatio,config,trajectory.back().time,
+            trajectory.back().time+l_config.settleTimeout,[&](double time){
+                while(index+1<trajectory.size()&&trajectory[index+1].time<=time)++index;
+                auto s=trajectory[index];
+                if(index+1<trajectory.size()){
+                    const auto& b=trajectory[index+1];double q=std::clamp((time-s.time)/(b.time-s.time),0.0,1.0);
+                    s.x+=(b.x-s.x)*q;s.y+=(b.y-s.y)*q;s.heading+=std::remainder(b.heading-s.heading,2*M_PI)*q;
+                    s.linear_vel+=(b.linear_vel-s.linear_vel)*q;s.angular_vel+=(b.angular_vel-s.angular_vel)*q;
+                }
+                if(time>=trajectory.back().time){s.linear_vel=0;s.angular_vel=0;}
+                const double h=M_PI_2-s.heading+(l_config.backwards?M_PI:0);
+                auto p=chassis.getPose();distance_traveled_inches+=previousPose.distance(p);previousPose=p;
+                return nationals::Reference{{s.x,s.y,h},s.linear_vel*std::cos(s.heading),s.linear_vel*std::sin(s.heading),-s.angular_vel};
+            },[&]{return cancel_request.load();});
+        return;
+    }
     driveOutput().configure(&leftMotors,&rightMotors);
     const uint32_t token=driveOutput().acquire();
     if(!token) {result=getOdomStatus().valid?MotionResult::Busy:MotionResult::SensorFault;return;}
@@ -353,7 +397,7 @@ void LTVPathFollower::followPathImpl(const std::string& path_name, const ltvConf
         output_voltages.leftVoltage = clamp(output_voltages.leftVoltage, -12.0, 12.0);
 
         if(!std::isfinite(left_actual_mps)||!std::isfinite(right_actual_mps)) {result=MotionResult::SensorFault;break;}
-        if(!driveOutput().tank(token,output_voltages.leftVoltage*127/12,output_voltages.rightVoltage*127/12)) {result=MotionResult::SensorFault;break;}
+        if(!driveOutput().voltage(token,output_voltages.leftVoltage,output_voltages.rightVoltage)) {result=MotionResult::SensorFault;break;}
         
         if (l_config.log && i % 5 == 0) {
             std::ostringstream ss;

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IRAlib — VEX V5 Holonomic Robot & 3D Field Emulator (Jerry.io Planner)</title>
-  <meta name="description" content="Фотореалистичный 2D/3D симулятор соревновательного поля VEX V5RC Override и робота Holonomic X-Drive со встроенным интерактивным планировщиком траекторий Jerry.io.">
+  <title>Nationals — LTV-LQR + PID · Override simulator</title>
+  <meta name="description" content="Исследовательский 2D/3D симулятор соревновательного поля VEX V5RC Override и робота Holonomic X-Drive со встроенным интерактивным планировщиком траекторий Jerry.io.">
   
   <!-- Three.js, OrbitControls, and 3D Model Loaders -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -12,7 +12,8 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-  <script src="override.js"></script>
+  <script src="override.js?v=cascade-20260919"></script>
+  <script src="override-view.js?v=cascade-20260919"></script>
   
   <link rel="stylesheet" href="simulator.css">
 </head>
@@ -21,21 +22,21 @@
   <!-- Top Header -->
   <header class="app-header">
     <div class="brand-group">
-      <div class="brand-badge">IRA v2.0-PRO</div>
+      <div class="brand-badge">NATIONALS</div>
       <div class="brand-title">
-        IRAlib <span>Holonomic X-Drive & 3D Field Visualizer</span>
+        LTV-LQR + PID <span>X-Drive · Override</span>
       </div>
     </div>
     
     <!-- 2D / 3D Mode Switcher -->
     <div class="view-mode-tabs">
       <button id="tab2D" class="view-tab active">🗺️ 2D Тактический</button>
-      <button id="tab3D" class="view-tab">🎮 3D Реалистичный</button>
+      <button id="tab3D" class="view-tab">🎮 3D</button>
     </div>
 
     <div class="header-status">
       <div class="badge pulse">DRIVE: HOLONOMIC X-DRIVE</div>
-      <div class="badge">DARE LTV-LQR: ACTIVE</div>
+      <div class="badge" id="controlStatus">Loading C++ controller…</div>
       <div class="badge">EKF: 5-STATE</div>
     </div>
   </header>
@@ -55,22 +56,24 @@
           <div class="select-wrapper" id="routineSelectWrapper">
             <select id="routineSelect" title="Выберите автономную программу">
               <optgroup label="🌟 Holonomic 3-DOF Автономки">
-                <option value="autoHolonomicSkills" selected>Holonomic Skills (Strafes + Splines)</option>
-                <option value="autoHolonomicRedAWP">Holo Red Solo AWP (Lateral Flank)</option>
-                <option value="autoHolonomicGoalRush">Holo Goal Rush (Diagonal Dash)</option>
+                <option value="competitionAutonomous" selected>Competition: сплайн → возврат (C++)</option>
+                <option value="autoHolonomicSkills">Holonomic Skills (Strafes + Splines)</option>
+                <option value="autoHolonomicRedAWP">Старый маршрут Red (стрейф)</option>
+                <option value="autoHolonomicGoalRush">Старый маршрут Rush (диагональ)</option>
               </optgroup>
               <optgroup label="🏆 Классические соревновательные">
-                <option value="autoSkills">Skills 60s (Discrete LQR + Splines)</option>
-                <option value="autoRedAWP">Red Alliance Solo AWP (Win Point)</option>
-                <option value="autoBlueAWP">Blue Alliance Solo AWP (Mirrored)</option>
-                <option value="autoHybridDemo">Hybrid Demo (Spline + LQR + PID)</option>
+                <option value="autoSkills">Маршрут Skills (каскад)</option>
+                <option value="autoRedAWP">Старый маршрут Red (не AWP Override)</option>
+                <option value="autoBlueAWP">Старый маршрут Blue (не AWP Override)</option>
+                <option value="autoHybridDemo">Сценарий: сплайн и точки (каскад)</option>
               </optgroup>
-              <optgroup label="🛠️ Калибровочные тесты (main.cpp)">
-                <option value="testTrackWidth">[ A ] Track Width 360° Spin</option>
+              <optgroup label="🛠️ Тесты каскадного движения">
+                <option value="testTrackWidth">Поворот 180° и возврат</option>
                 <option value="testLinearDrive">[ B ] 24" Linear Drive Test</option>
                 <option value="testAngularTurn">[ Y ] 90° Turn Snap Test</option>
-                <option value="testQuinticSpline">[ RIGHT ] Jerk-Limited Quintic Spline</option>
-                <option value="testFeedforward">[ DOWN ] kS Static Friction Ramping</option>
+                <option value="testQuinticSpline">Quintic spline</option>
+                <option value="testBezier">Pedro Bézier → LTV-LQR → PID</option>
+                <option value="testDiagonal">Диагональ 24″</option>
               </optgroup>
             </select>
           </div>
@@ -147,6 +150,18 @@
         </div>
       </div>
 
+      <div class="viewport-toolbar" style="flex-wrap:wrap">
+        <label>Робот <select id="gameRobot"><option>red-1</option><option>red-2</option><option>blue-1</option><option>blue-2</option></select></label>
+        <label>Предмет <select id="gameObject"><option value="pin">Pin</option><option value="cup">Cup</option></select></label>
+        <button class="btn btn-secondary" data-game-action="pickup">Взять</button>
+        <button class="btn btn-secondary" data-game-action="load">Match Load</button>
+        <button class="btn btn-secondary" data-game-action="flip">Перевернуть</button>
+        <button class="btn btn-secondary" data-game-action="place">Поставить в цель</button>
+        <button class="btn btn-secondary" data-game-action="drop">Положить</button>
+        <button class="btn btn-secondary" data-game-action="toggle">Переключить Toggle</button>
+        <span id="gameFeedback" role="status">Для игры нажмите Override. Действия требуют близости к предмету.</span>
+      </div>
+      <p style="padding:0 1rem;color:#94a3b8;font-size:.8rem">LTV-LQR → PID скорости колёс + feedforward. Геометрия поля и захват предметов приближённые; это исследовательская модель, не проверенная копия официального поля.</p>
       <!-- Jerry.io Waypoints Panel -->
       <div id="jerryPanel" class="jerry-panel">
         <div class="jerry-header">
@@ -270,7 +285,7 @@
           <div class="ctrl-btn-grid">
             <button class="ctrl-btn" id="btnCtrlA">
               [ A ]
-              <small>360° Spin</small>
+              <small>Стоп</small>
             </button>
             <button class="ctrl-btn" id="btnCtrlB">
               [ B ]
@@ -282,7 +297,7 @@
             </button>
             <button class="ctrl-btn" id="btnCtrlX">
               [ X ]
-              <small>LQR/PID</small>
+              <small>Стрейф 24″</small>
             </button>
 
             <button class="ctrl-btn" id="btnCtrlUP">
@@ -291,11 +306,11 @@
             </button>
             <button class="ctrl-btn" id="btnCtrlRIGHT">
               [ RIGHT ]
-              <small>5th Spline</small>
+              <small>Bézier</small>
             </button>
             <button class="ctrl-btn" id="btnCtrlDOWN">
               [ DOWN ]
-              <small>kS Calib</small>
+              <small>Диагональ</small>
             </button>
             <button class="ctrl-btn" id="btnCtrlL1" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white;">
               [ L1 ]
@@ -318,7 +333,7 @@
       </div>
       <div class="modal-body">
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-          Скопируйте сгенерированную функцию и вставьте ее в <code>src/main.cpp</code>. Код использует holonomic команды, сплайны и LQR повороты:
+          Скопируйте сгенерированную функцию и вставьте ее в <code>src/main.cpp</code>. Код использует holonomic команды, сплайны и каскадные повороты:
         </p>
         <div id="cppCodePreview" class="code-preview-box">// Код генерируется...</div>
       </div>
@@ -339,6 +354,8 @@
     </div>
   </footer>
 
-  <script src="simulator.js"></script>
+  <script src="robot-config.js?v=cascade-20260919"></script>
+  <script src="control-runtime.js?v=cascade-20260919"></script>
+  <script src="simulator.js?v=cascade-20260919"></script>
 </body>
 </html>

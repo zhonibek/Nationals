@@ -7,7 +7,7 @@ global.document = { getElementById: () => null, addEventListener: () => {} };
 const simCode = fs.readFileSync(__dirname + '/simulator.js', 'utf8');
 vm.runInThisContext(simCode.split('document.addEventListener')[0]);
 
-const sim = new VexRobotSimulator();
+const sim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 sim.setPose(24, 24, 0);
 
 sim.queueAction({ type: "diagonal", forwardInches: 0, strafeInches: -24, endHeading: 0, timeout: 3000, desc: "Strafe Left" });

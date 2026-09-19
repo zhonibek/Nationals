@@ -9,6 +9,7 @@
 #include "lemlib/chassis/chassis.hpp"
 #include "subsystems/VelocityController.hpp"
 #include "subsystems/ltv/State.hpp"
+#include "subsystems/control/Cascade.hpp"
 #include "Eigen/Dense"
 
 namespace lemlib {
@@ -20,6 +21,9 @@ constexpr double METER_TO_INCH = 1.0 / 0.0254;
  * @brief Configuration parameters for the Linear Time-Varying (LTV) LQR path follower
  */
 struct ltvConfig {
+    // Three-input X-drive model. Differential Q/R fields below describe the
+    // original two-input tank model and are intentionally separate.
+    nationals::Config xdriveControl{};
     // Forward state error penalty weights (Q diagonal)
     float q_x = 2.0f;
     float q_y = 7.0f;
@@ -121,6 +125,7 @@ private:
     pros::MotorGroup& leftMotors;
     pros::MotorGroup& rightMotors;
     VelocityController controller;
+    VelocityControllerConfig velocityConfig;
 
     float rpm_to_mps_factor;
     std::atomic<bool> is_running{false};

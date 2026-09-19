@@ -11,7 +11,7 @@ const simCode = fs.readFileSync(__dirname + '/simulator.js', 'utf8');
 const headlessCode = simCode.split('document.addEventListener')[0];
 vm.runInThisContext(headlessCode);
 
-const sim = new VexRobotSimulator();
+const sim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
 sim.buildLinearDriveTest(24.0);
 sim.isRunning = true;
 

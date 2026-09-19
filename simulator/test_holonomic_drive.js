@@ -67,7 +67,7 @@ function instantaneousTurnCenter(sim) {
 }
 
 function testStraightFieldLineWhileTurning() {
-  const sim = new VexRobotSimulator();
+  const sim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
   sim.setPose(0, -45, 0);
   const samples = [];
   const fieldForwardVolts = 4.5;
@@ -107,7 +107,7 @@ function testStraightFieldLineWhileTurning() {
 }
 
 function testConstantTwistIsSmoothCircularArc() {
-  const sim = new VexRobotSimulator();
+  const sim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
   sim.setPose(-30, 0, 0);
   const samples = [];
 
@@ -143,7 +143,7 @@ function testConstantTwistIsSmoothCircularArc() {
 }
 
 function testSmoothHolonomicZigZag() {
-  const sim = new VexRobotSimulator();
+  const sim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));
   sim.setPose(0, -45, 0);
   const samples = [];
 

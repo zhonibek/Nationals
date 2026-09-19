@@ -36,7 +36,7 @@ class Pose {
          * lemlib::Pose poseB(5.2, 22); // x and y position, heading defaults to 0
          * @endcode
          */
-        Pose(float x, float y, float theta = 0);
+        Pose(float x, float y, float theta = 0) : x(x), y(y), theta(theta) {}
         /**
          * @brief Add a pose to this pose
          *

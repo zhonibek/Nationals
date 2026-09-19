@@ -57,6 +57,24 @@ bool DriveOutput::wheels(uint32_t token,float fl,float bl,float fr,float br,floa
 bool DriveOutput::holonomic(uint32_t token,float f,float s,float t,float cap) {
     return wheels(token,f+s+t,f-s+t,f-s-t,f+s-t,cap);
 }
+bool DriveOutput::voltage(uint32_t token,float l,float r) {
+    Lock guard(mutex);
+    if(!allowed(token)) return false;
+    if(!std::isfinite(l)||!std::isfinite(r)){zero();owner=0;return false;}
+    bool ok=left->move_voltage(static_cast<int>(std::clamp(l,-12.f,12.f)*1000))!=PROS_ERR;
+    ok=(right->move_voltage(static_cast<int>(std::clamp(r,-12.f,12.f)*1000))!=PROS_ERR)&&ok;
+    if(!ok){zero();owner=0;}lastWrite=pros::millis();return ok;
+}
+bool DriveOutput::wheelVoltages(uint32_t token,const double volts[4]) {
+    Lock guard(mutex);
+    if(!allowed(token)) return false;
+    if(!volts||left->size()!=2||right->size()!=2){zero();owner=0;return false;}
+    for(int i=0;i<4;++i)if(!std::isfinite(volts[i])){zero();owner=0;return false;}
+    auto lp=left->get_port_all(),rp=right->get_port_all();
+    const int ports[]={lp[0],lp[1],rp[0],rp[1]};bool ok=true;
+    for(int i=0;i<4;++i)ok=(pros::c::motor_move_voltage(ports[i],static_cast<int>(std::clamp(volts[i],-12.0,12.0)*1000))!=PROS_ERR)&&ok;
+    if(!ok){zero();owner=0;}lastWrite=pros::millis();return ok;
+}
 void DriveOutput::release(uint32_t token) { Lock guard(mutex); if(token && owner==token) { zero(); owner=0; } }
 void DriveOutput::stop() { Lock guard(mutex); zero(); owner=0; }
 void DriveOutput::watchdog() {

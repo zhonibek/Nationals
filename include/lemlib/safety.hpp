@@ -17,12 +17,14 @@ public:
 };
 enum class MotionResult { Idle, Running, Settled, Chained, Cancelled, TimedOut, SensorFault, InvalidInput, Busy };
 // Exactly one lease may write the drivetrain. A revoked token can never restart it.
-// All commands use power units [-127,127]; conversion happens only after validation.
+// Power APIs use [-127,127]; voltage APIs use volts [-12,12].
 class DriveOutput {
 public:
     bool configure(pros::MotorGroup* left, pros::MotorGroup* right);
     uint32_t acquire(bool requireOdometry = true);
     bool tank(uint32_t token, float left, float right);
+    bool voltage(uint32_t token, float leftVolts, float rightVolts);
+    bool wheelVoltages(uint32_t token, const double volts[4]);
     bool holonomic(uint32_t token, float forward, float right, float clockwise, float cap = 127);
     bool wheels(uint32_t token, float fl, float bl, float fr, float br, float cap = 127);
     void release(uint32_t token);

@@ -3,12 +3,6 @@
 
 #include "lemlib/pose.hpp"
 
-lemlib::Pose::Pose(float x, float y, float theta) {
-    this->x = x;
-    this->y = y;
-    this->theta = theta;
-}
-
 lemlib::Pose lemlib::Pose::operator+(const lemlib::Pose& other) const {
     return lemlib::Pose(this->x + other.x, this->y + other.y, this->theta);
 }

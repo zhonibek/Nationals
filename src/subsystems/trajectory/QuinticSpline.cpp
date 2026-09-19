@@ -1,10 +1,10 @@
 #include "subsystems/trajectory/QuinticSpline.hpp"
-#include "lemlib/util.hpp"
 #include <cmath>
 #include <algorithm>
 #include <array>
 
 namespace lemlib {
+constexpr double INCH_TO_METER=0.0254;
 
 std::vector<State> QuinticSplineGenerator::generateTrajectory(const SplineWaypoints& params, double dt) {
     const double values[]={dt,params.start.x,params.start.y,params.start.theta,params.end.x,params.end.y,params.end.theta,params.maxVel,params.maxAccel,params.maxJerk,params.startVel,params.endVel};
@@ -14,11 +14,11 @@ std::vector<State> QuinticSplineGenerator::generateTrajectory(const SplineWaypoi
     // Convert start and end poses from inches to meters
     double x0 = params.start.x * INCH_TO_METER;
     double y0 = params.start.y * INCH_TO_METER;
-    double theta0 = degToRad(params.start.theta);
+    double theta0 = params.start.theta * M_PI / 180;
 
     double x1 = params.end.x * INCH_TO_METER;
     double y1 = params.end.y * INCH_TO_METER;
-    double theta1 = degToRad(params.end.theta);
+    double theta1 = params.end.theta * M_PI / 180;
 
     double dist = std::hypot(x1 - x0, y1 - y0);
     if (dist < 1e-3) {
