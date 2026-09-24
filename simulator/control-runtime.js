@@ -2,7 +2,8 @@
 (function(root){
   'use strict';
   class ProductionControl {
-    constructor(instance){this.e=instance.exports;this.e._initialize?.();this.reset();}
+    constructor(instance,module){this.module=module;this.e=instance.exports;this.e._initialize?.();this.reset();}
+    fork(){return ProductionControl.fromModule(this.module);}
     get buffer(){return new Float64Array(this.e.memory.buffer,this.e.control_buffer(),64);}
     reset(){this.e.control_reset();}
     configure(radius,speed){this.e.control_config(radius,speed,12/speed);}
@@ -28,7 +29,7 @@
     static fromModule(module){
       // No filesystem/clock/random imports are permitted in the control module.
       const wasi={proc_exit(code){throw Error(`C++ abort ${code}`);},fd_close(){return 8;},fd_seek(){return 8;},fd_write(){return 8;}};
-      return new ProductionControl(new WebAssembly.Instance(module,{wasi_snapshot_preview1:wasi}));
+      return new ProductionControl(new WebAssembly.Instance(module,{wasi_snapshot_preview1:wasi}),module);
     }
   }
   root.ProductionControl=ProductionControl;

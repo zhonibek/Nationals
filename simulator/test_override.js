@@ -1,6 +1,6 @@
 "use strict";
 const assert=require("node:assert/strict"),Game=require("./override");
-const game=new Game();
+const game=new Game({physical:false});
 assert(game.robots.every(r=>game.touchesPerimeter(r)));
 assert.equal(game.touchesPerimeter({x:59,y:0,theta:45,width:18,length:18}),true);
 assert.equal(game.touchesPerimeter({x:59,y:0,theta:0,width:18,length:18}),false);
@@ -29,7 +29,7 @@ game.setToggle("toggle-north","blue");
 for(let i=0;i<105;i++)game.tick(1);
 assert.deepEqual(game.autonomousBonus,{red:12,blue:0},"Driver actions cannot rewrite autonomous bonus");
 const final=game.score();game.setRobotPose("blue-1",{x:0,y:0});assert.deepEqual(game.score(),final);
-const midfield=new Game(),cup=midfield.cups[0];
+const midfield=new Game({physical:false}),cup=midfield.cups[0];
 assert(midfield.placeCup(cup.id,"g-neutral-tall").ok);
 const mixed=midfield.pins.find(p=>p.halves.includes("red")&&p.location==="field");
 assert(midfield.placePin(mixed.id,"g-neutral-tall",{visibleHalves:["red","yellow"]}).ok);
@@ -38,7 +38,7 @@ assert.equal(midfield.scorePins(false).red,5,"Auto excludes midfield yellow owne
 assert(midfield.scorePins(true).red>5);
 assert.equal(midfield.isInMidfield({x:30,y:30,theta:0,width:2,length:2}),false);
 assert.equal(midfield.isInMidfield({x:23,y:0,theta:0,width:2,length:2}),true);
-const g=new Game();g.startMatch();g.setRobotPose("red-1",{x:-64,y:60});
+const g=new Game({physical:false});g.startMatch();g.setRobotPose("red-1",{x:-64,y:60});
 assert.equal(g.interact("red-1","load","cup").ok,false);
 for(let i=0;i<15;i++)g.tick(1);
 assert(g.interact("red-1","load","cup").ok);

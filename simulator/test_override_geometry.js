@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const Game=require('./override'),G=require('./override-geometry');
 const close=(a,b)=>assert(Math.abs(a-b)<1e-7,`${a} != ${b}`);
-const initial=new Game();
+const initial=new Game({physical:false});
 assert.equal(initial.pins.filter(p=>p.lying).length,16);
 assert.equal(initial.pins.filter(p=>p.supportId).length,16);
 for(const pin of initial.pins.filter(p=>p.supportId)){
@@ -18,7 +18,7 @@ for(const pin of initial.pins.filter(p=>p.lying)){
   close(initial.objectPose(pin).z,.8);
 }
 // Picking up a loaded Cup moves the pair; taking the Pin separately detaches it.
-const game=new Game(),robot=game.robots[0];
+const game=new Game({physical:false}),robot=game.robots[0];
 const pin=game.pins.find(p=>p.supportId&&p.x===-23.54&&p.y===0),cup=game.cup(pin.supportId);
 game.setRobotPose(robot.id,{x:cup.x,y:cup.y});
 assert.equal(game.interact(robot.id,'pickup','cup').ok,false,'Preload occupies the Pin slot');
@@ -36,7 +36,7 @@ assert(game.setPossession(robot.id,{pinId:pin.id}).ok,'Pin-only possession must 
 assert(game.interact(robot.id,'pickup','cup').ok);
 assert(game.interact(robot.id,'flip','cup').ok);
 // Place a held pair above the existing Pin; both slots must clear atomically.
-const pair=new Game(),p=pair.pins.find(p=>p.supportId),c=pair.cup(p.supportId);
+const pair=new Game({physical:false}),p=pair.pins.find(p=>p.supportId),c=pair.cup(p.supportId);
 assert(pair.setPossession('red-1',{pinId:p.id,cupId:c.id}).ok);
 const goal=pair.goal('g-neutral-tall');pair.setRobotPose('red-1',{x:goal.x,y:goal.y});
 assert(pair.interact('red-1','place','cup').ok);
@@ -47,11 +47,11 @@ close(pair.objectPose(p).z-pair.objectPose(c).z,3.25);
 const preload=pair.robots[1].possession.pinId;
 assert(pair.placePin(preload,'g-red-sw').ok);assert.equal(pair.pin(preload).location,'goal');
 assert.equal(pair.robots[1].possession.pinId,null);
-const practice=new Game();assert(practice.startMatch('practice'));
+const practice=new Game({physical:false});assert(practice.startMatch('practice'));
 for(let i=0;i<130;i++)practice.tick(1);
-assert.equal(practice.clock,130);assert.equal(practice.phase,'driver');assert(!practice.matchEnded);
+close(practice.clock,130);assert.equal(practice.phase,'driver');assert(!practice.matchEnded);
 assert(!practice.getState().endgame);assert.deepEqual(practice.autonomousBonus,{red:0,blue:0});
-practice.stopMatch();const score=practice.score();practice.tick(1);assert.equal(practice.clock,130);
+practice.stopMatch();const score=practice.score();practice.tick(1);close(practice.clock,130);
 practice.setRobotPose('red-1',{x:0,y:0});assert.deepEqual(practice.score(),score);
 practice.reset();assert(practice.startMatch());assert.equal(practice.mode,'match');
 // Analytic wall boundary for a 45-degree square, including all corners.

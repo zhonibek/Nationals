@@ -26,6 +26,10 @@
       }
       ctx.restore();
     }
+    if(renderer.sim.matchMode)for(const robot of game.robots){
+      const p=renderer.toCanvas(robot.x,robot.y),g=game.gripPose(robot),q=renderer.toCanvas(g.x,g.y);
+      ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.strokeStyle='#fbbf24';ctx.lineWidth=2;ctx.stroke();ctx.strokeRect(q.x-2*scale,q.y-scale,4*scale,2*scale);
+    }
     for(const g of game.goals){const p=renderer.toCanvas(g.x,g.y);ctx.font='10px sans-serif';ctx.fillStyle='#fff';ctx.fillText(String(g.stack.length),p.x+5*scale,p.y);}
     if(renderer.sim.matchMode)for(const robot of game.robots){
       if(robot.id===renderer.sim.activeRobotId)continue;
@@ -55,16 +59,29 @@
       view.scene.add(mesh);items.push({mesh,id:obj.id,type});
     }
     for(const r of game.robots){const mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),material(color[r.alliance]));view.scene.add(mesh);items.push({mesh,id:r.id,type:'robot'});}
+    for(const r of game.robots){
+      const mesh=new THREE.Group();
+      const mast=new THREE.Mesh(new THREE.BoxGeometry(1,1,40),material('#64748b'));mast.position.set(0,7,20);mesh.add(mast);
+      const fork=new THREE.Mesh(new THREE.BoxGeometry(4,2,1),material('#fbbf24'));mesh.add(fork);
+      const arm=new THREE.Mesh(new THREE.BoxGeometry(1,8,1),material('#fbbf24'));mesh.add(arm);
+      view.scene.add(mesh);items.push({mesh,id:r.id,type:'manipulator'});
+    }
     view.overrideItems=items;
   }
   function update3D(view){
     const game=view.sim.override,THREE=root.THREE;
     for(const item of view.overrideItems||[]){
       if(item.type==='toggle'){item.mesh.material.color.set(color[game.toggles.find(t=>t.id===item.id).state]);continue;}
+      if(item.type==='manipulator'){
+        const r=game.robots.find(r=>r.id===item.id),m=r.manipulator;
+        item.mesh.visible=view.sim.matchMode;item.mesh.position.set(r.x,r.y,0);item.mesh.rotation.z=-r.theta*Math.PI/180;
+        item.mesh.children[0].scale.z=Math.max(.05,(m.height+6.5)/40);item.mesh.children[0].position.z=(m.height+6.5)/2;
+        item.mesh.children[1].position.set(0,m.reach,m.height+3.25);item.mesh.children[2].position.set(0,m.reach-4,m.height+3.25);continue;
+      }
       if(item.type==='robot'){const r=game.robots.find(r=>r.id===item.id);item.mesh.visible=view.sim.matchMode&&r.id!==view.sim.activeRobotId;item.mesh.position.set(r.x,r.y,5);item.mesh.scale.set(r.width,r.length,10);item.mesh.rotation.z=-r.theta*Math.PI/180;continue;}
       const o=item.type==='pin'?game.pin(item.id):game.cup(item.id),p=game.objectPose(o);
-      item.mesh.visible=visible(o);item.mesh.position.set(p.x,p.y,p.lying?p.z:p.z+d.halfHeight);
-      if(p.lying){const a=p.yaw*Math.PI/180;item.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(Math.sin(a),Math.cos(a),0));}
+      item.mesh.visible=visible(o);item.mesh.position.set(p.x,p.y,p.centerZ??(p.lying?p.z:p.z+d.halfHeight));
+      if(p.lying||p.tilt){const a=p.yaw*Math.PI/180,t=p.tilt??Math.PI/2;item.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(Math.sin(a)*Math.sin(t),Math.cos(a)*Math.sin(t),Math.cos(t)));}
       else item.mesh.quaternion.identity();
       const halves=item.type==='pin'?[o.halves[1-o.upIndex],o.halves[o.upIndex]]:[o.up==='opaque'?'transparent':'opaque',o.up];
       item.mesh.children.forEach((part,i)=>{part.material.color.set(color[halves[i]]);part.material.transparent=halves[i]==='transparent';part.material.opacity=part.material.transparent?.32:1;part.material.depthWrite=!part.material.transparent;});

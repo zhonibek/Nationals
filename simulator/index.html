@@ -12,9 +12,11 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-  <script src="override-geometry.js?v=field-20260920"></script>
-  <script src="override.js?v=field-20260920"></script>
-  <script src="override-view.js?v=field-20260920"></script>
+  <script src="override-geometry.js?v=physics-20260925b"></script>
+  <script src="override-dynamics.js?v=physics-20260925b"></script>
+  <script src="override-autonomy.js?v=physics-20260925b"></script>
+  <script src="override.js?v=physics-20260925b"></script>
+  <script src="override-view.js?v=physics-20260925b"></script>
   
   <link rel="stylesheet" href="simulator.css?v=cascade-20260919">
 </head>
@@ -151,8 +153,30 @@
         </div>
       </div>
 
+      <details class="viewport-toolbar" style="display:block">
+        <summary>Автономки четырёх роботов (первые 15 с матча)</summary>
+        <label>red-1 <select data-auto-robot="red-1"><option value="preload">Поставить preload</option><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
+        <label>red-2 <select data-auto-robot="red-2"><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
+        <label>blue-1 <select data-auto-robot="blue-1"><option value="preload">Поставить preload</option><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
+        <label>blue-2 <select data-auto-robot="blue-2"><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
+      </details>
+      <details class="viewport-toolbar" style="display:block">
+        <summary>Судейский протокол</summary>
+        <p>Автоматический счёт и запреты действий дополнены журналом. Решения об умысле, повторных нарушениях и дисквалификации вносит судья.</p>
+        <label>Правило <select id="refRule"><option>SG7</option><option>SG9</option><option>SG10</option><option>SG11</option><option>SG12</option><option>SG13</option><option>SG6</option><option>SG2</option><option>SG3</option><option>SG4</option><option>GG13</option><option>GG14</option><option>GG15</option><option>S1</option></select></label>
+        <label>Решение <select id="refSeverity"><option value="warning">Предупреждение</option><option value="minor">Minor</option><option value="major">Major / DQ робота</option></select></label>
+        <label>Причина <input id="refReason" maxlength="500" placeholder="Основание решения"></label>
+        <label><input id="refAuto" type="checkbox"> Нарушение автономки</label>
+        <label><input id="refAWP" type="checkbox"> Передать AWP сопернику (SG7e)</label>
+        <button id="addRuling" class="btn btn-secondary">Записать для выбранного робота</button>
+        <div id="ruleLog" role="log"></div>
+      </details>
+      <div class="viewport-toolbar" style="flex-wrap:wrap"><span id="matchStatus" role="status"></span><button id="exportMatch" class="btn btn-secondary">Скачать протокол JSON</button></div>
       <div class="viewport-toolbar" style="flex-wrap:wrap">
         <label>Режим <select id="gameMode"><option value="practice">Тренировка ∞</option><option value="match">Матч 2:00</option></select></label>
+        <button class="btn btn-secondary" data-lift="-2">Подъёмник −2″</button>
+        <button class="btn btn-secondary" data-lift="2">Подъёмник +2″</button>
+        <span id="liftStatus" role="status"></span>
         <label>Робот <select id="gameRobot"><option>red-1</option><option>red-2</option><option>blue-1</option><option>blue-2</option></select></label>
         <label>Предмет <select id="gameObject"><option value="pin">Pin</option><option value="cup">Cup</option></select></label>
         <button class="btn btn-secondary" data-game-action="pickup">Взять</button>
@@ -163,7 +187,7 @@
         <button class="btn btn-secondary" data-game-action="toggle">Переключить Toggle</button>
         <span id="gameFeedback" role="status">Для игры нажмите Override. Действия требуют близости к предмету.</span>
       </div>
-      <p style="padding:0 1rem;color:#94a3b8;font-size:.8rem">LTV-LQR → PID скорости колёс + feedforward. Геометрия поля и захват предметов приближённые; это исследовательская модель, не проверенная копия официального поля.</p>
+      <p style="padding:0 1rem;color:#94a3b8;font-size:.8rem">LTV-LQR → PID скорости колёс + feedforward. Подъёмник и столкновения — приближённая модель. Для захвата подведите переднюю вилку к предмету; для установки совместите её с целью и поднимите на высоту стопки.</p>
       <!-- Jerry.io Waypoints Panel -->
       <div id="jerryPanel" class="jerry-panel">
         <div class="jerry-header">
@@ -357,7 +381,7 @@
   </footer>
 
   <script src="robot-config.js?v=cascade-20260919"></script>
-  <script src="control-runtime.js?v=cascade-20260919"></script>
-  <script src="simulator.js?v=field-20260920"></script>
+  <script src="control-runtime.js?v=physics-20260925b"></script>
+  <script src="simulator.js?v=physics-20260925b"></script>
 </body>
 </html>

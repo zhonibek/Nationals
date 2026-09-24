@@ -814,7 +814,7 @@ class VexRobotSimulator {
 
   resetSimulation() {
     this.isRunning = false;
-    this.matchMode=false;
+    this.matchMode=false;this.fleet=null;
     this.simTime=0; this.lastMotionResult="Idle";
     this.manualThrottle=this.manualStrafe=this.manualTurn=0;
     this.routineQueue = [];
@@ -1305,9 +1305,17 @@ class VexRobotSimulator {
     this.queueAction({ type: "feedforward", desc: "Calibrating kS..." });
   }
 
+  startGame(mode,choices={}) {
+    if(!this.productionControl)return {ok:false,error:'C++ controller unavailable'};
+    this.resetSimulation();this.matchMode=true;this.override.startMatch(mode);
+    this.fleet=new OverrideFleet(this,VexRobotSimulator,choices);this.fleet.syncView();this.isPaused=false;
+    return {ok:true};
+  }
+
   // Update Loop
   update(dt = 0.01) {
     if (this.isPaused) return;
+    if(this.fleet){this.fleet.update(dt);return;}
     if(!Number.isFinite(dt)||dt<=0||dt>0.1){this.isRunning=false;this.currentAction=null;this.routineQueue=[];this.commandedWheelVoltages=null;this.motorVolts=[0,0,0,0];this.lastMotionResult="InvalidDt";return;}
 
     let throttle_v = this.manualThrottle || 0.0;
@@ -1350,7 +1358,9 @@ class VexRobotSimulator {
       this.override.setRobotPose(this.activeRobotId, {
         x: this.x, y: this.y, theta: this.theta
       });
-      this.override.tick(dt);
+      const robot=this.override.robots.find(r=>r.id===this.activeRobotId);
+      robot.velocity={vx:this.Vx*METER_TO_INCH,vy:this.Vy*METER_TO_INCH,omega:this.w};
+      if(!this.managedGame)this.override.tick(dt);
       this.override.goals.forEach((goal, i) => {
         if (this.mobileGoals[i]) {
           this.mobileGoals[i].x = goal.x;
@@ -2826,17 +2836,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   btnOverrideStart?.addEventListener('click', () => {
-    if (sim.override) {
-      sim.resetSimulation();sim.matchMode=true;
-      const robot=sim.override.robots.find(r=>r.id===sim.activeRobotId);
-      sim.setPose(robot.x,robot.y,robot.theta);
-      const mode=document.getElementById('gameMode').value;
-      sim.override.startMatch(mode);
-      sim.controllerLcdLines=[mode==='practice'?'Override Practice':'Override Match',`Robot: ${robot.id}`,'Manual: driver phase'];
-      document.getElementById('gameFeedback').textContent=mode==='practice'?'Тренировка без таймера. Движение и предметы доступны.':'Матч начат. Ручное управление доступно после автономной фазы.';
-      sim.isPaused = false;
-      sim.triggerRumble("..");
-    }
+    const choices=Object.fromEntries([...document.querySelectorAll('[data-auto-robot]')].map(el=>[el.dataset.autoRobot,el.value]));
+    const result=sim.startGame(document.getElementById('gameMode').value,choices);
+    document.getElementById('gameFeedback').textContent=result.ok?'Игра началась. В матче автономки работают первые 15 секунд.':result.error;
   });
 
   btnOverrideReset?.addEventListener('click', () => {
@@ -2875,7 +2877,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   };
 
-  bindCtrlBtn('btnCtrlA', () => {sim.isRunning=false;sim.routineQueue=[];sim.currentAction=null;sim.commandedWheelVoltages=null;sim.motorVolts=[0,0,0,0];sim.holonomicArcade(0,0,0);sim.lastMotionResult='Cancelled';});
+  bindCtrlBtn('btnCtrlA', () => {if(sim.fleet)for(const e of sim.fleet.entries.values())sim.fleet.stop(e,'Cancelled');sim.isRunning=false;sim.routineQueue=[];sim.currentAction=null;sim.commandedWheelVoltages=null;sim.motorVolts=[0,0,0,0];sim.holonomicArcade(0,0,0);sim.lastMotionResult='Cancelled';});
   bindCtrlBtn('btnCtrlB', () => sim.startRoutine('testLinearDrive'));
   bindCtrlBtn('btnCtrlY', () => sim.startRoutine('testAngularTurn'));
   bindCtrlBtn('btnCtrlX', () => sim.startRoutine('testStrafe'));
@@ -2886,15 +2888,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('gameRobot')?.addEventListener('change',e=>{
     if(!sim.matchMode)return;
-    sim.activeRobotId=e.target.value;const r=sim.override.robots.find(r=>r.id===sim.activeRobotId);sim.setPose(r.x,r.y,r.theta);sim.holonomicArcade(0,0,0);
+    sim.activeRobotId=e.target.value;sim.holonomicArcade(0,0,0);sim.fleet?.syncView();
   });
   document.querySelectorAll('[data-game-action]').forEach(button=>button.addEventListener('click',()=>{
     const result=!sim.matchMode?{ok:false,error:'Start Override first'}:sim.override.phase==='autonomous'?{ok:false,error:'Manual actions disabled during autonomous'}:sim.override.interact(sim.activeRobotId,button.dataset.gameAction,document.getElementById('gameObject').value);
     document.getElementById('gameFeedback').textContent=result.ok?'OK':result.error;
   }));
+  document.querySelectorAll('[data-lift]').forEach(button=>button.addEventListener('click',()=>{
+    const r=sim.override.robots.find(r=>r.id===sim.activeRobotId);
+    const result=sim.override.setLiftTarget(r.id,Math.max(0,Math.min(40,r.manipulator.target+Number(button.dataset.lift))));
+    document.getElementById('gameFeedback').textContent=result.ok?'Подъёмник: цель '+r.manipulator.target.toFixed(1)+'″':result.error;
+  }));
+  document.getElementById('addRuling')?.addEventListener('click',()=>{
+    const result=sim.override.adjudicate(sim.activeRobotId,document.getElementById('refRule').value,document.getElementById('refSeverity').value,document.getElementById('refReason').value,{autonomous:document.getElementById('refAuto').checked,awardAWP:document.getElementById('refAWP').checked});
+    document.getElementById('gameFeedback').textContent=result.ok?'Решение записано':result.error;
+  });
+  document.getElementById('exportMatch')?.addEventListener('click',()=>{
+    if(!sim.fleet)return;
+    const url=URL.createObjectURL(new Blob([JSON.stringify(sim.fleet.report(),null,2)],{type:'application/json'}));
+    const a=document.createElement('a');a.href=url;a.download='nationals-match.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
   // Keyboard Controls (Holonomic 3-DOF: W/S forward/backward, Q/E or A/D strafe, ArrowLeft/ArrowRight turn)
   const keysDown = {};
   window.addEventListener('keydown', (e) => {
+    if(e.target?.matches?.('input,select,textarea,[contenteditable]'))return;
     keysDown[e.key.toLowerCase()] = true;
     if (e.key === ' ') {
       sim.isPaused = !sim.isPaused;
@@ -2904,6 +2921,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('keyup', (e) => {
     delete keysDown[e.key.toLowerCase()];
   });
+
+  window.addEventListener('blur',()=>{for(const key of Object.keys(keysDown))delete keysDown[key];sim.holonomicArcade(0,0,0);});
 
   // Animation Loop with delta accumulator for exact real-time speed & smooth playback
   let lastFrameTime = performance.now();
@@ -2970,6 +2989,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const remaining = Math.max(0, overrideState.rules.matchSeconds - overrideState.clock);
         clock.textContent = overrideState.mode==='practice'?'∞':Math.floor(remaining / 60) + ":" + String(Math.floor(remaining % 60)).padStart(2, "0");
       }
+      document.getElementById('ruleLog').textContent=overrideState.ruleEvents.slice(-8).map(e=>`${e.clock.toFixed(1)} с · ${e.robotId} · ${e.rule} · ${e.severity}: ${e.detail}`).join(' | ');
+      const activeRobot=sim.override.robots.find(r=>r.id===sim.activeRobotId);
+      document.getElementById('liftStatus').textContent=`Подъёмник ${activeRobot.manipulator.height.toFixed(1)}″ → ${activeRobot.manipulator.target.toFixed(1)}″`;
+      document.getElementById('matchStatus').textContent=overrideState.matchEnded?(overrideState.scoreFinal?'Счёт зафиксирован':`Ожидание остановки: ${overrideState.settlingSeconds.toFixed(1)} / 5 с`):sim.fleet?[...sim.fleet.entries].map(([id,e])=>`${id}: ${e.status}${e.error?' ('+e.error+')':''}`).join(' · '):'';
       if (red) red.textContent = String(overrideState.score.red);
       if (blue) blue.textContent = String(overrideState.score.blue);
     }    // Update Telemetry UI
