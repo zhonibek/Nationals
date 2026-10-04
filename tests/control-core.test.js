@@ -9,7 +9,7 @@ const moduleCore=new WebAssembly.Module(fs.readFileSync(path.join(root,'simulato
 const context={console,Math,setTimeout(){},document:{addEventListener(){}},window:{}};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(root,'simulator/robot-config.js'),'utf8'),context);
-vm.runInContext(fs.readFileSync(path.join(root,'simulator/simulator.js'),'utf8')+'\nthis.Simulator=VexRobotSimulator;',context);
+vm.runInContext(fs.readFileSync(path.join(root,'simulator/engine.js'),'utf8')+'\nthis.Simulator=VexRobotSimulator;',context);
 const make=()=>new context.Simulator(Control.fromModule(moduleCore));
 const report=[];
 function motion(label,start,action,seconds=18,modify=()=>{}){

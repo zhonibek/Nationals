@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>RobotAI — Motion lab / RoboProof</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="player.js" defer></script>
+  <script src="app.js" defer></script>
+  <script src="motion.js" defer></script>
+  <script src="nemotron.js" defer></script>
+  <script src="perception.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to results</a>
+  <header class="masthead">
+    <a class="brand" href="#main"><span class="brand-mark" aria-hidden="true">R/</span> RoboProof <span class="brand-detail">IRALIB VEX V5 CONTROL VERIFICATION</span></a>
+    <nav aria-label="Sections"><a href="#motion">Motion lab</a><a href="#nemotron">Nemotron</a><a href="#perception">Vision</a><a href="#explorer">Legacy explorer</a><a href="#evidence">Evidence</a></nav>
+  </header>
+  <main id="main">
+    <section class="intro" aria-labelledby="page-title">
+      <div><p class="eyebrow">ROBOTAI / ORIGINAL SIMULATOR + IRALIB</p><h1 id="page-title">Prepare to learn.<br><span>Prove the movement.</span></h1><p class="lede">Run a controller baseline, validate bounded policy actions, and replay measured motion in the original Simulator. Motion training is not implemented yet. Legacy failure research remains separate below.</p></div>
+      <div class="mode-card"><span class="status-dot" aria-hidden="true"></span><strong id="connection-mode">Offline file explorer</strong><p id="source">No report loaded</p><p class="muted">Reports stay in this browser. Explicit replay sends only the selected scenario to the local server.</p></div>
+    </section>
+
+    <section id="motion" class="panel" aria-labelledby="motion-title">
+      <div class="section-heading"><div><p class="eyebrow">TASK → BASELINE → POLICY INTERFACE → EVALUATION → REPLAY</p><h2 id="motion-title">Motion training preparation</h2></div><span id="motion-readiness" class="badge">READINESS NOT CHECKED</span></div>
+      <p class="muted">One original Simulator, persistent iraLIB controller, 100 Hz physics and a default 20 Hz policy interface. The fixture agents below are not trained AI.</p>
+      <div class="nemotron-actions"><button id="motion-check" class="secondary" type="button">Validate environment</button><button id="motion-restore" class="secondary" type="button">Restore saved experiment</button><button id="motion-evaluate" class="secondary" type="button">Run frozen evaluation · 24 worlds</button><button id="motion-cancel" class="secondary" type="button" disabled>Cancel</button></div>
+      <form id="motion-form">
+        <div class="motion-inputs">
+          <div><label for="motion-start-x">Start X · inches</label><input id="motion-start-x" type="number" min="-60" max="60" step="any" value="0" required></div>
+          <div><label for="motion-start-y">Start Y · inches</label><input id="motion-start-y" type="number" min="-60" max="60" step="any" value="0" required></div>
+          <div><label for="motion-start-heading">Start heading · degrees</label><input id="motion-start-heading" type="number" min="-180" max="180" step="any" value="0" required></div>
+          <div><label for="motion-goal-x">Goal X · inches</label><input id="motion-goal-x" type="number" min="-60" max="60" step="any" value="0" required></div>
+          <div><label for="motion-goal-y">Goal Y · inches</label><input id="motion-goal-y" type="number" min="-60" max="60" step="any" value="24" required></div>
+          <div><label for="motion-goal-heading">Goal heading · degrees</label><input id="motion-goal-heading" type="number" min="-180" max="180" step="any" value="0" required></div>
+          <div><label for="motion-deadline">Deadline · seconds</label><input id="motion-deadline" type="number" min="0.01" max="60" step="0.01" value="10" required></div>
+          <div><label for="motion-seed">World seed</label><input id="motion-seed" type="number" min="0" max="4294967295" step="1" value="42" required></div>
+          <div><label for="motion-mode">Agent · no learned policy</label><select id="motion-mode"><option value="scripted">Controller-only baseline</option><option value="policy-fixture">Nominal policy-interface fixture</option><option value="random-fixture">Bounded random-action fixture</option></select></div>
+        </div>
+        <div class="nemotron-actions"><button id="motion-run" type="submit">Run &amp; save original-Simulator experiment</button></div>
+      </form>
+      <p id="motion-status" class="status" role="status" aria-live="polite">No experiment has been run by this panel.</p>
+      <div id="motion-result" hidden><h3>Measured result · saved locally</h3><p id="motion-outcome"></p><pre id="motion-metrics"></pre><div class="nemotron-actions"><a id="motion-simulator" target="_blank" rel="noopener">Replay in original 2D / 3D Simulator</a><button id="motion-replay" class="secondary" type="button">Verify exact server replay</button><button id="motion-download" class="secondary" type="button">Download evidence</button></div></div>
+      <details><summary>Environment readiness and separate development gates</summary><pre id="motion-gates"></pre></details>
+      <details id="motion-evaluation" hidden><summary>Frozen baseline / adapter evaluation · not learned improvement</summary><pre id="motion-evaluation-result"></pre></details>
+      <p class="caveat">Environment readiness permits only a bounded CPU reach-task experiment. It does not certify the physical robot, game scoring, learned improvement, AMD execution or camera navigation. No training, model inference, cloud call or robot command runs automatically.</p>
+    </section>
+
+    <section class="panel controls" aria-label="Load or run a legacy reduced-plant experiment">
+      <p class="caveat full-width">LEGACY RESEARCH · these scalar experiments and trace playback use the separate reduced plant, not the original Simulator or motion-training environment.</p>
+      <div class="upload-control"><label for="report">Open report or scenario JSON</label><input id="report" type="file" accept=".json,application/json"><p class="hint">A scenario file runs through the local simulator. Reports with recorded telemetry also play offline.</p></div>
+      <button id="load-report" class="secondary" type="button">Load server report</button>
+      <form id="run-form" class="run-controls">
+        <div><label for="count">Scenario count</label><input id="count" name="count" type="number" min="1" max="1000" step="1" value="64" required></div>
+        <div><label for="seed">Random seed</label><input id="seed" name="seed" type="number" min="0" max="4294967295" step="1" value="42" required></div>
+        <button id="run" type="submit">Run legacy scalar experiment</button>
+      </form>
+      <p id="api-help" class="hint full-width">Live controls require this page to be served by the local RoboProof API. File upload does not.</p>
+      <p id="status" class="status full-width" role="status" aria-live="polite" aria-atomic="true">Open a report to begin. No sample data is loaded.</p>
+    </section>
+
+    <section id="nemotron" class="panel" aria-labelledby="nemotron-title">
+      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / LOCAL TASK COORDINATOR</p><h2 id="nemotron-title">Tell the robot where to go</h2></div><span id="nemotron-connection" class="badge">MODEL NOT CHECKED</span></div>
+      <p class="muted">Nemotron proposes a task. You review it. The original Nationals Simulator and iraLIB C++ controller execute it—not a separate physics model.</p>
+      <p id="nemotron-provider" class="hint"></p>
+      <div class="nemotron-actions"><button id="nemotron-check" class="secondary" type="button">Check connection</button><button id="nemotron-restore" class="secondary" type="button">Restore saved session</button></div>
+      <form id="nemotron-form">
+        <label for="nemotron-prompt">Task · use field coordinates or explicit distances</label>
+        <textarea id="nemotron-prompt" rows="3" maxlength="4000" required placeholder="From (0,0), move to x=0 inches, y=24 inches, heading 0 degrees."></textarea>
+        <div class="nemotron-actions"><button id="nemotron-plan" type="submit">Ask Nemotron</button><button id="nemotron-cancel" class="secondary" type="button" disabled>Cancel</button></div>
+      </form>
+      <p id="nemotron-status" class="status" role="status" aria-live="polite">Local inference only. No model request has been made.</p>
+      <div id="nemotron-session" hidden>
+        <p id="nemotron-message"></p>
+        <div id="nemotron-proposal" hidden><h3 id="nemotron-task-title">Validated proposal · not yet measured</h3><pre id="nemotron-task"></pre>
+          <div class="nemotron-actions"><button id="nemotron-run" type="button">Approve &amp; run in original Simulator</button><a id="nemotron-simulator" target="_blank" rel="noopener">Open original 2D / 3D Simulator</a><button id="nemotron-download" class="secondary" type="button">Download session &amp; evidence</button></div>
+        </div>
+        <div id="nemotron-result" hidden><h3>Measured simulator result</h3><p id="nemotron-outcome"></p><pre id="nemotron-metrics"></pre></div>
+        <details><summary>Nemotron tool calls, usage and saved provenance</summary><pre id="nemotron-log"></pre></details>
+      </div>
+      <p class="caveat">Nemotron coordinates tasks; movement still uses the existing controller, not a trained motion policy. No camera, obstacle avoidance, game-score optimization or physical robot access. Prompts and reports save locally; no cloud calls or paid APIs.</p>
+    </section>
+
+    <section id="perception" class="panel" aria-labelledby="perception-title">
+      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / FUTURE PERCEPTION</p><h2 id="perception-title">LocateAnything · robot eyes</h2></div><span class="badge">PREPARATION ONLY</span></div>
+      <p class="muted">Nemotron coordinates the task. LocateAnything will locate a described target in an image. Reviewed calibration converts a floor point into the same task used by the original Simulator and iraLIB.</p>
+      <p class="hint"><strong id="perception-model">nvidia/LocateAnything-3B</strong> · <span id="perception-stage">contracts and offline proposal preparation</span></p>
+      <ol class="perception-flow" aria-label="Future camera-to-motion pipeline"><li>Image + description</li><li>Box or pixel point</li><li>Reviewed floor calibration</li><li>Task + separate approval</li><li>Original Simulator / iraLIB</li></ol>
+      <p id="perception-status" class="status" role="status" aria-live="polite">Checking preparation status only; no inference request.</p>
+      <div class="proposal-grid"><div><h3>Prepared in this project</h3><ul><li>Strict native box / point parsing</li><li>Frame identity, freshness and calibration checks</li><li>Offline proposals using the shared motion-task schema</li></ul></div><div><h3>Still required</h3><ol id="perception-gates"></ol></div></div>
+      <p class="caveat">No LocateAnything weights are installed by this integration. No live grounding, camera capture, obstacle planner or learned movement policy is enabled. Boxes do not prove a safe or reachable goal; raised-object centers cannot be treated as floor coordinates.</p>
+      <p class="hint">NVIDIA's non-commercial research license and deployment compatibility need review before model setup. <a href="https://huggingface.co/nvidia/LocateAnything-3B" target="_blank" rel="noopener noreferrer">Official model card</a>. Camera-click navigation is not ready yet.</p>
+    </section>
+
+    <div id="empty-state" class="empty-state"><span class="eyebrow">AWAITING EVIDENCE</span><h2>Your results, not a demo.</h2><p>Upload a report, or run an experiment on the local server. Charts appear only when actual telemetry is available.</p></div>
+    <div id="report-content" hidden>
+      <section class="stats" aria-label="Baseline measurements">
+        <article class="stat"><p id="pass-rate-label">Observed baseline pass rate</p><strong id="pass-rate">—</strong><span id="pass-count"></span></article>
+        <article class="stat"><p id="failure-count-label">Baseline failures</p><strong id="failure-count">—</strong><span id="nominal-status"></span></article>
+        <article class="stat"><p>Measured throughput</p><strong id="throughput">—</strong><span id="benchmark-time"></span></article>
+        <article class="stat"><p>Reported backend</p><strong id="backend" class="backend">—</strong><span id="gpu">GPU: NOT MEASURED</span></article>
+      </section>
+      <p id="interpretation" class="caveat"></p>
+
+      <section id="verification" class="panel" aria-labelledby="verification-title">
+        <div class="section-heading"><div><p class="eyebrow">01 / CHALLENGE THE FIX</p><h2 id="verification-title">Before, after, and regressions</h2></div><strong id="verdict" class="verdict">NOT VERIFIED</strong></div>
+        <p id="acceptance-rule" class="muted"></p>
+        <div id="comparison-table" class="table-wrap" tabindex="0" role="region" aria-label="Verification comparisons"></div>
+        <div class="proposal-grid"><div><h3>Isolated candidate</h3><pre id="candidate"></pre><pre id="proposal-diff"></pre></div><div><h3>Hypothesis — not evidence</h3><p id="hypothesis"></p><p id="proposal-risk" class="caveat"></p><p id="required-tests" class="muted"></p></div></div>
+        <details><summary>Inspect fixed cases and new regressions</summary><div id="changes-table" class="table-wrap" tabindex="0" role="region" aria-label="Scenario changes"></div></details>
+      </section>
+
+      <section id="explorer" class="panel" aria-labelledby="explorer-title">
+        <div class="section-heading"><div><p class="eyebrow">02 / FOLLOW THE COUNTEREXAMPLE</p><h2 id="explorer-title">Scenario explorer</h2></div><span id="selected-outcome" class="badge"></span></div>
+        <div class="scenario-controls"><div class="scenario-picker"><label for="scenario">Result / scenario</label><select id="scenario"></select></div><button id="watch" type="button">Watch in simulator</button><button id="replay" class="secondary" type="button">Recalculate &amp; compare</button><button id="download" class="secondary" type="button">Download scenario</button></div>
+        <p id="selected-meta" class="muted"></p><p id="selected-categories" class="categories"></p>
+        <section id="simulator" class="simulator" aria-labelledby="sim-title" hidden>
+          <div class="section-heading"><div><p class="eyebrow">RECORDED SIMULATION / TOP-DOWN VIEW</p><h3 id="sim-title">Watch the robot move</h3></div><span id="sim-outcome" class="badge"></span></div>
+          <p id="sim-scenario" class="muted"></p>
+          <div id="sim-field" class="sim-field"></div>
+          <ul class="legend"><li class="truth">Solid robot: physical truth</li><li class="estimate">Dashed robot: sensor estimate</li><li class="planned">Blue: planned motion</li><li>Circle: endpoint tolerance</li></ul>
+          <div class="sim-controls"><button id="sim-play" type="button" aria-pressed="false">Play</button><button id="sim-restart" class="secondary" type="button">Restart</button><button id="sim-end" class="secondary" type="button">End</button><div><label for="sim-speed">Playback speed</label><select id="sim-speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></div><output id="sim-time" aria-live="off"></output></div>
+          <label for="sim-timeline">Timeline — recorded samples</label><input id="sim-timeline" type="range" min="0" max="0" step="1" value="0">
+          <div class="sim-readout" aria-live="off"><strong id="sim-position"></strong><span id="sim-heading"></span><span id="sim-motion"></span></div>
+          <p id="sim-motors" class="hint"></p><p id="sim-sample" class="hint"></p><p id="sim-summary" class="hint"></p>
+          <p class="hint">Plays exact recorded samples from the same RoboProof physics and C++ controller, not a new game simulation. Arrows point forward; the robot glyph uses the wheel radius, not collision geometry. The last sample precedes the final physics step used for the full-run metrics.</p>
+          <button id="sim-close" class="secondary" type="button">Close simulator</button>
+        </section>
+        <div id="selected-metrics" class="metric-grid"></div>
+        <p id="telemetry-status" class="telemetry-status"></p>
+        <div id="telemetry-plots" hidden>
+          <div class="plot-grid"><figure class="plot"><figcaption>Field path <span>meters · equal X/Y scale</span></figcaption><div id="path-chart" class="chart"></div><ul class="legend"><li class="planned">Planned · dashed</li><li class="truth">Truth · solid</li><li class="estimate">Estimate · dotted</li></ul></figure><figure class="plot"><figcaption>Heading <span>radians · clockwise from +Y</span></figcaption><div id="heading-chart" class="chart"></div><ul class="legend"><li class="planned">Planned · dashed</li><li class="truth">Truth · solid</li><li class="estimate">Estimate · dotted</li></ul></figure></div>
+          <figure class="plot"><figcaption>Motor outputs <span>volts · FL, BL, FR, BR</span></figcaption><p class="hint">Solid = command; dashed = delayed applied signal before the physics battery clamp. Individual P/I/D terms are not exported.</p><div id="motor-chart" class="chart"></div><ul class="legend"><li class="wheel-fl">FL</li><li class="wheel-bl">BL</li><li class="wheel-fr">FR</li><li class="wheel-br">BR</li></ul></figure>
+          <div class="plot-grid"><figure class="plot"><figcaption>Position errors <span>meters vs seconds</span></figcaption><div id="error-chart" class="chart"></div><ul class="legend"><li class="planned">Spatial path</li><li class="truth">Timed tracking</li><li class="estimate">Localization</li></ul></figure><figure class="plot"><figcaption>True motion <span>m/s and rad/s vs seconds</span></figcaption><div id="velocity-chart" class="chart"></div><ul class="legend"><li class="truth">Linear speed · m/s</li><li class="estimate">Yaw rate · rad/s</li></ul></figure></div>
+          <details id="telemetry-details"><summary>Accessible telemetry table — every recorded sample</summary><div id="telemetry-table" class="table-wrap telemetry-table" tabindex="0" role="region" aria-label="Full telemetry table"></div></details>
+        </div>
+        <details><summary>Selected scenario and result provenance</summary><pre id="scenario-json"></pre></details>
+      </section>
+
+      <section class="panel" aria-labelledby="map-title">
+        <div class="section-heading"><div><p class="eyebrow">03 / EXPLORE THE FAILURE ENVELOPE</p><h2 id="map-title">Parameter map</h2></div><div><label for="map-group">Result cohort</label><select id="map-group"></select></div></div>
+        <p class="muted">Friction versus battery voltage. Color and shape encode the reported result, not a probability surface. Choose a point to inspect it, or use the table.</p>
+        <div id="parameter-chart" class="chart parameter-chart"></div><ul class="legend"><li class="pass">○ Pass</li><li class="fail">× Fail</li><li>□ Unknown</li></ul><p id="map-status" class="hint"></p>
+        <details><summary>Accessible parameter table — all results in this cohort</summary><div id="parameter-table" class="table-wrap parameter-table" tabindex="0" role="region" aria-label="Scenario parameters"></div></details>
+      </section>
+
+      <section id="evidence" class="panel" aria-labelledby="evidence-title">
+        <div class="section-heading"><div><p class="eyebrow">04 / SEPARATE FACT FROM EXPLANATION</p><h2 id="evidence-title">Evidence &amp; inference</h2></div><span id="diagnosis-mode" class="badge"></span></div>
+        <p id="diagnosis-scope" class="muted"></p>
+        <div class="evidence-grid"><article><h3>Recorded simulator evidence</h3><div id="observations"></div><div id="sensitivity-table" class="table-wrap" tabindex="0" role="region" aria-label="Counterfactual sensitivity results"></div></article><article class="inference"><h3>Conditional inference</h3><p id="inference"></p><p id="confidence" class="caveat"></p><p>Simulation evidence is not proof of a physical root cause. Sampled parameter ranges are engineering assumptions, not a calibrated hardware distribution.</p></article></div>
+        <details><summary>Adversarial search and baseline categories</summary><p id="search-algorithm"></p><div id="search-table" class="table-wrap" tabindex="0" role="region" aria-label="Search history"></div><div id="category-table" class="table-wrap" tabindex="0" role="region" aria-label="Baseline failure categories"></div><p class="hint">A scenario can have multiple failure categories; category counts do not add up to the number of failures.</p></details>
+        <details id="tool-details"><summary>Recorded investigation tool log</summary><pre id="tool-log"></pre></details>
+        <details><summary>Report provenance and distribution</summary><pre id="provenance"></pre></details>
+      </section>
+      <section id="ml-evidence" class="panel" aria-labelledby="ml-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">05 / PREDICTION IS NOT VERIFICATION</p><h2 id="ml-title">Deep ML experiment</h2></div><span class="badge">EXPERIMENTAL / LEGACY PHYSICS</span></div>
+        <p id="ml-training" class="muted"></p><p id="ml-selection" class="muted"></p>
+        <p class="caveat">Predictions are pre-run estimates. Observed categories come from the actual C++ controller in the reduced-plant simulator. This is not original-browser parity, physical certification or a demonstrated search-efficiency improvement. Live LLM investigation is separate.</p>
+        <div id="ml-prediction-table" class="table-wrap" tabindex="0" role="region" aria-label="Selected scenario predictions versus measured categories"></div>
+      </section>
+    </div>
+  </main>
+  <footer><span>RoboProof / Failure explorer</span><span>Local evidence. No CDN. No analytics. No production changes.</span></footer>
+  <noscript><p class="caveat">JavaScript is required to read JSON reports and render telemetry locally.</p></noscript>
+</body>
+</html>

@@ -1,0 +1,46 @@
+name: RobotAI simulator and ML contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: roboproof/gpu/requirements-cpu.txt
+      - name: Install pinned CPU test dependency
+        run: python -m pip install -r roboproof/gpu/requirements-cpu.txt
+      - name: Check generated robot configuration
+        run: node tools/generate-config.js --check
+      - name: Original simulator, safety contracts, dashboard and model-tool fixtures
+        run: node --test tests/*.test.js simulator/test_*.js
+      - name: Python controller parity, auxiliary ML and canonical motion bridge
+        run: python -m unittest discover -s tests -p "roboproof_*_test.py" -v
+      - name: Verify bounded canonical environment readiness
+        run: node roboproof/cli.js motion-check
+      - name: Retain readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robotai-readiness-${{ matrix.os }}
+          path: roboproof/runs/motion/readiness*.json
+          if-no-files-found: ignore
+          retention-days: 7

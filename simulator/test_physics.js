@@ -13,7 +13,7 @@ global.document = {
 };
 
 // Load simulator code
-const simCode = fs.readFileSync(__dirname + '/simulator.js', 'utf8');
+const simCode = fs.readFileSync(__dirname + '/engine.js', 'utf8');
 
 // Evaluate the classes in simulator.js
 const headlessCode = simCode.split('document.addEventListener')[0];

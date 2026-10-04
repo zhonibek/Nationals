@@ -4,7 +4,7 @@ const vm = require('vm');
 global.window = {};
 global.document = { getElementById: () => null, addEventListener: () => {} };
 
-const simCode = fs.readFileSync(__dirname + '/simulator.js', 'utf8');
+const simCode = fs.readFileSync(__dirname + '/engine.js', 'utf8');
 vm.runInThisContext(simCode.split('document.addEventListener')[0]);
 
 const sim = new VexRobotSimulator(require('./control-runtime').fromModule(new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'))));

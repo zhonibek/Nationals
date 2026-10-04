@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Frozen evaluation only; do not use these worlds for training or hyperparameter selection",
+  "cases": [
+    {
+      "id": "reach-1-nominal",
+      "seed": 2026100101,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 0,
+          "yIn": 24,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "reach-1-varied",
+      "seed": 2026100102,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 0,
+          "yIn": 24,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          5.8,
+          7.8
+        ],
+        "muLong": [
+          0.6,
+          0.95
+        ],
+        "batteryInternalR": [
+          0.02,
+          0.08
+        ]
+      }
+    },
+    {
+      "id": "reach-2-nominal",
+      "seed": 2026100103,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 24,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "reach-2-varied",
+      "seed": 2026100104,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 24,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          5.8,
+          7.8
+        ],
+        "muLong": [
+          0.6,
+          0.95
+        ],
+        "batteryInternalR": [
+          0.02,
+          0.08
+        ]
+      }
+    },
+    {
+      "id": "reach-3-nominal",
+      "seed": 2026100105,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 0,
+          "yIn": -24,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "reach-3-varied",
+      "seed": 2026100106,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 0,
+          "yIn": -24,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          5.8,
+          7.8
+        ],
+        "muLong": [
+          0.6,
+          0.95
+        ],
+        "batteryInternalR": [
+          0.02,
+          0.08
+        ]
+      }
+    },
+    {
+      "id": "reach-4-nominal",
+      "seed": 2026100107,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": -24,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "reach-4-varied",
+      "seed": 2026100108,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": -24,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          5.8,
+          7.8
+        ],
+        "muLong": [
+          0.6,
+          0.95
+        ],
+        "batteryInternalR": [
+          0.02,
+          0.08
+        ]
+      }
+    },
+    {
+      "id": "reach-5-nominal",
+      "seed": 2026100109,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 24,
+          "yIn": 24,
+          "headingDeg": 90
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "reach-5-varied",
+      "seed": 2026100110,
+      "task": {
+        "start": {
+          "xIn": 0,
+          "yIn": 0,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 24,
+          "yIn": 24,
+          "headingDeg": 90
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          5.8,
+          7.8
+        ],
+        "muLong": [
+          0.6,
+          0.95
+        ],
+        "batteryInternalR": [
+          0.02,
+          0.08
+        ]
+      }
+    },
+    {
+      "id": "reach-6-nominal",
+      "seed": 2026100111,
+      "task": {
+        "start": {
+          "xIn": -8,
+          "yIn": -8,
+          "headingDeg": 170
+        },
+        "goal": {
+          "xIn": 8,
+          "yIn": 8,
+          "headingDeg": -170
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "reach-6-varied",
+      "seed": 2026100112,
+      "task": {
+        "start": {
+          "xIn": -8,
+          "yIn": -8,
+          "headingDeg": 170
+        },
+        "goal": {
+          "xIn": 8,
+          "yIn": 8,
+          "headingDeg": -170
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          5.8,
+          7.8
+        ],
+        "muLong": [
+          0.6,
+          0.95
+        ],
+        "batteryInternalR": [
+          0.02,
+          0.08
+        ]
+      }
+    }
+  ]
+}

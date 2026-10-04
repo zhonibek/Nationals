@@ -49,6 +49,10 @@
 
     <!-- Left Column: Field Viewport & Direct Controls -->
     <section class="field-viewport-card">
+      <div id="robotAITask" hidden>
+        <button id="robotAILoadTask" class="btn btn-secondary" disabled>Load Nemotron task</button>
+        <p id="robotAITaskStatus" role="status" aria-live="polite">Loading saved RobotAI task…</p>
+      </div>
       <div class="viewport-toolbar">
         <div class="toolbar-group">
           <!-- Planner vs Match Mode Toggle -->
@@ -382,6 +386,11 @@
 
   <script src="robot-config.js?v=cascade-20260919"></script>
   <script src="control-runtime.js?v=physics-20260925b"></script>
-  <script src="simulator.js?v=physics-20260925b"></script>
+  <script src="engine.js?v=robotai-20261001"></script>
+  <script src="policy.js?v=robotai-20261002"></script>
+  <script src="motion.js?v=robotai-20261002"></script>
+  <script src="motion-replay.js?v=robotai-20261002"></script>
+  <script src="nemotron-task.js?v=robotai-20261001"></script>
+  <script src="simulator.js?v=robotai-20261001"></script>
 </body>
 </html>

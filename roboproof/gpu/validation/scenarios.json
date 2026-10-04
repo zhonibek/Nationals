@@ -1,0 +1,549 @@
+{
+  "distribution": "independent uniform within each range; uncalibrated engineering assumptions",
+  "scenarios": [
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-0",
+      "random_seed": 260725464,
+      "environment": {
+        "battery_voltage": 9.757035524700768,
+        "mass": 5.44062522763852,
+        "inertia": 0.16081936776870864,
+        "radius": 0.17890217064414174,
+        "max_wheel_speed": 0.8251320394454524,
+        "motor_tau": 0.04359294669469819,
+        "friction": 0.5362269117240794,
+        "lateral_friction": 0.011846000386867672,
+        "traction_stiffness": 109.90509646944702,
+        "left_motor_efficiency": 0.9989268550882116,
+        "right_motor_efficiency": 0.9706405447563157,
+        "encoder_noise": 0.0029980603696312755,
+        "encoder_bias": 0.0005680037862621249,
+        "encoder_latency": 0.034458247502334415,
+        "encoder_period": 0.027894093297654764,
+        "encoder_dropout": 0.004537507827626542,
+        "encoder_quantization": 0.0002804195962380618,
+        "encoder_drift": 0.00018003531065769496,
+        "imu_noise": 0.009245554459048436,
+        "imu_bias": 0.027262826947262515,
+        "imu_latency": 0.03303050220245495,
+        "imu_period": 0.015415496568894013,
+        "imu_dropout": 0.027504273684462534,
+        "imu_quantization": 0.0005179335933644325,
+        "imu_drift": 0.000886243325425312,
+        "control_latency": 0.04929005882469937,
+        "initial_x_error": -0.01378824364859611,
+        "initial_y_error": 0.013175788433291018,
+        "initial_heading_error": -0.0023154396971222027
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    },
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-1",
+      "random_seed": 2501058006,
+      "environment": {
+        "battery_voltage": 9.067365707480349,
+        "mass": 7.6864438626216725,
+        "inertia": 0.19619443704606965,
+        "radius": 0.20381328475195915,
+        "max_wheel_speed": 0.8861836133291945,
+        "motor_tau": 0.09330613176105543,
+        "friction": 0.6773699822672642,
+        "lateral_friction": 0.06963971556397155,
+        "traction_stiffness": 96.90923153422773,
+        "left_motor_efficiency": 0.9437236153753474,
+        "right_motor_efficiency": 0.9980574895394966,
+        "encoder_noise": 0.002698517097858712,
+        "encoder_bias": -0.0016082943645305931,
+        "encoder_latency": 0.007663765014149249,
+        "encoder_period": 0.02342135848593898,
+        "encoder_dropout": 0.006350055808434263,
+        "encoder_quantization": 0.0015375297551508994,
+        "encoder_drift": 0.00003748818882741035,
+        "imu_noise": 0.008046440597390757,
+        "imu_bias": -0.007741203290643171,
+        "imu_latency": 0.012946145099122076,
+        "imu_period": 0.018161783990217374,
+        "imu_dropout": 0.0009542374580632896,
+        "imu_quantization": 0.0005559437053743749,
+        "imu_drift": -0.00033206332498230036,
+        "control_latency": 0.05297196689760312,
+        "initial_x_error": 0.01823512309696525,
+        "initial_y_error": -0.012292056041769684,
+        "initial_heading_error": 0.025991072078468277
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    },
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-2",
+      "random_seed": 4242657444,
+      "environment": {
+        "battery_voltage": 10.010043246787973,
+        "mass": 6.571637234301306,
+        "inertia": 0.0981102982372977,
+        "radius": 0.2091988072777167,
+        "max_wheel_speed": 0.7705945462686941,
+        "motor_tau": 0.16901191618060693,
+        "friction": 0.9018497895938344,
+        "lateral_friction": 0.043295623327139765,
+        "traction_stiffness": 96.80482159368694,
+        "left_motor_efficiency": 0.8613329187268391,
+        "right_motor_efficiency": 0.8237186312442646,
+        "encoder_noise": 0.0030554009636398404,
+        "encoder_bias": -0.0015305014760233463,
+        "encoder_latency": 0.009741190266795456,
+        "encoder_period": 0.028122854182729494,
+        "encoder_dropout": 0.03489122286555357,
+        "encoder_quantization": 0.0009813598159234972,
+        "encoder_drift": -0.00011613030950538814,
+        "imu_noise": 0.002273005562601611,
+        "imu_bias": 0.013599819898372514,
+        "imu_latency": 0.05290931338677183,
+        "imu_period": 0.034508784090867266,
+        "imu_dropout": 0.03485846123076044,
+        "imu_quantization": 0.0016789536543656142,
+        "imu_drift": -0.0001967186827678233,
+        "control_latency": 0.009189428470563143,
+        "initial_x_error": -0.014948389385826887,
+        "initial_y_error": 0.0015925243729725466,
+        "initial_heading_error": 0.010617057500639931
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    },
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-3",
+      "random_seed": 1631366850,
+      "environment": {
+        "battery_voltage": 10.277888006181456,
+        "mass": 8.735186297562905,
+        "inertia": 0.1402370125730522,
+        "radius": 0.17182158492971214,
+        "max_wheel_speed": 0.7654504846548662,
+        "motor_tau": 0.15560148630989715,
+        "friction": 1.0783058320567944,
+        "lateral_friction": 0.0799701976706274,
+        "traction_stiffness": 53.49209657870233,
+        "left_motor_efficiency": 0.877319000591524,
+        "right_motor_efficiency": 0.8566344457445667,
+        "encoder_noise": 0.002939334423048422,
+        "encoder_bias": 0.001363846569787711,
+        "encoder_latency": 0.036550726764835416,
+        "encoder_period": 0.015927404157118873,
+        "encoder_dropout": 0.01580142365419306,
+        "encoder_quantization": 0.0010600682215299458,
+        "encoder_drift": -0.00009436189471744002,
+        "imu_noise": 0.004038628296693787,
+        "imu_bias": -0.034129926647292454,
+        "imu_latency": 0.03887880797730758,
+        "imu_period": 0.021000439858762546,
+        "imu_dropout": 0.023720221052644777,
+        "imu_quantization": 0.0005096545352134854,
+        "imu_drift": 0.00018697462021373206,
+        "control_latency": 0.04204378967871889,
+        "initial_x_error": 0.0021116142487153412,
+        "initial_y_error": 0.004142310773022472,
+        "initial_heading_error": -0.018769742072327063
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    },
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-4",
+      "random_seed": 1094289328,
+      "environment": {
+        "battery_voltage": 10.254964689840563,
+        "mass": 9.679965754621662,
+        "inertia": 0.11295831296825781,
+        "radius": 0.20683310768101365,
+        "max_wheel_speed": 0.9399885355262085,
+        "motor_tau": 0.11999012117972596,
+        "friction": 1.023347516723443,
+        "lateral_friction": 0.0025358597398735584,
+        "traction_stiffness": 60.416746167466044,
+        "left_motor_efficiency": 0.9082108428934589,
+        "right_motor_efficiency": 0.9004420740297064,
+        "encoder_noise": 0.0057134740927722305,
+        "encoder_bias": 0.0019196779183112082,
+        "encoder_latency": 0.02830473751295358,
+        "encoder_period": 0.034482787695014845,
+        "encoder_dropout": 0.015440450824098662,
+        "encoder_quantization": 0.0011280677064787596,
+        "encoder_drift": 0.00007417499017901719,
+        "imu_noise": 0.0004969351820182055,
+        "imu_bias": -0.011251864252844825,
+        "imu_latency": 0.02757062334800139,
+        "imu_period": 0.03299039190984331,
+        "imu_dropout": 0.04861659639864229,
+        "imu_quantization": 0.00007656639558263123,
+        "imu_drift": 0.0001513555727433414,
+        "control_latency": 0.01819407011149451,
+        "initial_x_error": 0.005803191470913589,
+        "initial_y_error": 0.006718090311624111,
+        "initial_heading_error": -0.002255883015459405
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    },
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-5",
+      "random_seed": 1101242094,
+      "environment": {
+        "battery_voltage": 11.163343783118762,
+        "mass": 7.5303639128105715,
+        "inertia": 0.08479757600696758,
+        "radius": 0.2037786814989522,
+        "max_wheel_speed": 0.8962850564857945,
+        "motor_tau": 0.16657529948977753,
+        "friction": 0.8333837263309396,
+        "lateral_friction": 0.053692420397419484,
+        "traction_stiffness": 119.71954747103155,
+        "left_motor_efficiency": 0.9965603863121941,
+        "right_motor_efficiency": 0.9242011443478987,
+        "encoder_noise": 0.004709115761099383,
+        "encoder_bias": -0.001781673912424594,
+        "encoder_latency": 0.02174418239388615,
+        "encoder_period": 0.02847561340895481,
+        "encoder_dropout": 0.012476277357200161,
+        "encoder_quantization": 0.001494468137389049,
+        "encoder_drift": -0.0001903728199657053,
+        "imu_noise": 0.009404906578129158,
+        "imu_bias": -0.003635083177359777,
+        "imu_latency": 0.02115891342284158,
+        "imu_period": 0.027258803591830652,
+        "imu_dropout": 0.028541529708309102,
+        "imu_quantization": 0.00006125732162036002,
+        "imu_drift": -0.00018498147674836222,
+        "control_latency": 0.035374914777930824,
+        "initial_x_error": -0.01721787525806576,
+        "initial_y_error": -0.014378964039497077,
+        "initial_heading_error": -0.027445033005205916
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    },
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-6",
+      "random_seed": 2247003132,
+      "environment": {
+        "battery_voltage": 9.847359441337176,
+        "mass": 7.802857254282571,
+        "inertia": 0.14021555906394498,
+        "radius": 0.20899237158242612,
+        "max_wheel_speed": 0.8837160286260768,
+        "motor_tau": 0.1238065619743429,
+        "friction": 0.44860418067546565,
+        "lateral_friction": 0.07004220687085763,
+        "traction_stiffness": 62.38330717198551,
+        "left_motor_efficiency": 0.983100962289609,
+        "right_motor_efficiency": 0.9764299507951364,
+        "encoder_noise": 0.0033306634125765413,
+        "encoder_bias": 0.0006213760985992849,
+        "encoder_latency": 0.029940177616663278,
+        "encoder_period": 0.02768675823346712,
+        "encoder_dropout": 0.013874646258773283,
+        "encoder_quantization": 0.00029430377739481626,
+        "encoder_drift": -0.00010663669998757542,
+        "imu_noise": 0.001032571493415162,
+        "imu_bias": -0.011033268120372669,
+        "imu_latency": 0.026479826106224208,
+        "imu_period": 0.033350957328220826,
+        "imu_dropout": 0.03220497113070451,
+        "imu_quantization": 0.0016546018302906304,
+        "imu_drift": -0.00041668709483928975,
+        "control_latency": 0.04155633073998615,
+        "initial_x_error": -0.002948381830938162,
+        "initial_y_error": -0.0058321744715794915,
+        "initial_heading_error": 0.016139658527681608
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    },
+    {
+      "schema_version": 1,
+      "scenario_id": "mc-42-7",
+      "random_seed": 510532186,
+      "environment": {
+        "battery_voltage": 11.260916084633209,
+        "mass": 8.422327803564258,
+        "inertia": 0.11826476584421472,
+        "radius": 0.20211120829451829,
+        "max_wheel_speed": 0.9421070046490058,
+        "motor_tau": 0.1513617580453865,
+        "friction": 0.9785681588412263,
+        "lateral_friction": 0.016194791451562197,
+        "traction_stiffness": 87.06266499124467,
+        "left_motor_efficiency": 0.9032862182008102,
+        "right_motor_efficiency": 0.9395255430368706,
+        "encoder_noise": 0.000050948594463989137,
+        "encoder_bias": -0.000250369765330106,
+        "encoder_latency": 0.002098606922663748,
+        "encoder_period": 0.03484218605910428,
+        "encoder_dropout": 0.011377094086492436,
+        "encoder_quantization": 0.0007731211462523788,
+        "encoder_drift": 0.00018954282687045636,
+        "imu_noise": 0.006706155625870451,
+        "imu_bias": 0.007363257863325999,
+        "imu_latency": 0.00711955412523821,
+        "imu_period": 0.02499138196813874,
+        "imu_dropout": 0.028577903396217155,
+        "imu_quantization": 0.0018577719277236612,
+        "imu_drift": -0.0007102573795709759,
+        "control_latency": 0.009210540445055813,
+        "initial_x_error": 0.012657838887535033,
+        "initial_y_error": 0.01870924212504178,
+        "initial_heading_error": 0.01869551782612689
+      },
+      "task": {
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "goal": [
+          0.6096,
+          0.6096,
+          1.5707963267948966
+        ],
+        "dt": 0.01,
+        "duration": 10,
+        "localization": "encoders",
+        "thresholds": {
+          "endpoint": 0.06,
+          "path": 0.12,
+          "heading": 0.12,
+          "localization": 0.08,
+          "saturation_fraction": 0.5,
+          "oscillations": 8,
+          "settle_speed": 0.04,
+          "settle_omega": 0.1,
+          "settle_seconds": 0.2
+        }
+      },
+      "controller": {
+        "adapter": "nationals-wasm",
+        "radius": 0.1885853785424542,
+        "max_wheel_speed": 0.864462,
+        "reference_time_scale": 1
+      }
+    }
+  ]
+}

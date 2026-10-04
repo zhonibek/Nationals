@@ -1,5 +1,15 @@
 # Nationals — каскадное управление VEX V5
 
+## RoboProof
+
+RobotAI motion lab: the original Simulator now exposes bounded continuous reference actions, a persistent iraLIB controller, a local Python adapter and complete action/transition replay. [Environment contract and limitations](docs/MOTION_EPISODE_CONTRACT.md). Run `node roboproof/cli.js motion-check`, then `node roboproof/server.js` and open http://127.0.0.1:8766/#motion. This prepares a bounded CPU reach-task experiment; **motion-policy training is not implemented yet**.
+
+RobotAI: локальный Nemotron предлагает задачу движения, а исходный Simulator и iraLIB выполняют её после подтверждения. [Установка, запуск и ограничения](roboproof/NEMOTRON.md). Это координация задач, не обученная политика движения.
+
+LocateAnything: [подготовка будущего зрения робота](roboproof/perception/README.md) — парсер, калибровочные проверки и общий формат задачи Simulator. Инференс, камера и автоматическое движение отключены; веса этой модели не скачаны.
+
+Детерминированные стресс-тесты настоящего C++-контроллера, поиск контрпримеров и проверка регрессий: [запуск и ограничения](roboproof/README.md). Быстрый запуск: `node roboproof/cli.js demo`, затем `node roboproof/server.js` и http://127.0.0.1:8766. Измеренные результаты, AMD/ROCm-проверки и неподтверждённые этапы разделены в [статусе разработки](docs/progress.md).
+
 Рабочий контур X-drive: **траектория → LTV-LQR → кинематика четырёх колёс → PID скорости + feedforward → напряжение моторов**. Переключений PID/LQR/Hybrid в автономном контуре нет. Внутренний D по умолчанию равен нулю, как в примере 1516X: это PI + kS/kV/kA.
 
 Исходные библиотеки LemLib, PedroFollower, EKF, MCL, FLC, ColorSorter и дифференциальный LTV сохранены. Их наличие не означает, что все они одновременно подключены к роботу. Текущий `main.cpp` использует X-drive, энкодеры четырёх моторов, LTV-каскад и монитор моторов. IMU, внешние tracking wheels, intake и другие механизмы в этой конфигурации не подключены.

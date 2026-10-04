@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "engine_family": "legacy-reduced-v1",
+  "canonical_ready": false,
+  "feature_policy": "pre-run scenario/task/controller only; no IDs, seeds, hashes or outcome fields",
+  "environment_order": [
+    "battery_voltage", "mass", "inertia", "radius", "max_wheel_speed", "motor_tau",
+    "friction", "lateral_friction", "traction_stiffness", "left_motor_efficiency",
+    "right_motor_efficiency", "encoder_noise", "encoder_bias", "encoder_latency",
+    "encoder_period", "encoder_dropout", "encoder_quantization", "encoder_drift",
+    "imu_noise", "imu_bias", "imu_latency", "imu_period", "imu_dropout",
+    "imu_quantization", "imu_drift", "control_latency", "initial_x_error",
+    "initial_y_error", "initial_heading_error"
+  ],
+  "threshold_order": ["endpoint", "path", "heading", "localization", "saturation_fraction", "oscillations", "settle_speed", "settle_omega", "settle_seconds"],
+  "classification_targets": ["PATH_DIVERGENCE", "HEADING_INSTABILITY", "OSCILLATION", "TIMEOUT", "ENDPOINT_FAILURE", "LOCALIZATION_DIVERGENCE", "MOTOR_SATURATION", "NUMERICAL_FAILURE", "CONTROLLER_DIVERGENCE"],
+  "regression_targets": ["endpoint_error", "max_path_deviation", "max_tracking_error", "final_heading_error", "max_heading_error", "max_localization_error", "saturation_fraction", "oscillations", "completion_time"],
+  "metric_definition": "roboproof-sim-v1; null regression targets are masked, not measured zero",
+  "near_duplicate_resolution": 0.0001,
+  "split_order": ["train", "validation", "calibration", "final"],
+  "split_fractions": [0.6, 0.15, 0.1, 0.15],
+  "restrictions": [
+    "Legacy-only experiment until canonical browser/headless parity is implemented.",
+    "Never pool different engine/controller build hashes into one population.",
+    "Final evaluation is a separate explicit operation, never run during training.",
+    "Predictions select experiments; they never certify safety or replace simulation."
+  ]
+}

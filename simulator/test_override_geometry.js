@@ -74,7 +74,7 @@ const core=new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'));
 const context={console,Math,setTimeout(){},document:{addEventListener(){}},window:{},OverrideGame:Game};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(__dirname+'/robot-config.js','utf8'),context);
-vm.runInContext(fs.readFileSync(__dirname+'/simulator.js','utf8')+'\nthis.Simulator=VexRobotSimulator;',context);
+vm.runInContext(fs.readFileSync(__dirname+'/engine.js','utf8')+'\nthis.Simulator=VexRobotSimulator;',context);
 const sim=new context.Simulator(Control.fromModule(core));
 sim.setPose(0,58,0);sim.queueAction({type:'drive',targetInches:24,heading:0});sim.isRunning=true;
 for(let i=0;i<1200&&sim.isRunning;i++)sim.update(.01);

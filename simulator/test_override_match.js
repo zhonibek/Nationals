@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const Game=require('./override'),Fleet=require('./override-autonomy'),Control=require('./control-runtime');
 const moduleCore=new WebAssembly.Module(fs.readFileSync(__dirname+'/control.wasm'));
 const context={console,Math,setTimeout(){},document:{addEventListener(){}},window:{},OverrideGame:Game,OverrideFleet:Fleet};
-vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/robot-config.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/simulator.js','utf8')+'\nthis.Simulator=VexRobotSimulator;',context);
+vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/robot-config.js','utf8'),context);vm.runInContext(fs.readFileSync(__dirname+'/engine.js','utf8')+'\nthis.Simulator=VexRobotSimulator;',context);
 const make=()=>new context.Simulator(Control.fromModule(moduleCore));
 const near=(a,b)=>assert(Math.abs(a-b)<1e-6,`${a} != ${b}`);
 const sim=make();assert(sim.startGame('match').ok);

@@ -1,0 +1,379 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-09-29T05:57:52.843215+00:00",
+  "backend": "torch-cpu",
+  "gpu_measured": false,
+  "hardware": {
+    "cpu": "AMD Ryzen 3 5300U with Radeon Graphics",
+    "logical_cpu_count": 8,
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64",
+    "display_adapters": [
+      {
+        "Name": "AMD Radeon(TM) Graphics",
+        "DriverVersion": "31.0.21912.3005",
+        "MatchingDeviceId": "PCI\\VEN_1002&DEV_164C&SUBSYS_3F9517AA&REV_C3",
+        "ProviderName": "Advanced Micro Devices, Inc."
+      }
+    ],
+    "display_detection_error": "Command '['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,PNPDeviceID | ConvertTo-Json -Compress']' returned non-zero exit status 1.",
+    "display_adapter_source": "Windows installed-driver registry; not proof of active GPU or ROCm availability",
+    "measured_device": "CPU",
+    "gpu": null
+  },
+  "versions": {
+    "python": "3.12.14",
+    "torch": "2.8.0+cpu",
+    "hip": null,
+    "cuda": null
+  },
+  "provenance": {
+    "git_revision": "f33c8392e163ac37814bb4e7cefdd5c229e89812",
+    "source_hashes": {
+      "roboproof/core.js": "e08b628a41702461b08881c7a6300268eae146c5924c5c913e86f030d0dbb7ec",
+      "roboproof/sim.js": "8fc9e79e98d483d6895c9b8456b1a544f4940841892dd5b21dd27167dd7737e6",
+      "roboproof/scenario-spec.json": "8cbf376be9324140480b26a9bd60ddf33d0f5d9b199dbe943bd498f42029a249",
+      "include/subsystems/control/Cascade.hpp": "1afa2a237881005035cd1ef74e8cdbe191cfcdb73c3f27471d57e0b71c291e63",
+      "simulator/native/control.cpp": "3f632d72f56847876f8357374a0f292b5bf07ea5000e5f59c4f620f9e8b37b1a",
+      "roboproof/gpu/__init__.py": "965c40463e181ddc854b51249631fb0b841173dc14f3cd9ac8d79e050231b769",
+      "roboproof/gpu/benchmark.py": "fbf2e06011a7e0e24a0fe5b9f97cef5db62c23ce64815c180f5ee6395a628f2b",
+      "roboproof/gpu/controller.py": "503322d52afaed6a0f66a9f3cfade90436f2fc653ea27d819962c949873ba06a",
+      "roboproof/gpu/simulation.py": "25ad09ae428b5feebe56220acf1b6349bc2226808abe51b3ee99f3bcedcac1fa"
+    },
+    "controller_wasm_sha256": "8e92a9ff82698ae98854c6c675cceebe9d98877354c22fa45261a5f5bd38c77d"
+  },
+  "dtype": "float64",
+  "timing": {
+    "clock": "time.perf_counter",
+    "synchronization": "CPU operations complete synchronously",
+    "scope": "Simulation.run without telemetry, includes DARE solves and 1 ms physics; excludes setup, transfer of final results to CPU, serialization and hardware query",
+    "repeats": 2,
+    "warmup_runs": 1,
+    "seconds": [
+      31.830449300003238,
+      30.430691199959256
+    ],
+    "median_seconds": 31.130570249981247,
+    "setup_seconds": [
+      0.003201399988029152,
+      0.003360200033057481
+    ],
+    "simulations_per_second": 0.25698212193863745,
+    "control_steps_per_second": 256.9821219386374,
+    "simulated_seconds_per_wall_second": 2.5698212193863745
+  },
+  "workload": {
+    "batch_size": 8,
+    "dt": 0.01,
+    "duration": 10,
+    "executed_control_steps": 8000.0
+  },
+  "determinism": {
+    "algorithms_enabled": true,
+    "cpu_threads": 1,
+    "rng": "uint32 LCG 1664525/1013904223; Box-Muller; separate encoder/IMU streams",
+    "scenario_seeds": [
+      260725464,
+      2501058006,
+      4242657444,
+      1631366850,
+      1094289328,
+      1101242094,
+      2247003132,
+      510532186
+    ],
+    "result_sha256": [
+      "0ab55d52cd132fd793debe624f1efe4c6dbd65b4ade1ad3280f04535ec1de540",
+      "0ab55d52cd132fd793debe624f1efe4c6dbd65b4ade1ad3280f04535ec1de540"
+    ],
+    "repeated_results_exact": true,
+    "comparison_scope": "final truth, estimate, metrics, categories and failure score; not full telemetry",
+    "cross_backend": "float64 tolerance required; no cross-hardware bitwise guarantee"
+  },
+  "limitations": [
+    "Engineering model, not calibrated hardware validation or a safety certificate",
+    "Measured under current system load; no exclusive hardware reservation or power-state control",
+    "Tensor batch requires a common dt and duration; batch initialization and serialization use Python",
+    "DARE is capped at 600 iterations and uses host convergence checks; small GPU batches may be slower",
+    "No GPU throughput is inferred from CPU measurements or the presence of an AMD display adapter",
+    "This benchmark alone does not establish JS/WASM or CPU/ROCm parity; run the parity tests",
+    "Numerically failed lanes stop metric accounting but remain in the tensor workload"
+  ],
+  "results": [
+    {
+      "metrics": {
+        "endpoint_error": 0.024228693003984943,
+        "max_path_deviation": 0.020095654874954103,
+        "max_tracking_error": 0.04554092356962397,
+        "max_heading_error": 0.14853066471770734,
+        "max_localization_error": 0.02455991642902627,
+        "final_heading_error": 0.08375161742565718,
+        "saturation_fraction": 0.0,
+        "oscillations": 0.0,
+        "completion_time": 4.15,
+        "first_divergence": null,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "SUCCESS"
+      ],
+      "passed": true,
+      "failure_score": 1.9912044412676715,
+      "final_truth": [
+        0.5884678997288011,
+        0.5977482531747703,
+        1.6545479442205537
+      ],
+      "final_estimate": [
+        0.6104299214614246,
+        0.6087811637755645,
+        1.5704529047100348
+      ]
+    },
+    {
+      "metrics": {
+        "endpoint_error": 0.10970585880206835,
+        "max_path_deviation": 0.0486290781682838,
+        "max_tracking_error": 0.4148998935867073,
+        "max_heading_error": 0.6027241848082098,
+        "max_localization_error": 0.11732563462815876,
+        "final_heading_error": 0.10486535834973988,
+        "saturation_fraction": 0.289,
+        "oscillations": 0.0,
+        "completion_time": null,
+        "first_divergence": 3.71,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "LOCALIZATION_DIVERGENCE",
+        "ENDPOINT_FAILURE",
+        "TIMEOUT"
+      ],
+      "passed": false,
+      "failure_score": 7.152121717203321,
+      "final_truth": [
+        0.5354888109860678,
+        0.5287117615568211,
+        1.4659309684451567
+      ],
+      "final_estimate": [
+        0.6167393582103451,
+        0.6116263711988914,
+        1.5621282370254457
+      ]
+    },
+    {
+      "metrics": {
+        "endpoint_error": 0.13595614858859467,
+        "max_path_deviation": 0.09083723161555025,
+        "max_tracking_error": 0.5672894802446219,
+        "max_heading_error": 0.6588583128523154,
+        "max_localization_error": 0.12360107806017455,
+        "final_heading_error": 0.16611886731772316,
+        "saturation_fraction": 0.505,
+        "oscillations": 0.0,
+        "completion_time": null,
+        "first_divergence": 5.07,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "LOCALIZATION_DIVERGENCE",
+        "HEADING_INSTABILITY",
+        "MOTOR_SATURATION",
+        "ENDPOINT_FAILURE",
+        "TIMEOUT"
+      ],
+      "passed": false,
+      "failure_score": 8.962250110006039,
+      "final_truth": [
+        0.478008132801001,
+        0.5754290353351703,
+        1.4046774594771734
+      ],
+      "final_estimate": [
+        0.5998944219018847,
+        0.5952017389542628,
+        1.5569497083737693
+      ]
+    },
+    {
+      "metrics": {
+        "endpoint_error": 0.5729108506701908,
+        "max_path_deviation": 0.02653296192869562,
+        "max_tracking_error": 0.7683330932669332,
+        "max_heading_error": 0.5657656269180785,
+        "max_localization_error": 0.34863446624194566,
+        "final_heading_error": 0.1328749256618531,
+        "saturation_fraction": 0.905,
+        "oscillations": 1.0,
+        "completion_time": null,
+        "first_divergence": 2.82,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "LOCALIZATION_DIVERGENCE",
+        "HEADING_INSTABILITY",
+        "MOTOR_SATURATION",
+        "ENDPOINT_FAILURE",
+        "TIMEOUT"
+      ],
+      "passed": false,
+      "failure_score": 19.169844069115406,
+      "final_truth": [
+        0.22099505679285106,
+        0.18863320685520796,
+        1.7036712524567497
+      ],
+      "final_estimate": [
+        0.4506081583600883,
+        0.45059334655438454,
+        1.5795454162574734
+      ]
+    },
+    {
+      "metrics": {
+        "endpoint_error": 0.09289214573906941,
+        "max_path_deviation": 0.18383818621258244,
+        "max_tracking_error": 0.18383818621258244,
+        "max_heading_error": 0.238415997068247,
+        "max_localization_error": 0.10339500760545034,
+        "final_heading_error": 0.14253661862218903,
+        "saturation_fraction": 0.142,
+        "oscillations": 0.0,
+        "completion_time": null,
+        "first_divergence": 2.92,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "PATH_DIVERGENCE",
+        "LOCALIZATION_DIVERGENCE",
+        "HEADING_INSTABILITY",
+        "ENDPOINT_FAILURE",
+        "TIMEOUT"
+      ],
+      "passed": false,
+      "failure_score": 7.844430064342382,
+      "final_truth": [
+        0.5267482602245669,
+        0.6516064275580824,
+        1.4282597081727075
+      ],
+      "final_estimate": [
+        0.6118593862223801,
+        0.6059928123392523,
+        1.568530478232543
+      ]
+    },
+    {
+      "metrics": {
+        "endpoint_error": 0.137493328926478,
+        "max_path_deviation": 0.0699521352450653,
+        "max_tracking_error": 0.48907994842818386,
+        "max_heading_error": 0.39766710568639335,
+        "max_localization_error": 0.13475074361209566,
+        "final_heading_error": 0.16441160317861714,
+        "saturation_fraction": 0.344,
+        "oscillations": 0.0,
+        "completion_time": null,
+        "first_divergence": 3.73,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "LOCALIZATION_DIVERGENCE",
+        "HEADING_INSTABILITY",
+        "ENDPOINT_FAILURE",
+        "TIMEOUT"
+      ],
+      "passed": false,
+      "failure_score": 8.616970930789849,
+      "final_truth": [
+        0.47676844481930875,
+        0.5741007965221241,
+        1.4063847236162794
+      ],
+      "final_estimate": [
+        0.606137066052489,
+        0.6079686358187427,
+        1.5559205934351423
+      ]
+    },
+    {
+      "metrics": {
+        "endpoint_error": 0.27259022798625465,
+        "max_path_deviation": 0.03711495036263989,
+        "max_tracking_error": 0.5347916827852968,
+        "max_heading_error": 0.5319519145317738,
+        "max_localization_error": 0.28272748350038923,
+        "final_heading_error": 0.1483366346180579,
+        "saturation_fraction": 0.39,
+        "oscillations": 0.0,
+        "completion_time": null,
+        "first_divergence": 2.36,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "LOCALIZATION_DIVERGENCE",
+        "HEADING_INSTABILITY",
+        "ENDPOINT_FAILURE",
+        "TIMEOUT"
+      ],
+      "passed": false,
+      "failure_score": 12.40269388503159,
+      "final_truth": [
+        0.3945646669217225,
+        0.4420731725319419,
+        1.4224596921768387
+      ],
+      "final_estimate": [
+        0.6203853839741379,
+        0.6120734564393047,
+        1.5548239368450132
+      ]
+    },
+    {
+      "metrics": {
+        "endpoint_error": 0.04448341970206405,
+        "max_path_deviation": 0.11248753464477951,
+        "max_tracking_error": 0.23043525368323514,
+        "max_heading_error": 0.27693905092285476,
+        "max_localization_error": 0.055043588027046744,
+        "final_heading_error": 0.09816373507800825,
+        "saturation_fraction": 0.17,
+        "oscillations": 0.0,
+        "completion_time": 5.55,
+        "first_divergence": null,
+        "reference_duration": 3.5921024484276614,
+        "steps": 1000.0
+      },
+      "categories": [
+        "SUCCESS"
+      ],
+      "passed": true,
+      "failure_score": 4.079862426395716,
+      "final_truth": [
+        0.5768549755735447,
+        0.6397087695481039,
+        1.4726325917168883
+      ],
+      "final_estimate": [
+        0.6116058470310762,
+        0.6060712375883475,
+        1.5648922850136087
+      ]
+    }
+  ],
+  "input": {
+    "input_file": "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals-work3\\roboproof\\gpu\\validation\\scenarios.json",
+    "input_sha256": "95ce5c2289ce716050dbeaa374c2ba96c41ef69788ebf07fa6326ac202b8d631",
+    "input_count": 8,
+    "batch_size": 8,
+    "cycling_input": false
+  }
+}

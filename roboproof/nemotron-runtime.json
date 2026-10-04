@@ -1,0 +1,15 @@
+{
+  "model": {
+    "repository": "nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF",
+    "revision": "ba223d14e45525f7fae81db77ea8cabeb2fc6c25",
+    "filename": "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+    "bytes": 2837072864,
+    "sha256": "be5d9a656a51922f24f1f09a759cebb694e1f5d9728bf0ef9f8c972c5a0b5ef2"
+  },
+  "runtime": {
+    "tag": "b11146",
+    "filename": "llama-b11146-bin-win-cpu-x64.zip",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11146/llama-b11146-bin-win-cpu-x64.zip",
+    "sha256": "14cf1303ca9ac3abd94816850532f9f9a69ac66fbaca3776fc6f9061c2fac1d1"
+  }
+}

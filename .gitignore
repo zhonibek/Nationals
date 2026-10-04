@@ -15,3 +15,7 @@ temp.log
 temp.errors
 *.ini
 .d/
+
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,741 @@
+{
+  "schemaVersion": 2,
+  "purpose": "Frozen evaluation only; never use for training, curriculum or hyperparameter selection. Conditions are software stress experiments, not a measured hardware distribution.",
+  "acceptance": {
+    "primary": "success rate",
+    "maximumSuccessRegressions": 0,
+    "maximumContactIncreaseSeconds": 0,
+    "minimumMeanTimeOrEffortImprovementFraction": 0.05,
+    "independentTrainingSeedsRequired": 3
+  },
+  "cases": [
+    {
+      "id": "frozen-v2-1-nominal",
+      "group": "reach-family-1",
+      "seed": 2026100201,
+      "task": {
+        "start": {
+          "xIn": -12,
+          "yIn": -18,
+          "headingDeg": 25
+        },
+        "goal": {
+          "xIn": 19,
+          "yIn": 9,
+          "headingDeg": -40
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-1-load-traction",
+      "group": "reach-family-1",
+      "seed": 2026100202,
+      "task": {
+        "start": {
+          "xIn": -12,
+          "yIn": -18,
+          "headingDeg": 25
+        },
+        "goal": {
+          "xIn": 19,
+          "yIn": 9,
+          "headingDeg": -40
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-1-power-contact",
+      "group": "reach-family-1",
+      "seed": 2026100203,
+      "task": {
+        "start": {
+          "xIn": -12,
+          "yIn": -18,
+          "headingDeg": 25
+        },
+        "goal": {
+          "xIn": 19,
+          "yIn": 9,
+          "headingDeg": -40
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-2-nominal",
+      "group": "reach-family-2",
+      "seed": 2026100204,
+      "task": {
+        "start": {
+          "xIn": 28,
+          "yIn": -15,
+          "headingDeg": -70
+        },
+        "goal": {
+          "xIn": -17,
+          "yIn": 26,
+          "headingDeg": 110
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-2-load-traction",
+      "group": "reach-family-2",
+      "seed": 2026100205,
+      "task": {
+        "start": {
+          "xIn": 28,
+          "yIn": -15,
+          "headingDeg": -70
+        },
+        "goal": {
+          "xIn": -17,
+          "yIn": 26,
+          "headingDeg": 110
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-2-power-contact",
+      "group": "reach-family-2",
+      "seed": 2026100206,
+      "task": {
+        "start": {
+          "xIn": 28,
+          "yIn": -15,
+          "headingDeg": -70
+        },
+        "goal": {
+          "xIn": -17,
+          "yIn": 26,
+          "headingDeg": 110
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-3-nominal",
+      "group": "reach-family-3",
+      "seed": 2026100207,
+      "task": {
+        "start": {
+          "xIn": -30,
+          "yIn": 24,
+          "headingDeg": 135
+        },
+        "goal": {
+          "xIn": 12,
+          "yIn": -22,
+          "headingDeg": -135
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-3-load-traction",
+      "group": "reach-family-3",
+      "seed": 2026100208,
+      "task": {
+        "start": {
+          "xIn": -30,
+          "yIn": 24,
+          "headingDeg": 135
+        },
+        "goal": {
+          "xIn": 12,
+          "yIn": -22,
+          "headingDeg": -135
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-3-power-contact",
+      "group": "reach-family-3",
+      "seed": 2026100209,
+      "task": {
+        "start": {
+          "xIn": -30,
+          "yIn": 24,
+          "headingDeg": 135
+        },
+        "goal": {
+          "xIn": 12,
+          "yIn": -22,
+          "headingDeg": -135
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-4-nominal",
+      "group": "reach-family-4",
+      "seed": 2026100210,
+      "task": {
+        "start": {
+          "xIn": 8,
+          "yIn": 31,
+          "headingDeg": 179
+        },
+        "goal": {
+          "xIn": -26,
+          "yIn": -8,
+          "headingDeg": -179
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-4-load-traction",
+      "group": "reach-family-4",
+      "seed": 2026100211,
+      "task": {
+        "start": {
+          "xIn": 8,
+          "yIn": 31,
+          "headingDeg": 179
+        },
+        "goal": {
+          "xIn": -26,
+          "yIn": -8,
+          "headingDeg": -179
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-4-power-contact",
+      "group": "reach-family-4",
+      "seed": 2026100212,
+      "task": {
+        "start": {
+          "xIn": 8,
+          "yIn": 31,
+          "headingDeg": 179
+        },
+        "goal": {
+          "xIn": -26,
+          "yIn": -8,
+          "headingDeg": -179
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-5-nominal",
+      "group": "reach-family-5",
+      "seed": 2026100213,
+      "task": {
+        "start": {
+          "xIn": 35,
+          "yIn": 5,
+          "headingDeg": 90
+        },
+        "goal": {
+          "xIn": 35,
+          "yIn": 5,
+          "headingDeg": -90
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-5-load-traction",
+      "group": "reach-family-5",
+      "seed": 2026100214,
+      "task": {
+        "start": {
+          "xIn": 35,
+          "yIn": 5,
+          "headingDeg": 90
+        },
+        "goal": {
+          "xIn": 35,
+          "yIn": 5,
+          "headingDeg": -90
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-5-power-contact",
+      "group": "reach-family-5",
+      "seed": 2026100215,
+      "task": {
+        "start": {
+          "xIn": 35,
+          "yIn": 5,
+          "headingDeg": 90
+        },
+        "goal": {
+          "xIn": 35,
+          "yIn": 5,
+          "headingDeg": -90
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-6-nominal",
+      "group": "reach-family-6",
+      "seed": 2026100216,
+      "task": {
+        "start": {
+          "xIn": -18,
+          "yIn": -32,
+          "headingDeg": -45
+        },
+        "goal": {
+          "xIn": 26,
+          "yIn": 28,
+          "headingDeg": 45
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-6-load-traction",
+      "group": "reach-family-6",
+      "seed": 2026100217,
+      "task": {
+        "start": {
+          "xIn": -18,
+          "yIn": -32,
+          "headingDeg": -45
+        },
+        "goal": {
+          "xIn": 26,
+          "yIn": 28,
+          "headingDeg": 45
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-6-power-contact",
+      "group": "reach-family-6",
+      "seed": 2026100218,
+      "task": {
+        "start": {
+          "xIn": -18,
+          "yIn": -32,
+          "headingDeg": -45
+        },
+        "goal": {
+          "xIn": 26,
+          "yIn": 28,
+          "headingDeg": 45
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-7-nominal",
+      "group": "reach-family-7",
+      "seed": 2026100219,
+      "task": {
+        "start": {
+          "xIn": -50,
+          "yIn": -45,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 50,
+          "yIn": 45,
+          "headingDeg": 90
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-7-load-traction",
+      "group": "reach-family-7",
+      "seed": 2026100220,
+      "task": {
+        "start": {
+          "xIn": -50,
+          "yIn": -45,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 50,
+          "yIn": 45,
+          "headingDeg": 90
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-7-power-contact",
+      "group": "reach-family-7",
+      "seed": 2026100221,
+      "task": {
+        "start": {
+          "xIn": -50,
+          "yIn": -45,
+          "headingDeg": 0
+        },
+        "goal": {
+          "xIn": 50,
+          "yIn": 45,
+          "headingDeg": 90
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-8-nominal",
+      "group": "reach-family-8",
+      "seed": 2026100222,
+      "task": {
+        "start": {
+          "xIn": 48,
+          "yIn": -48,
+          "headingDeg": 170
+        },
+        "goal": {
+          "xIn": -48,
+          "yIn": 48,
+          "headingDeg": -170
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {}
+    },
+    {
+      "id": "frozen-v2-8-load-traction",
+      "group": "reach-family-8",
+      "seed": 2026100223,
+      "task": {
+        "start": {
+          "xIn": 48,
+          "yIn": -48,
+          "headingDeg": 170
+        },
+        "goal": {
+          "xIn": -48,
+          "yIn": 48,
+          "headingDeg": -170
+        },
+        "deadlineSeconds": 10
+      },
+      "configuration": {
+        "massKg": [
+          10,
+          13.6
+        ],
+        "moiKgM2": [
+          0.4,
+          0.58
+        ],
+        "muLong": [
+          0.3,
+          0.5
+        ],
+        "kSlip": [
+          325,
+          450
+        ]
+      }
+    },
+    {
+      "id": "frozen-v2-8-power-contact",
+      "group": "reach-family-8",
+      "seed": 2026100224,
+      "task": {
+        "start": {
+          "xIn": 48,
+          "yIn": -48,
+          "headingDeg": 170
+        },
+        "goal": {
+          "xIn": -48,
+          "yIn": 48,
+          "headingDeg": -170
+        },
+        "deadlineSeconds": 6
+      },
+      "configuration": {
+        "massKg": [
+          8,
+          11
+        ],
+        "muLong": [
+          0.45,
+          0.65
+        ],
+        "muLat": [
+          0.1,
+          0.15
+        ],
+        "batteryInternalR": [
+          0.08,
+          0.12
+        ]
+      }
+    }
+  ]
+}

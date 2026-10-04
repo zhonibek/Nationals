@@ -11,7 +11,7 @@ global.document = {
   addEventListener: () => {}
 };
 
-const simCode = fs.readFileSync(__dirname + '/simulator.js', 'utf8');
+const simCode = fs.readFileSync(__dirname + '/engine.js', 'utf8');
 vm.runInThisContext(simCode.split('document.addEventListener')[0]);
 
 const DT = 0.01;

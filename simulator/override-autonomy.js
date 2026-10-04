@@ -6,7 +6,7 @@
     constructor(host,Simulator,choices={}){
       this.host=host;this.game=host.override;this.entries=new Map();this.trace=[];this.lastTrace=-1;
       for(const robot of this.game.robots){
-        const sim=new Simulator(host.productionControl.fork());sim.override=this.game;sim.managedGame=true;sim.matchMode=true;sim.activeRobotId=robot.id;sim.setPose(robot.x,robot.y,robot.theta);
+        const sim=new Simulator(host.productionControl.fork(),{config:host.config});sim.override=this.game;sim.managedGame=true;sim.matchMode=true;sim.activeRobotId=robot.id;sim.setPose(robot.x,robot.y,robot.theta);
         const choice=choices[robot.id]||(robot.id.endsWith('1')?'preload':'taxi');
         const steps=Array.isArray(choice)?JSON.parse(JSON.stringify(choice)):this.program(robot,choice);
         this.entries.set(robot.id,{sim,steps,index:0,pending:false,status:this.game.phase==='autonomous'?(steps.length?'Ready':'Idle'):'Manual'});

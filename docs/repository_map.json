@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "motion_update": {"date": "2026-10-01", "branch": "RobotAI", "contract": "docs/MOTION_EPISODE_CONTRACT.md", "status": "Shared original Simulator and scripted reach benchmark; motion-policy training not implemented"},
+  "audit": {
+    "date": "2026-09-28",
+    "repository_root": "C:/Users/kassi/.gemini/antigravity-ide/scratch/Nationals-work3",
+    "head": "f33c8392e163ac37814bb4e7cefdd5c229e89812",
+    "basis": "Working-tree source inspection and explicitly listed read-only probes; not a hardware certification or complete master-plan implementation.",
+    "instructions": "No AGENTS.md found in checked ancestors or recursive repository/reference searches.",
+    "owned_outputs": [
+      "docs/repository_map.json",
+      "docs/simulator_audit.md",
+      "docs/pedro_mapping.md"
+    ],
+    "reference_policy": "User-deleted PedroPathing-main tree remains deleted. Surviving reference is read-only.",
+    "reference_root": "C:/Users/kassi/.gemini/antigravity-ide/scratch/Nationals/PedroPathing-main/PedroPathing-main",
+    "status_vocabulary": {
+      "SOURCE_CONFIRMED": "Observed in inspected source; does not imply execution success.",
+      "PROBE_PASS": "Only the stated bounded probe ran successfully.",
+      "UNVERIFIED": "Not tested or independently established in this audit."
+    }
+  },
+  "coordinate_contract": {
+    "field": "+X right/east, +Y north, heading clockwise from +Y",
+    "wheel_order": ["FL", "BL", "FR", "BR"],
+    "public_chassis_pose": "inches and degrees by default; getPose(true) returns radians",
+    "odom_snapshot": "inches, inches/second, radians, radians/second",
+    "cascade": "meters, meters/second, radians, radians/second, volts",
+    "spline_state": "meters; heading counterclockwise from +X; converted by XDRIVE LTV adapter",
+    "simulator_pose": "inches and clockwise degrees; plant velocities in SI; controller feedback converted to SI"
+  },
+  "hardware": {
+    "status": "SOURCE_CONFIRMED",
+    "physical_wiring_and_calibration": "UNVERIFIED",
+    "configured_drive": "XDRIVE",
+    "signed_motor_ports": {"FL": -11, "BL": -20, "FR": 1, "BR": 10},
+    "cartridge_rpm": 200,
+    "wheel_diameter_inches": 3.25,
+    "width_inches": 10.5,
+    "wheelbase_inches": 10.5,
+    "external_gear_ratio": 1,
+    "configured_external_localization_sensors": [],
+    "notes": [
+      "main.cpp supplies five null OdomSensors pointers, including IMU; config/robot.json imuPort is null.",
+      "Chassis::calibrate creates motor-backed vertical tracking-wheel wrappers, not additional physical sensors. XDRIVE odometry reads all four motor positions directly.",
+      "Drivetrain uses width+wheelbase as turning span and sqrt(2)*physical wheel diameter as effective translation diameter.",
+      "Motor groups are explicitly green in main.cpp; changing cartridgeRpm in JSON alone does not change this constructor."
+    ]
+  },
+  "nodes": [
+    {
+      "id": "configuration",
+      "paths": ["config/robot.json", "tools/generate-config.js", "include/robot_config.hpp", "simulator/robot-config.js"],
+      "role": "Nominal shared geometry, signed ports and legacy chassis gains; generated artifacts are checked with --check.",
+      "activation": "ACTIVE",
+      "limits": "Cascade Q/R, wheel gains and most plant constants are not all supplied by this JSON. drive and imuPort do not create hardware in main.cpp."
+    },
+    {
+      "id": "robot_entry",
+      "paths": ["src/main.cpp", "include/autonomous.hpp"],
+      "role": "PROS lifecycle, driver input, diagnostics, routine selection and public autonomous wrappers.",
+      "activation": "ACTIVE",
+      "symbols": ["initialize", "autonomous", "opcontrol", "stopEverything", "autoPose", "autoSpline", "autoPath", "runDiagnostic"],
+      "limits": "Routine named Pedro Bezier invokes BezierReference and the cascade, not PedroFollower::follow."
+    },
+    {
+      "id": "references",
+      "paths": ["include/subsystems/control/Cascade.hpp", "include/subsystems/control/BezierReference.hpp", "src/subsystems/pedro/BezierCurve.cpp", "src/subsystems/trajectory/QuinticSpline.cpp", "include/subsystems/trajectory/QuinticSpline.hpp"],
+      "role": "Quintic point time law, sampled arc-length Bezier reference, quintic spline trajectory generation.",
+      "activation": "ACTIVE",
+      "limits": "Bezier heading is independent of tangent; spline heading is tangent-derived. Spline speed/acceleration/jerk checks are tangential, not full chassis feasibility."
+    },
+    {
+      "id": "ltv_adapter",
+      "paths": ["src/subsystems/ltv/ltv.cpp", "include/subsystems/ltv/ltv.hpp", "include/subsystems/ltv/State.hpp", "src/subsystems/VelocityController.cpp"],
+      "role": "Task lifecycle, trajectory validation/interpolation and conversion into followReference for XDRIVE.",
+      "activation": "XDRIVE_BRANCH_ACTIVE",
+      "limits": "Separate differential-drive Eigen LTV and two-wheel VelocityController branch remains present but is not selected by current main.cpp."
+    },
+    {
+      "id": "cascade_core",
+      "paths": ["include/subsystems/control/Cascade.hpp"],
+      "role": "Reference-linearized discrete Riccati outer pose controller -> X-drive inverse kinematics -> four wheel PI plus feedforward voltage loops.",
+      "activation": "ACTIVE_SHARED_CPP",
+      "symbols": ["Cascade::update", "Cascade::solve", "WheelVelocity::update", "inverseX", "forwardX", "settled"],
+      "limits": "Derivative support exists but wheelKd defaults to zero. Gain caching and nominal gains are not physical tuning evidence."
+    },
+    {
+      "id": "hardware_control_boundary",
+      "paths": ["src/subsystems/control/HolonomicMotion.cpp", "include/subsystems/control/HolonomicMotion.hpp"],
+      "role": "10 ms scheduled reference loop, odometry epoch checks, motor RPM feedback, timeout/cancellation and 150 ms settle dwell.",
+      "activation": "ACTIVE_FIRMWARE_ONLY",
+      "symbols": ["configuredCascade", "readFeedback", "followReference"],
+      "limits": "Not compiled into simulator/control.wasm."
+    },
+    {
+      "id": "localization",
+      "paths": ["src/lemlib/chassis/odom.cpp", "include/lemlib/chassis/odom.hpp", "src/lemlib/chassis/chassis.cpp", "src/lemlib/chassis/trackingWheel.cpp"],
+      "role": "Four signed motor encoder positions -> X-drive displacement -> midpoint field integration -> filtered pose velocities and status snapshot.",
+      "activation": "ACTIVE_ENCODER_ONLY",
+      "limits": "No independent absolute position/heading sensor configured. Slip is not observable as absolute error from these encoders alone; stale/discontinuity faults latch until rebase."
+    },
+    {
+      "id": "drive_output",
+      "paths": ["src/lemlib/safety.cpp", "include/lemlib/safety.hpp"],
+      "role": "Exclusive lease, mode/disabled checks, finite-value guards, voltage limits, PROS output errors, release/stop and 100 ms write watchdog.",
+      "activation": "ACTIVE_FIRMWARE_ONLY",
+      "limits": "Watchdog is called by the odometry task, not an independent safety task. Robot scheduling/failure latency is UNVERIFIED."
+    },
+    {
+      "id": "legacy_and_optional",
+      "paths": ["src/subsystems/pedro/PedroFollower.cpp", "include/subsystems/pedro/PedroPath.hpp", "src/subsystems/ekf/EKF.cpp", "src/subsystems/mcl/MCL.cpp", "src/subsystems/flc/FuzzyLogic.cpp", "src/subsystems/OdomReset.cpp", "src/subsystems/ColorSorter.cpp"],
+      "role": "Library alternatives and optional subsystems; not the selected feedback/control path in main.cpp.",
+      "activation": "NOT_ACTIVE_IN_MAIN_CONTROL_PATH",
+      "limits": "PedroFollower is constructed and cancelled, but no follow call is wired in main.cpp. File presence does not establish sensor fusion or algorithm parity."
+    },
+    {
+      "id": "monitoring",
+      "paths": ["src/subsystems/MotorMonitor.cpp", "include/subsystems/MotorMonitor.hpp", "src/main.cpp"],
+      "role": "Motor monitor task plus LCD pose/status/routine telemetry.",
+      "activation": "ACTIVE",
+      "limits": "Not a substitute for independent localization or hardware-in-loop verification."
+    },
+    {
+      "id": "wasm_bridge",
+      "paths": ["simulator/native/control.cpp", "simulator/control-runtime.js", "simulator/control.wasm", "simulator/control-build.json", "tools/build-wasm.ps1"],
+      "role": "Compile shared controller/reference code to WASI reactor; 64-double buffer and explicit exports connect JavaScript feedback to C++ volts.",
+      "activation": "ACTIVE_SIMULATOR",
+      "limits": "Shares algorithms, not PROS main, odometry, drive leases or runtime scheduling. JS step supplies valid=true after array-shape checks."
+    },
+    {
+      "id": "simulator_plant_ui",
+      "paths": ["simulator/index.html", "simulator/engine.js", "simulator/motion.js", "simulator/headless.js", "simulator/simulator.js", "simulator/simulator.css", "roboproof/motion.js"],
+      "role": "Original shared approximate motor/contact/rigid-body plant, encoder odometry and action scheduler; browser rendering and source-checked headless scripted reach benchmark with seeded episodes and measured reward.",
+      "activation": "ACTIVE_SIMULATOR",
+      "limits": "Legacy JS controller classes remain, but executeAction uses ProductionControl. Display EKF is not controller feedback."
+    },
+    {
+      "id": "simulator_match",
+      "paths": ["simulator/override.js", "simulator/override-geometry.js", "simulator/override-dynamics.js", "simulator/override-autonomy.js", "simulator/override-view.js"],
+      "role": "Game state/rules approximation, collision proxies, reduced object dynamics and four independent WASM-controlled robot simulations.",
+      "activation": "ACTIVE_BROWSER_MATCH_MODE",
+      "limits": "Standalone VM plant probes omit these modules. Game rules, collision fidelity and hardware equivalence are UNVERIFIED in this audit."
+    },
+    {
+      "id": "build_and_tests",
+      "paths": ["Makefile", "common.mk", "project.pros", ".github/workflows/pros-build.yml", "tools/verify-arm-build.ps1", "tools/test-safety.ps1", "tests/safety.cpp", "tests/motion.cpp", "tests/control-core.test.js", "simulator/test_physics.js", "simulator/test_holonomic_drive.js", "simulator/test_override_match.js", "simulator/test_override_geometry.js", "simulator/test_override_dynamics.js"],
+      "role": "Firmware/WASM build scripts, mocked production boundary tests and standalone simulator regression suites.",
+      "activation": "AVAILABLE_NOT_FULLY_EXECUTED",
+      "limits": "control-core.test.js writes docs/recovery/control-results.json; it was not run unchanged because that file is outside audit ownership."
+    }
+  ],
+  "edges": [
+    {"from": "configuration", "to": "robot_entry", "data": "generated geometry and ports"},
+    {"from": "robot_entry", "to": "references", "data": "requested point, heading, spline or Bezier"},
+    {"from": "robot_entry", "to": "ltv_adapter", "data": "generated spline trajectory"},
+    {"from": "ltv_adapter", "to": "hardware_control_boundary", "data": "XDRIVE reference callback"},
+    {"from": "references", "to": "hardware_control_boundary", "data": "time-indexed reference"},
+    {"from": "localization", "to": "hardware_control_boundary", "data": "pose, filtered velocity, validity and epoch; separate motor RPM reads"},
+    {"from": "hardware_control_boundary", "to": "cascade_core", "data": "reference, SI feedback and measured dt"},
+    {"from": "cascade_core", "to": "drive_output", "data": "four voltage demands via followReference"},
+    {"from": "robot_entry", "to": "drive_output", "data": "driver holonomic commands or diagnostic wheel test, bypassing cascade with a lease"},
+    {"from": "cascade_core", "to": "wasm_bridge", "data": "same source compiled for browser/Node"},
+    {"from": "simulator_plant_ui", "to": "wasm_bridge", "data": "synthetic encoder pose/velocity and exact modeled wheel speed, not truth pose"},
+    {"from": "wasm_bridge", "to": "simulator_plant_ui", "data": "wheel volts and sampled references"},
+    {"from": "simulator_match", "to": "simulator_plant_ui", "data": "per-robot programs, phase gating, contacts and shared game state"}
+  ],
+  "audit_checks": [
+    {"id": "generated_config", "status": "PROBE_PASS", "command": "node tools/generate-config.js --check", "scope": "Existing header and JS match generator output; no files written."},
+    {"id": "wasm_manifest", "status": "PROBE_PASS", "scope": "All 10 LF-normalized SHA-256 source hashes and the WASM byte hash match control-build.json."},
+    {"id": "wasm_imports", "status": "PROBE_PASS", "scope": "WebAssembly.Module.imports lists only WASI fd_close, fd_seek and fd_write; no clock/random imports."},
+    {"id": "bounded_repeat", "status": "PROBE_PASS", "runtime": "Node v24.19.0", "scope": "Two fresh standalone simulations in one process, each 1000 updates of 0.01 seconds and a 24-inch forward action: selected per-step trace JSON exactly equal; both report Settled."},
+    {"id": "cubic_formula", "status": "PROBE_PASS", "scope": "Two cubic control-point sets at six parameters each: local WASM value/first/second derivatives agree with Bernstein formulas within 1e-4. Not a Java Pedro comparison."},
+    {"id": "java_cpp_runtime_parity", "status": "UNVERIFIED"},
+    {"id": "arm_build_hardware_timing_and_accuracy", "status": "UNVERIFIED"},
+    {"id": "full_regression_and_browser_replay", "status": "UNVERIFIED"}
+  ],
+  "handoffs": [
+    {"role": "control/localization owner", "request": "Test actual odometry and PROS sensor failure semantics, reset epochs, slip observability and scheduling latency; no implementation performed here."},
+    {"role": "simulator owner", "request": "Add explicit sensor packet/fault boundary and reproducible input traces; validate plant constants against measured robot data."},
+    {"role": "Pedro compatibility owner", "request": "Choose geometry-only reuse versus a Foresight port; use pedro_mapping.md before claiming equivalence."},
+    {"role": "verification/integration owner", "request": "Run scoped regression/build/bench gates and attach provenance; do not treat this audit as completed master-plan acceptance."}
+  ]
+}

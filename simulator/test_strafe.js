@@ -7,7 +7,7 @@ global.document = {
   addEventListener: () => {}
 };
 
-const simCode = fs.readFileSync(__dirname + '/simulator.js', 'utf8');
+const simCode = fs.readFileSync(__dirname + '/engine.js', 'utf8');
 const headlessCode = simCode.split('document.addEventListener')[0];
 vm.runInThisContext(headlessCode);
 

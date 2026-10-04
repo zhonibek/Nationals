@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "nvidia/LocateAnything-3B",
+  "modelCard": "https://huggingface.co/nvidia/LocateAnything-3B",
+  "role": "visual grounding; not a motion policy",
+  "stage": "contracts and offline proposal preparation",
+  "runtimeEnabled": false,
+  "cloudEnabled": false,
+  "automaticExecutionEnabled": false,
+  "licenseReview": "pending; NVIDIA non-commercial research terms apply",
+  "runtimeReview": "pending; official custom Transformers implementation targets Linux/NVIDIA CUDA",
+  "nextGates": [
+    "Review license and deployment hardware; pin and review model code and weights",
+    "Implement and verify a bounded inference worker with real image/model provenance",
+    "Acquire consented images and validate fixed-camera rectification/calibration",
+    "Evaluate grounding and pixel-to-field accuracy on held-out images",
+    "Add explicit proposal approval and original-Simulator playback; physical robot remains disabled"
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-09-29",
+  "evidenceType": "Measured Java versus actual C++ WASM; bounded geometry only",
+  "fullReport": "../outputs/roboproof-pedro-20260929-jdk/report.json",
+  "fullReportSha256": "105ffa59dca44e35cbca7f1da54e5659a1a930f1e836e47a540aeb9a2a94b960",
+  "status": "PASS",
+  "seed": 1346716754,
+  "randomCases": 2000,
+  "totalCases": 2077,
+  "comparedCases": 2077,
+  "scope": "Cubic point, first/second parameter derivatives and curvature only; no follower equivalence claim",
+  "convention": "Signed Cartesian curvature in both primitives (positive CCW); not clockwise robot heading rate",
+  "tolerances": {
+    "point": {
+      "absolute": 0.00005,
+      "relative": 0.000003
+    },
+    "first": {
+      "absolute": 0.0002,
+      "relative": 0.000004
+    },
+    "second": {
+      "absolute": 0.0005,
+      "relative": 0.000004
+    },
+    "curvature": {
+      "absolute": 0.00005,
+      "relative": 0.0005
+    }
+  },
+  "javaSources": {
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\math\\Matrix.java": "33ad5b2f0d89858d978d331d2829c4fb4874b8b38123885bd9748c9f525feea3",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\math\\Vector.java": "1db47b380c1882ac5fadba7fd3559c63b414c56e79ba8ec8949c673acb71a171",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\math\\Vector2D.java": "518708241828645a0a2f14f035c62d3bde023708bf48190bd2c7529e86a2267a",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\math\\Pose.java": "f51f8d105760c5471a0d83f1e0792d924c8adb5100ad93c5004b7506346c192b",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\math\\Twist.java": "77d1463d76ba6fe478cb1190f5bf898d6cbe6328b3823a8f2d8f0b1df193ef14",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\math\\Velocity.java": "f90355487b1a5dc5482d8fa52fcadfde9d4dcda208d95203bc947daa667a7ae0",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\utils\\Angle.java": "9380f17220f31ebc8e4016e9d693aff7cd90c5a072d3bcb54529efaba8b61ba8",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\utils\\Pair.java": "e7830aea01f1e5c38a0424eb21f4f1af4a4f103a12b6cab487be2843f4a81e3e",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\utils\\Utils.java": "a0e64fb29447654d693b838e3ccd78e902e69b46e090350042474e41ecd02366",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\utils\\BijectiveMap.java": "2f79435915458afdc88502044fe5278daae40a7bd8fd6c14ef1cc48c928632f3",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\paths\\TValue.java": "f56ecdd5e714766024685a6ef12796cdc41b729c0eefc71753fc3e7272ec0f34",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\paths\\curves\\Curve.java": "ff51dea75e0786b4cf37e526fa42d91a8c911598f79b551fe41efddca012f0d6",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\paths\\curves\\bezier\\BasisMatrixSupplier.java": "dc456fec515f74171994f99a061db7b3ea0dbc69bccbb2de8130c20936a0dd4c",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\paths\\curves\\bezier\\PolynomialMatrix.java": "32e3fe71c5ac31e5670c856806a6b790d3514df2230889b9c90536ca0bb25a9e",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals\\PedroPathing-main\\PedroPathing-main\\core\\src\\main\\java\\com\\pedropathing\\paths\\curves\\bezier\\BezierCurve.java": "a3add8dafe6bf946f9a65d3a543219c746704ac6e5aa66fb6208527de4160b1b",
+    "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals-work3\\roboproof\\pedro_reference\\PedroProbe.java": "d468a24303cb50b4cecd91ed1bcd8e6a62099d4057d6254a6e3f4f108a749654"
+  },
+  "launcherSha256": "8908e84246357aa44325a1568d300b8ca011f2b9fcf8ddd0a34e4dc72c6e71dc",
+  "harnessSha256": "bf6d48f8817738ee8f1c6649284afd6ad199a0b66ca38d32c2545811fe3b6119",
+  "wasm": {
+    "wasm": "8e92a9ff82698ae98854c6c675cceebe9d98877354c22fa45261a5f5bd38c77d",
+    "sources": {
+      "include/subsystems/control/Cascade.hpp": "1afa2a237881005035cd1ef74e8cdbe191cfcdb73c3f27471d57e0b71c291e63",
+      "include/subsystems/control/BezierReference.hpp": "35425902da85f2812e804f7655d62bb4a12ab472f8cc19a1d8840fc596a65680",
+      "include/subsystems/trajectory/QuinticSpline.hpp": "37d6ad5c8ae2a48b402aa42cb180607f9ea2139cbcfa76fae36dc7200b8bc1c9",
+      "include/subsystems/ltv/State.hpp": "f0ca0da5e24516fdec185075baf329a6755e3a70f477fbc3ebaded1d6d578f3a",
+      "include/lemlib/pose.hpp": "7030944c71cbb08b4d17161ff222c2e068621a2d7a03c3f96f902fe8deccb1c3",
+      "include/subsystems/pedro/Point.hpp": "3f8d828b14efb911b47778f5c25e0e0d6922ac97060ae8f2fee6434822c9a9a7",
+      "include/subsystems/pedro/BezierCurve.hpp": "0abcb033d71a04dc4b01c8094c6214e97e4feba63e1ebaeb1013da0fee9b2198",
+      "src/subsystems/trajectory/QuinticSpline.cpp": "1e7ec2a644bf58065fa05c0dc2306f65c6207918421dd55dc688c9d81049c672",
+      "src/subsystems/pedro/BezierCurve.cpp": "58bc2bc6873abf9f45d898255632ee1ec9fb8bd573b0e11161d68d283b5643f2",
+      "simulator/native/control.cpp": "3f632d72f56847876f8357374a0f292b5bf07ea5000e5f59c4f620f9e8b37b1a"
+    },
+    "compiler": "0.14.1"
+  },
+  "javaRuntime": {
+    "java": "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals-work3\\.cache\\roboproof-jdk\\temurin8-504\\jdk8u504-b01\\bin\\java.exe",
+    "javac": "C:\\Users\\kassi\\.gemini\\antigravity-ide\\scratch\\Nationals-work3\\.cache\\roboproof-jdk\\temurin8-504\\jdk8u504-b01\\bin\\javac.exe",
+    "mode": "javac",
+    "version": "openjdk version \"1.8.0_504\"\r\nOpenJDK Runtime Environment (Temurin)(build 1.8.0_504-b01)\r\nOpenJDK 64-Bit Server VM (Temurin)(build 25.504-b01, mixed mode)"
+  },
+  "statistics": {
+    "x": {
+      "compared": 2077,
+      "nonFinite": 0,
+      "failures": 0,
+      "maxAbsoluteError": 0.000022228668314028255,
+      "maxRawAbsoluteError": 0.000022228668314028255,
+      "maxToleranceRatio": 0.10140107917509741,
+      "worstCaseId": 373,
+      "rmsError": 0.0000020402150292665487
+    },
+    "y": {
+      "compared": 2077,
+      "nonFinite": 0,
+      "failures": 0,
+      "maxAbsoluteError": 0.00002076967980713107,
+      "maxRawAbsoluteError": 0.00002076967980713107,
+      "maxToleranceRatio": 0.08428969265056706,
+      "worstCaseId": 1291,
+      "rmsError": 0.0000021041448322971026
+    },
+    "dx": {
+      "compared": 2077,
+      "nonFinite": 0,
+      "failures": 0,
+      "maxAbsoluteError": 0.0000709827876903546,
+      "maxRawAbsoluteError": 0.0000709827876903546,
+      "maxToleranceRatio": 0.12239725015808665,
+      "worstCaseId": 802,
+      "rmsError": 0.000008329505914817754
+    },
+    "dy": {
+      "compared": 2077,
+      "nonFinite": 0,
+      "failures": 0,
+      "maxAbsoluteError": 0.00008092467396636494,
+      "maxRawAbsoluteError": 0.00008092467396636494,
+      "maxToleranceRatio": 0.1736859941902845,
+      "worstCaseId": 1687,
+      "rmsError": 0.00000900066066916699
+    },
+    "ddx": {
+      "compared": 2077,
+      "nonFinite": 0,
+      "failures": 0,
+      "maxAbsoluteError": 0.00031812707311473787,
+      "maxRawAbsoluteError": 0.00031812707311473787,
+      "maxToleranceRatio": 0.16146614938604054,
+      "worstCaseId": 1303,
+      "rmsError": 0.000031812620744759034
+    },
+    "ddy": {
+      "compared": 2077,
+      "nonFinite": 0,
+      "failures": 0,
+      "maxAbsoluteError": 0.00023870069344411604,
+      "maxRawAbsoluteError": 0.00023870069344411604,
+      "maxToleranceRatio": 0.17378761372320248,
+      "worstCaseId": 196,
+      "rmsError": 0.000032768768382860196
+    },
+    "curvature": {
+      "compared": 2077,
+      "nonFinite": 0,
+      "failures": 0,
+      "maxAbsoluteError": 0.0027810351805328537,
+      "maxRawAbsoluteError": 195117.72962014767,
+      "maxToleranceRatio": 0.017468659825999912,
+      "worstCaseId": 1599,
+      "rmsError": 0.00007150762434959116
+    }
+  },
+  "discrepancyCount": 0,
+  "intentionalDifferenceCount": 177,
+  "limitation": "177 low-speed curvature cutoff differences are expected by the documented policy, not identical Java/C++ outputs. Complete inputs, raw results and differences remain in the full report directory."
+}

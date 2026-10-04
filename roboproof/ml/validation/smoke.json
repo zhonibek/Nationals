@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "recorded_date": "2026-09-30",
+  "status": "LOCAL_ML_READINESS_SMOKE_ONLY",
+  "engine_family": "legacy-reduced-v1",
+  "canonical_ready": false,
+  "corpus": {"seed": 5053102, "count": 128, "passed": 19, "failed": 109},
+  "split_counts": {"train": 78, "validation": 19, "calibration": 12, "final": 19},
+  "model": {
+    "hidden_layers": 3,
+    "hidden_width": 128,
+    "epochs_completed": 20,
+    "best_epoch": 16,
+    "actual_gradient_training": true,
+    "weights_changed": true,
+    "device": "cpu",
+    "torch": "2.8.0+cpu",
+    "amd_training": false,
+    "final_evaluation": "NOT RUN"
+  },
+  "acquisition": {"pool_seed": 5053103, "pool_count": 256, "selected": 8, "random_exploration": 2, "model_ranked": 6, "observed_failures": 8},
+  "hashes": {
+    "model_sha256": "dd260e522224e0a882c30a516bcda21b0f7c0a14258ab9d55ff02d6e660cb0bb",
+    "dataset_sha256": "8e16216fcdb71284ea8f3724cb52c06a460ac663bf6f6518636935d2bdba85c9",
+    "split_sha256": "635001add8e175a1f7b4bad055e216053cf49457811a802571b7c47ead2a7c2e",
+    "feature_sha256": "e8e3bc5f1dae0f198ce0db94e4d5de078ccb36d1f7290c7088461027c009c5e1",
+    "controller_wasm_sha256": "8e92a9ff82698ae98854c6c675cceebe9d98877354c22fa45261a5f5bd38c77d",
+    "simulation_sha256": "0afe8f08b3b530eba9b7af62c5ec6132e983e5cba1ff181bb356d32bb2cd4595"
+  },
+  "tests": {"node_passed": 51, "node_skipped": 0, "python_ml_passed": 12, "python_ml_skipped": 0},
+  "remote_jobs": 0,
+  "retained_artifacts": "roboproof/runs/ml-demo/ (ignored generated outputs)",
+  "limitations": [
+    "Eight selected failures do not establish a search advantage over random/evolutionary baselines.",
+    "Small legacy-plant smoke corpus; no canonical, physical or unseen-controller validity claim.",
+    "No AMD GPU execution, live LLM inference, accepted controller fix or master-plan completion."
+  ]
+}

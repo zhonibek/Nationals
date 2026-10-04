@@ -1,0 +1,49 @@
+{
+  "grounding": {
+    "schemaVersion": 1,
+    "frame": {
+      "id": "synthetic-floor-frame",
+      "cameraId": "fixture-overhead",
+      "cameraPoseId": "fixture-fixed-pose",
+      "coordinateSpaceId": "fixture-rectified-1000",
+      "imageSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "width": 1000,
+      "height": 1000,
+      "capturedAt": "2026-10-02T00:00:00.000Z"
+    },
+    "prompt": "Synthetic fixture: floor target, not real model inference",
+    "answer": "<box><500><300></box>",
+    "truncated": false,
+    "source": {"kind": "fixture", "model": "nvidia/LocateAnything-3B", "revision": null}
+  },
+  "calibration": {
+    "schemaVersion": 1,
+    "id": "synthetic-top-down-map",
+    "kind": "rectified-fixed-plane",
+    "cameraId": "fixture-overhead",
+    "cameraPoseId": "fixture-fixed-pose",
+    "coordinateSpaceId": "fixture-rectified-1000",
+    "width": 1000,
+    "height": 1000,
+    "fieldFrame": "nationals-field-inches-v1",
+    "homography": [0.12, 0, -60, 0, -0.12, 60, 0, 0, 1],
+    "pixelCoverage": [0, 0, 1000, 1000],
+    "validFrom": "2026-10-01T23:00:00.000Z",
+    "expiresAt": "2026-10-02T01:00:00.000Z",
+    "reviewedBy": "fixture-only",
+    "reviewedAt": "2026-10-01T23:30:00.000Z",
+    "validation": {"kind": "fixture", "sampleCount": 4, "rmsErrorIn": 0, "maxErrorIn": 0}
+  },
+  "selection": {
+    "detectionIndex": 0,
+    "frameId": "synthetic-floor-frame",
+    "imageSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "plane": "field-floor",
+    "pixelPoint": {"x": 500, "y": 300},
+    "reviewedBy": "fixture-only",
+    "reviewedAt": "2026-10-02T00:00:00.000Z"
+  },
+  "start": {"xIn": 0, "yIn": 0, "headingDeg": 0},
+  "goalHeadingDeg": 0,
+  "deadlineSeconds": 10
+}
