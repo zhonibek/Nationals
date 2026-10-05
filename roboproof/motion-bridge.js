@@ -22,7 +22,7 @@ function createBridge() {
     if (request.op === 'contract') result = {protocolVersion: PROTOCOL_VERSION, episodeSchemaVersion: SCHEMA_VERSION,
       actionSize: Policy.ACTION_SIZE, observationSize: Policy.OBSERVATION_SIZE, actionBounds: [-1, 1],
       fixedDt: FIXED_DT, policyLimits: Policy.LIMITS, identity: runner.identity,
-      physics: 'Original Simulator only; Python performs no physics', motionTrainingImplemented: false};
+      physics: 'Original Simulator only; Python performs no physics', motionTrainingImplemented: true};
     else if (request.op === 'reset') {
       const observation = episode.reset(request.seed, request.configuration, request.task,
         {...request.options, controlMode: 'policy'});

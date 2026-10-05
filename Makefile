@@ -16,6 +16,9 @@ WARNFLAGS+=
 EXTRA_CFLAGS=
 EXTRA_CXXFLAGS=-I$(INCDIR) -DEIGEN_DONT_VECTORIZE
 
+C_STANDARD := gnu11
+CXX_STANDARD := gnu++20
+
 # Set to 1 to enable hot/cold linking (0 = single unified binary, prevents NACK errors)
 USE_PACKAGE:=0
 

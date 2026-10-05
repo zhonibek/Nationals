@@ -20,14 +20,20 @@
   </header>
   <main id="main">
     <section class="intro" aria-labelledby="page-title">
-      <div><p class="eyebrow">ROBOTAI / ORIGINAL SIMULATOR + IRALIB</p><h1 id="page-title">Prepare to learn.<br><span>Prove the movement.</span></h1><p class="lede">Run a controller baseline, validate bounded policy actions, and replay measured motion in the original Simulator. Motion training is not implemented yet. Legacy failure research remains separate below.</p></div>
+      <div><p class="eyebrow">ROBOTAI / ORIGINAL SIMULATOR + IRALIB</p><h1 id="page-title">Learn to move.<br><span>Prove the movement.</span></h1><p class="lede">Train a compact neural reference policy through the original Simulator and iraLIB. Compare frozen unseen worlds and replay measured motion. Training is real; improvement must pass its own gate. Legacy failure research remains separate below.</p></div>
       <div class="mode-card"><span class="status-dot" aria-hidden="true"></span><strong id="connection-mode">Offline file explorer</strong><p id="source">No report loaded</p><p class="muted">Reports stay in this browser. Explicit replay sends only the selected scenario to the local server.</p></div>
     </section>
 
     <section id="motion" class="panel" aria-labelledby="motion-title">
-      <div class="section-heading"><div><p class="eyebrow">TASK → BASELINE → POLICY INTERFACE → EVALUATION → REPLAY</p><h2 id="motion-title">Motion training preparation</h2></div><span id="motion-readiness" class="badge">READINESS NOT CHECKED</span></div>
+      <div class="section-heading"><div><p class="eyebrow">TASK → BASELINE → PPO TRAINING → FROZEN EVALUATION → REPLAY</p><h2 id="motion-title">Motion learning lab</h2></div><span id="motion-readiness" class="badge">READINESS NOT CHECKED</span></div>
       <p class="muted">One original Simulator, persistent iraLIB controller, 100 Hz physics and a default 20 Hz policy interface. The fixture agents below are not trained AI.</p>
       <div class="nemotron-actions"><button id="motion-check" class="secondary" type="button">Validate environment</button><button id="motion-restore" class="secondary" type="button">Restore saved experiment</button><button id="motion-evaluate" class="secondary" type="button">Run frozen evaluation · 24 worlds</button><button id="motion-cancel" class="secondary" type="button" disabled>Cancel</button></div>
+      <h3>CPU neural motion learner</h3>
+      <p class="muted">PPO · two 32-neuron hidden layers · four bounded reference actions. Physics/control stays at 100 Hz. Training runs explicitly in a terminal; refreshing this panel never starts training.</p>
+      <pre>roboproof/gpu/.venv/Scripts/python.exe -m roboproof.motion_learning.train --seed 42 --seed-count 3 --updates 8 --max-steps 4096 --max-seconds 180</pre>
+      <div class="nemotron-actions"><button id="motion-learning-refresh" class="secondary" type="button">Refresh training history</button><button id="motion-compare-learned" class="secondary" type="button" disabled>Compare baseline / untrained / learned</button><button id="motion-use-verified" class="secondary" type="button" disabled>Use verified policy for next experiment</button></div>
+      <p id="motion-learning-status" class="status" role="status">Saved training has not been inspected. No improvement is assumed.</p>
+      <div id="motion-learning-results" hidden><div id="motion-learning-table"></div><details><summary>Checkpoints, reward/loss history and frozen failures</summary><pre id="motion-learning-details"></pre></details></div>
       <form id="motion-form">
         <div class="motion-inputs">
           <div><label for="motion-start-x">Start X · inches</label><input id="motion-start-x" type="number" min="-60" max="60" step="any" value="0" required></div>
@@ -38,7 +44,7 @@
           <div><label for="motion-goal-heading">Goal heading · degrees</label><input id="motion-goal-heading" type="number" min="-180" max="180" step="any" value="0" required></div>
           <div><label for="motion-deadline">Deadline · seconds</label><input id="motion-deadline" type="number" min="0.01" max="60" step="0.01" value="10" required></div>
           <div><label for="motion-seed">World seed</label><input id="motion-seed" type="number" min="0" max="4294967295" step="1" value="42" required></div>
-          <div><label for="motion-mode">Agent · no learned policy</label><select id="motion-mode"><option value="scripted">Controller-only baseline</option><option value="policy-fixture">Nominal policy-interface fixture</option><option value="random-fixture">Bounded random-action fixture</option></select></div>
+          <div><label for="motion-mode">Agent · experimental policy requires saved training</label><select id="motion-mode"><option value="scripted">Controller-only baseline</option><option value="policy-fixture">Nominal policy-interface fixture</option><option value="random-fixture">Bounded random-action fixture</option><option value="learned-experiment">Learned PPO · explicit experiment, not automatic deployment</option></select></div>
         </div>
         <div class="nemotron-actions"><button id="motion-run" type="submit">Run &amp; save original-Simulator experiment</button></div>
       </form>
@@ -46,7 +52,7 @@
       <div id="motion-result" hidden><h3>Measured result · saved locally</h3><p id="motion-outcome"></p><pre id="motion-metrics"></pre><div class="nemotron-actions"><a id="motion-simulator" target="_blank" rel="noopener">Replay in original 2D / 3D Simulator</a><button id="motion-replay" class="secondary" type="button">Verify exact server replay</button><button id="motion-download" class="secondary" type="button">Download evidence</button></div></div>
       <details><summary>Environment readiness and separate development gates</summary><pre id="motion-gates"></pre></details>
       <details id="motion-evaluation" hidden><summary>Frozen baseline / adapter evaluation · not learned improvement</summary><pre id="motion-evaluation-result"></pre></details>
-      <p class="caveat">Environment readiness permits only a bounded CPU reach-task experiment. It does not certify the physical robot, game scoring, learned improvement, AMD execution or camera navigation. No training, model inference, cloud call or robot command runs automatically.</p>
+      <p class="caveat">Reach-task learning does not certify obstacle avoidance, physical robots, game scoring, AMD execution or camera navigation. Policy inputs are sensor-derived; evaluator truth is used for rewards and metrics only. Failed comparisons remain visible and do not unlock the verified-policy button. No training, model inference, cloud call or robot command runs automatically.</p>
     </section>
 
     <section class="panel controls" aria-label="Load or run a legacy reduced-plant experiment">
@@ -63,12 +69,16 @@
     </section>
 
     <section id="nemotron" class="panel" aria-labelledby="nemotron-title">
-      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / LOCAL TASK COORDINATOR</p><h2 id="nemotron-title">Tell the robot where to go</h2></div><span id="nemotron-connection" class="badge">MODEL NOT CHECKED</span></div>
-      <p class="muted">Nemotron proposes a task. You review it. The original Nationals Simulator and iraLIB C++ controller execute it—not a separate physics model.</p>
+      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / LOCAL AGENT SKILLS</p><h2 id="nemotron-title">Robot engineering assistant</h2></div><span id="nemotron-connection" class="badge">MODEL NOT CHECKED</span></div>
+      <p class="muted">Nemotron loads a reviewed skill, calls its permitted tools and saves the evidence. Movement proposals still need your approval and use the original Nationals Simulator and iraLIB—not a separate physics model.</p>
       <p id="nemotron-provider" class="hint"></p>
+      <p class="hint">The bundled CPU runtime can take minutes per request. You can cancel; opening this panel never starts inference or a simulation.</p>
+      <p id="nemotron-skills-status" class="hint">Loading the local skill catalog does not call a model or train it.</p>
+      <div id="nemotron-skills" class="proposal-grid"></div>
       <div class="nemotron-actions"><button id="nemotron-check" class="secondary" type="button">Check connection</button><button id="nemotron-restore" class="secondary" type="button">Restore saved session</button></div>
+      <div class="nemotron-actions"><button id="nemotron-inspect" class="secondary" type="button">Explain robot &amp; controllers</button><button id="nemotron-learning" class="secondary" type="button">Review saved learning progress</button><button id="nemotron-diagnose-latest" class="secondary" type="button">Diagnose latest Motion lab experiment</button></div>
       <form id="nemotron-form">
-        <label for="nemotron-prompt">Task · use field coordinates or explicit distances</label>
+        <label for="nemotron-prompt">Ask about the robot, learning evidence, or an explicit movement target</label>
         <textarea id="nemotron-prompt" rows="3" maxlength="4000" required placeholder="From (0,0), move to x=0 inches, y=24 inches, heading 0 degrees."></textarea>
         <div class="nemotron-actions"><button id="nemotron-plan" type="submit">Ask Nemotron</button><button id="nemotron-cancel" class="secondary" type="button" disabled>Cancel</button></div>
       </form>
@@ -76,12 +86,15 @@
       <div id="nemotron-session" hidden>
         <p id="nemotron-message"></p>
         <div id="nemotron-proposal" hidden><h3 id="nemotron-task-title">Validated proposal · not yet measured</h3><pre id="nemotron-task"></pre>
-          <div class="nemotron-actions"><button id="nemotron-run" type="button">Approve &amp; run in original Simulator</button><a id="nemotron-simulator" target="_blank" rel="noopener">Open original 2D / 3D Simulator</a><button id="nemotron-download" class="secondary" type="button">Download session &amp; evidence</button></div>
+          <div class="nemotron-actions"><button id="nemotron-run" type="button">Approve &amp; run in original Simulator</button><a id="nemotron-simulator" target="_blank" rel="noopener">Open original 2D / 3D Simulator</a></div>
         </div>
-        <div id="nemotron-result" hidden><h3>Measured simulator result</h3><p id="nemotron-outcome"></p><pre id="nemotron-metrics"></pre></div>
+        <div id="nemotron-result" hidden><h3>Measured simulator result</h3><p id="nemotron-outcome"></p><pre id="nemotron-metrics"></pre><button id="nemotron-explain-run" class="secondary" type="button">Ask Nemotron to diagnose this saved run</button></div>
+        <div id="nemotron-analysis" hidden><h3>Read-only tool evidence · separate from model commentary</h3><pre id="nemotron-analysis-facts"></pre><p class="caveat">The explanation is model commentary, not verified causality. No new simulation, training or policy promotion runs during analysis.</p></div>
+        <p id="nemotron-loaded-skills" class="hint"></p>
+        <button id="nemotron-download" class="secondary" type="button">Download session &amp; evidence</button>
         <details><summary>Nemotron tool calls, usage and saved provenance</summary><pre id="nemotron-log"></pre></details>
       </div>
-      <p class="caveat">Nemotron coordinates tasks; movement still uses the existing controller, not a trained motion policy. No camera, obstacle avoidance, game-score optimization or physical robot access. Prompts and reports save locally; no cloud calls or paid APIs.</p>
+      <p class="caveat">Agent Skills provide instructions and restricted tools; they do not retrain Nemotron. The separate PPO learner is experimental and has not passed the improvement gate. Approved tasks here use the existing controller. No camera, obstacle avoidance, game-score optimization, shell or physical robot access. Prompts and selected compact evidence stay local; no cloud calls or paid APIs.</p>
     </section>
 
     <section id="perception" class="panel" aria-labelledby="perception-title">

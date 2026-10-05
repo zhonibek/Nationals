@@ -1,6 +1,6 @@
 # Local Nemotron inside RobotAI
 
-Nemotron is the high-level task coordinator, not the motion learner. It reads the supported task contract, proposes one bounded reach-pose task, and waits for a separate approval. Execution uses the existing `simulator/engine.js` and source-checked iraLIB C++ WASM controller. No independent robot physics, gain changes or firmware access are added.
+Nemotron is the high-level task coordinator, not the motion learner. Its four reviewed [Agent Skills](skills/README.md) inspect robot configuration, prepare bounded reach-pose proposals, diagnose selected saved experiments and review PPO learning evidence. Execution still waits for a separate approval and uses the existing `simulator/engine.js` and source-checked iraLIB C++ WASM controller. No independent robot physics, gain changes or firmware access are added.
 
 ## Start and try it
 
@@ -31,6 +31,7 @@ The portable model server runs in the background. Closing the browser does not s
 - NVIDIA Nemotron 3 Nano 4B, official `Q4_K_M` GGUF.
 - Model revision, filename, size and SHA-256; official llama.cpp Windows CPU release and archive SHA-256: `nemotron-runtime.json`.
 - CPU inference, 4 threads, one slot, 4,096-token context. No ROCm/CUDA or GPU training is claimed.
+- Prompt-cache RAM is explicitly capped at 128 MiB instead of the pinned runtime's 8 GiB default. `start-nemotron.ps1 -CacheMiB 0` disables that cache; allowed settings are 0..1,024 MiB, never unlimited. This is not a total-memory cap: the multi-GB model and other applications can still exhaust this 6 GB host. Avoid running the heavy test/training suite concurrently with local inference.
 - Native function calls over a local OpenAI-compatible endpoint. llama.cpp runs with `--jinja`; requests disable thinking through `chat_template_kwargs.enable_thinking=false`. See the [official function-calling documentation](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md).
 
 Optional configuration is server-side, before starting RoboProof:
@@ -48,12 +49,12 @@ The default portable endpoint automatically reads the generated private local ke
 
 - Model endpoint must be loopback `/v1`; foreign hosts, credentials in URLs, redirects and remote cloud endpoints are rejected. Nebius and paid APIs are disabled, regardless of existing cloud credits.
 - The model runtime has a generated private API key, restricted CORS, disabled web UI and disabled built-in agent/command tools. No key is sent to the browser or saved in sessions.
-- Two allowlisted model tools: `get_motion_contract` and `prepare_reach_pose`. No shell, source/file reader, network tool, arbitrary tool handler, motor-voltage output or physical robot endpoint.
-- Prompt: 1..4,000 characters. At most four model turns; 1,024 output tokens per turn; one tool call per turn; no automatic inference retries. Per-request timeout defaults to 120 seconds, configurable from 1..300 seconds. The server's total planning budget is 300 seconds.
+- The catalog is initially metadata-only. `load_skill` activates at most two reviewed skills; their fixed resource/task tools are `get_robot_profile`, `get_saved_motion_evidence`, `get_learning_summary`, `get_motion_contract` and `prepare_reach_pose`. `ask_clarification` safely ends a request without a task; `finish_analysis` requires real tool evidence. Native function calls are required, and preparation is hidden until the contract is read. Unloaded tools and plain-text completion claims fail closed. Only fixed nominal configuration and user-selected compact saved evidence can be read; no arbitrary shell/files/network, custom handlers, motor-voltage output or physical robot endpoint.
+- Prompt: 1..4,000 characters. At most six model turns; 1,024 output tokens per turn; one tool call per turn; no automatic inference retries. Per-request timeout defaults to 120 seconds, configurable from 1..300 seconds. The server's total planning budget is 300 seconds.
 - Provider output is capped at 256 KiB. Truncated, parallel, duplicate, malformed or unsupported tool calls fail closed; no fallback rule-based output is labeled Nemotron.
 - Task validation is shared with `simulator/motion.js`: X/Y within ±60 inches, heading within ±180 degrees, deadline 0.01..60 seconds in 0.01-second increments. Seed is fixed at 42; no model-selected physics changes.
 - Loopback Host/same-origin checks, bounded JSON requests and a single active API operation protect the local dashboard. Cancelling inference aborts the request; simulation requires a separate approval and has its own cancellable worker/time budget.
-- Only task text and the public motion contract are supplied to this local model. Full source, credentials, files, camera data and telemetry are not automatically sent. Local prompts can still contain private information, so review before sharing session exports.
+- Task text, skill catalog/selected instructions and requested bounded tool evidence are supplied to this local model. Diagnosis requires explicitly selected saved-run evidence; at most five telemetry samples enter that snapshot. Full source, credentials, arbitrary files and camera data are not supplied. Local prompts/reports can still contain private information, so review before sharing session exports. New approved runs retain transitions locally; saved sessions use compact JSON with a 16 MiB limit.
 
 ## Evidence and remaining work
 
@@ -67,4 +68,4 @@ The full Node/controller/Simulator suite passed 85 tests with zero failures and 
 
 Automated fixtures in `tests/nemotron.test.js` cover transport, validation, budgets, approval, persistence, original-engine execution and replay. Their mocked provider responses are explicitly labeled fixtures; only the retained live sessions establish actual model execution.
 
-Next: complete the persistent-controller short-horizon action interface, then train and evaluate the separate motion policy. Camera grounding/calibration, obstacle planning, VEX game-score rewards, remote Nebius/AMD execution and physical deployment remain separate, unfinished gates.
+Current motion work has since delivered the persistent-controller short-horizon interface and separate CPU PPO learner, but its first frozen improvement gate is negative; see [motion learner](motion_learning/README.md). Agent Skills are workflow specialization, not neural movement improvement. Next: measure skill selection/grounded explanations and develop movement on training-only cases with an untouched final evaluation. Camera grounding/calibration, obstacle planning, VEX game-score rewards, remote Nebius/AMD execution and physical deployment remain separate, unfinished gates.

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const {configuration, createClient, planTask, MAX_TURNS} = require('../roboproof/nemotron');
+const {configuration, createClient, planTask, MAX_TURNS, TOOLS} = require('../roboproof/nemotron');
 const {createStore} = require('../roboproof/nemotron-store');
 const {createServer} = require('../roboproof/server');
 const {replay} = require('../roboproof/motion');
@@ -21,10 +21,12 @@ function tool(name, argumentsValue = {}, id = name) {
 function fixture(responses) {
   const requests = [];
   return {metadata, requests, check: async () => ({...metadata, available: true}),
-    complete: async messages => { requests.push(structuredClone(messages)); return responses.shift(); }};
+    complete: async (messages, signal, tools) => { requests.push(structuredClone(messages));
+      requests.at(-1).availableTools = tools.map(entry => entry.function.name); return responses.shift(); }};
 }
 function preparedFixture(task = TASK) {
-  return fixture([tool('get_motion_contract'), tool('prepare_reach_pose', {task, summary: 'Test fixture proposal; not live model evidence.'})]);
+  return fixture([tool('load_skill', {name: 'prepare-motion-experiment'}), tool('get_motion_contract'),
+    tool('prepare_reach_pose', {task, summary: 'Test fixture proposal; not live model evidence.'})]);
 }
 function tempDirectory(context) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'robotai-nemotron-test-'));
@@ -53,21 +55,25 @@ test('Nemotron native tools read the contract then prepare without executing any
   assert.deepEqual(result.task, TASK);
   assert.equal(result.status, 'prepared');
   assert.equal(result.execution, 'not run; a separate user approval is required');
-  assert.equal(result.motionLearning, 'not implemented');
-  assert.equal(result.toolLog.length, 2);
-  assert.equal(client.requests[1].at(-1).role, 'tool');
-  assert.match(client.requests[1].at(-1).content, /inches/);
+  assert.equal(result.motionLearning, 'separate PPO learner; this task planner does not train motion');
+  assert.equal(result.toolLog.length, 3);
+  assert.equal(result.skills.loaded[0].name, 'prepare-motion-experiment');
+  assert.equal(client.requests[2].at(-1).role, 'tool');
+  assert.match(client.requests[2].at(-1).content, /inches/);
   assert.equal(result.run, undefined);
+  assert.equal(client.requests[1].availableTools.includes('prepare_reach_pose'), false);
+  assert.equal(client.requests[2].availableTools.includes('prepare_reach_pose'), true);
 });
 
 test('Nemotron rejects unsupported tools, uninspected tasks, malformed calls and invalid bounds', async () => {
   await assert.rejects(planTask('x', fixture([tool('shell', {command: 'do-not-run'})])), /Unsupported Nemotron tool/);
-  await assert.rejects(planTask('x', fixture([tool('prepare_reach_pose', {task: TASK, summary: 'x'})])), /inspect the motion contract/);
+  await assert.rejects(planTask('x', fixture([tool('load_skill', {name: 'prepare-motion-experiment'}),
+    tool('prepare_reach_pose', {task: TASK, summary: 'x'})])), /inspect the motion contract/);
   for (const task of [{...TASK, goal: {...TASK.goal, xIn: 61}}, {...TASK, deadlineSeconds: 0.015},
     {...TASK, motorVolts: [12, 12, 12, 12]}, {...TASK, goal: {...TASK.goal, xIn: '24'}}]) {
     await assert.rejects(planTask('x', preparedFixture(task)));
   }
-  const malformed = tool('get_motion_contract');
+  const malformed = tool('load_skill', {name: 'prepare-motion-experiment'});
   malformed.choices[0].message.tool_calls[0].function.arguments = '{';
   await assert.rejects(planTask('x', fixture([malformed])), /arguments JSON/);
   const parallel = tool('get_motion_contract');
@@ -76,10 +82,13 @@ test('Nemotron rejects unsupported tools, uninspected tasks, malformed calls and
 });
 
 test('clarifications never create executable tasks; turn/token budgets fail closed', async () => {
-  const result = await planTask('Go there', fixture([{choices: [{finish_reason: 'stop', message: {role: 'assistant', content: 'Which coordinates and units?'}}]}]));
+  const result = await planTask('Go there', fixture([tool('ask_clarification', {message: 'Which coordinates and units?'})]));
   assert.equal(result.status, 'clarification');
   assert.equal(result.task, undefined);
-  await assert.rejects(planTask('x', fixture(Array.from({length: MAX_TURNS}, (_, index) => tool('get_motion_contract', {}, String(index))))), /turn budget/);
+  await assert.rejects(planTask('x', fixture([{choices: [{finish_reason: 'stop',
+    message: {role: 'assistant', content: 'I have prepared a task without tools.'}}]}])), /finish through a supported tool/);
+  await assert.rejects(planTask('x', fixture([tool('load_skill', {name: 'prepare-motion-experiment'}),
+    ...Array.from({length: MAX_TURNS - 1}, (_, index) => tool('get_motion_contract', {}, String(index)))])), /turn budget/);
   await assert.rejects(planTask('x', fixture([{choices: [{finish_reason: 'length', message: {role: 'assistant', content: 'Incomplete'}}]}])), /bounded response/);
   await assert.rejects(planTask(' '.repeat(10), preparedFixture()), /prompt/);
   await assert.rejects(planTask('x'.repeat(4001), preparedFixture()), /prompt/);
@@ -101,8 +110,9 @@ test('OpenAI-compatible local transport uses native tools, bounded output and pr
   await client.complete([{role: 'user', content: 'fixture'}]);
   assert.equal(requests[1].body.max_tokens, 1024);
   assert.equal(requests[1].body.parallel_tool_calls, false);
+  assert.equal(requests[1].body.tool_choice, 'required');
   assert.equal(requests[1].body.chat_template_kwargs.enable_thinking, false);
-  assert.deepEqual(requests[1].body.tools.map(row => row.function.name), ['get_motion_contract', 'prepare_reach_pose']);
+  assert.deepEqual(requests[1].body.tools.map(row => row.function.name), TOOLS.map(row => row.function.name));
   assert.equal(requests[1].authorization, 'Bearer fixture-private-key');
   assert.equal(JSON.stringify(client.metadata).includes('fixture-private-key'), false);
 });

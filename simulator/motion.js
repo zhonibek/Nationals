@@ -298,9 +298,9 @@
         terminated: this.terminated, truncated: this.truncated, reason: this.reason, totalReward: this.totalReward,
         metrics: {...this.metrics(), elapsedSeconds: this.ticks * FIXED_DT, effortProxyVAs: this.effortProxyVAs,
           contactSeconds: this.sim.contactSeconds, pathLengthMeters: this.pathLengthMeters},
-        learningStatus: this.options.controlMode === 'policy'
-          ? 'policy-action environment; training and learned improvement are not implemented'
-          : 'scripted benchmark only; motion-policy training is not implemented'};
+        learningStatus: this.options.policyIdentity.kind === 'learned'
+          ? 'learned checkpoint action stream; improvement requires independent frozen evaluation'
+          : 'scripted or untrained benchmark; this episode does not train a motion policy'};
     }
   }
 

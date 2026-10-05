@@ -32,6 +32,39 @@
   --shadow-glow: 0 0 25px rgba(59, 130, 246, 0.25);
 }
 
+.game-guide, .game-help, .game-score { padding: 1rem; border-top: 1px solid var(--border-subtle); }
+.game-guide { background: #10201f; }
+.game-guide h2, .game-score h2 { font-size: 1.2rem; margin-bottom: .35rem; }
+.game-guide p, .game-help p, .game-score p { margin: .4rem 0; color: #bdcbd7; font-size: .88rem; }
+.game-guide-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin: .6rem 0; }
+.game-guide label { display: inline-block; margin: .4rem 1rem .2rem 0; font-size: .85rem; }
+.game-score-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin: .75rem 0; }
+.game-score-totals article { border: 1px solid var(--border-subtle); border-radius: 8px; padding: .8rem; }
+.score-red { background: #331721; }
+.score-blue { background: #142942; }
+.game-score-totals strong { float: right; font-size: 1.7rem; }
+.game-score details { margin: .8rem 0; }
+.game-score summary { cursor: pointer; color: #f8fafc; }
+.game-score-table { overflow-x: auto; }
+.game-score table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.game-score th, .game-score td { padding: .4rem; border-bottom: 1px solid var(--border-subtle); text-align: left; }
+.game-score input[type=number] { width: 5rem; background: #14202e; color: #fff; padding: .4rem; border: 1px solid #64748b; border-radius: 4px; }
+.game-score a { color: #67d6fa; }
+#manualPoints { font-weight: 700; align-self: center; }
+#manualFormula { font-family: var(--font-mono); }
+#calculatorError { color: #fda4af; }
+.score-dock { position: fixed; right: 1rem; bottom: 1rem; z-index: 60; padding: .65rem 1rem; border: 1px solid #475569; border-radius: 12px; background: #0b1323f5; box-shadow: 0 5px 24px #0008; }
+.score-dock > span { display: block; color: #cbd5e1; font-size: .75rem; }
+.score-dock > div { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.score-dock strong { font-size: 1.5rem; margin-left: .25rem; }
+.score-dock-red { color: #fda4af; }
+.score-dock-blue { color: #93c5fd; }
+.score-dock a { color: #67e8f9; font-size: .8rem; }
+#scoreCalculator { scroll-margin-top: 1rem; }
+#gameModeStatus { color: #86efac; }
+#possessionStatus { color: #fbbf24; font-weight: 600; }
+@media (max-width: 600px) { .game-score-totals { grid-template-columns: 1fr; } .score-dock { right: .5rem; bottom: .5rem; max-width: calc(100vw - 1rem); } }
+
 * {
   margin: 0;
   padding: 0;
@@ -49,6 +82,7 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   line-height: 1.5;
+  padding-bottom: 6rem;
 }
 
 /* Scrollbars */
@@ -819,6 +853,21 @@ canvas.telemetry-chart {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#renderPerformance {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+#renderQuality {
+  max-width: 220px;
+  font: inherit;
+  color: var(--text-main);
+  background: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
 }
 
 /* CAD Dropzone Overlay */

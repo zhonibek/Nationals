@@ -19,7 +19,7 @@ class MotionEnvironmentTests(unittest.TestCase):
             observation, info = environment.reset(seed=123, task=task)
             self.assertEqual(len(observation), 34)
             self.assertTrue(info["identity"]["canonicalSimulator"])
-            self.assertFalse(environment.contract["motionTrainingImplemented"])
+            self.assertTrue(environment.contract["motionTrainingImplemented"])
             observation, reward, terminated, truncated, info = environment.step([1, 0, 0, 0])
             self.assertFalse(terminated)
             self.assertTrue(truncated)

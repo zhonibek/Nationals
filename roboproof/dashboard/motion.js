@@ -7,12 +7,16 @@
   const json = value => JSON.stringify(value, null, 2);
   let controller = null;
   let session = null;
+  let learning = null;
 
   function controls() {
     for (const id of ['check', 'restore', 'evaluate', 'run']) element(id).disabled = !local || !!controller;
     element('cancel').disabled = !controller;
     element('replay').disabled = !local || !!controller || !session;
     element('download').disabled = !!controller || !session;
+    element('learning-refresh').disabled = !local || !!controller;
+    element('compare-learned').disabled = !local || !!controller || !learning?.motionPolicyTrained || learning.status === 'running';
+    element('use-verified').disabled = !local || !!controller || !learning?.learnedImprovementVerified;
   }
 
   async function request(operation, body) {
@@ -51,8 +55,11 @@
       const number = id => Number(element(id).value);
       const task = {start: {xIn: number('start-x'), yIn: number('start-y'), headingDeg: number('start-heading')},
         goal: {xIn: number('goal-x'), yIn: number('goal-y'), headingDeg: number('goal-heading')}, deadlineSeconds: number('deadline')};
-      render(await request('run', {mode: element('mode').value, seed: number('seed'), task}));
-      text('status', 'Experiment saved. Open the original Simulator replay. This fixture run is not training or learned improvement.');
+      const record = await request('run', {mode: element('mode').value, seed: number('seed'), task});
+      render(record);
+      text('status', record.motionPolicyTrained
+        ? 'Learned-policy experiment saved and exact-replay verified. One run does not prove improvement. Open the original Simulator replay.'
+        : 'Fixture experiment saved. Open the original Simulator replay. This run is not training or learned improvement.');
     });
   });
   element('check').addEventListener('click', () => operation('Checking baseline, policy actions, transition replay and safe stop…', async () => {
@@ -72,6 +79,54 @@
     text('evaluation-result', json(result));
     text('status', `Frozen evaluation complete: baseline ${result.baseline.success}/${result.baseline.count}, adapter ${result.adapter.success}/${result.adapter.count}. No learned policy was evaluated.`);
   }));
+  function renderLearning(result) {
+    learning = result;
+    element('learning-results').hidden = !result.available;
+    text('learning-status', !result.available ? result.message :
+      `${result.status.toUpperCase()} · ${result.models.filter(row => row.trained).length} trained seeds · ` +
+      (result.learnedImprovementVerified ? 'FROZEN IMPROVEMENT GATE PASSED' : 'IMPROVEMENT NOT VERIFIED · baseline remains the default'));
+    text('learning-details', json(result));
+    const container = element('learning-table');
+    container.replaceChildren();
+    if (result.available) {
+      const table = document.createElement('table');
+      const heading = document.createElement('tr');
+      for (const label of ['Seed', 'Steps / updates', 'Baseline', 'Untrained', 'Learned', 'Gate']) {
+        const cell = document.createElement('th');
+        cell.textContent = label;
+        heading.appendChild(cell);
+      }
+      table.appendChild(heading);
+      for (const model of result.models) {
+        const evaluated = result.evaluation?.models.find(row => row.policySha256 === model.policySha256);
+        const score = value => value ? `${value.success}/${value.count}` : 'Not evaluated';
+        const row = document.createElement('tr');
+        for (const value of [model.seed, `${model.steps} / ${model.updates}`, score(evaluated?.baseline),
+          score(evaluated?.untrained), score(evaluated?.learned), evaluated ? (evaluated.acceptance.passed ? 'Pass' : 'Failed') : 'Pending']) {
+          const cell = document.createElement('td');
+          cell.textContent = String(value);
+          row.appendChild(cell);
+        }
+        table.appendChild(row);
+      }
+      container.appendChild(table);
+    }
+    controls();
+  }
+  element('learning-refresh').addEventListener('click', () => operation('Reading disk-backed motion checkpoints. No training…', async () => {
+    renderLearning(await request('learning'));
+    text('status', 'Training history refreshed. Use the terminal command for a new bounded run.');
+  }));
+  element('compare-learned').addEventListener('click', () => operation('Frozen evaluation: controller, untrained and learned policies. No tuning…', async () => {
+    await request('compare-learned', {});
+    renderLearning(await request('learning'));
+    text('status', learning.learnedImprovementVerified ? 'Independent frozen improvement gate passed.' : 'Comparison saved. Improvement gate did not pass; inspect failed cases. No automatic policy promotion.');
+  }));
+  element('use-verified').addEventListener('click', () => {
+    if (!learning?.learnedImprovementVerified || controller) return;
+    element('mode').value = 'learned-experiment';
+    text('status', 'Verified checkpoint selected for the next explicit experiment. No robot command was sent.');
+  });
   element('replay').addEventListener('click', () => operation('Recomputing saved actions with the source-checked original Simulator…', async () => {
     const result = await request('replay', {id: session.id});
     text('status', `Exact same-runtime replay verified: ${result.ticks} physics ticks. No policy/model was called.`);

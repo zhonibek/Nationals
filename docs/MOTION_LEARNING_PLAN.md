@@ -1,6 +1,6 @@
 # Integrated robot motion-learning plan
 
-Updated 2026-10-02. This is the implementation checklist for this chat, not a claim of completed motion learning. The user clarified the primary objective: an AI that improves robot movement through experience, using the **existing Nationals-work3 Simulator and iraLIB/control code**, with VEX gameplay as a later scoring benchmark. This supersedes failure prediction as the primary product direction.
+Updated 2026-10-05. This is the implementation checklist for this chat, not a claim of verified movement improvement. The user clarified the primary objective: an AI that improves robot movement through experience, using the **existing Nationals-work3 Simulator and iraLIB/control code**, with VEX gameplay as a later scoring benchmark. This supersedes failure prediction as the primary product direction.
 
 ## Mission and product boundary
 
@@ -101,25 +101,29 @@ Evidence: `motion-check` passes and retains source/runtime-bound readiness plus 
 
 ### 5. Train the first genuine movement policy locally
 
-- [ ] Start with a compact policy suitable for the frozen observation/action interface. A bounded continuous-action actor-critic method such as PPO is a candidate, not an excuse to skip environment tests; select and pin the implementation after checking its license/runtime and reset/truncation semantics.
-- [ ] First execute a tiny CPU training smoke with real transitions, gradients, logged rewards and changed policy weights. Label it a pipeline test, not evidence of better movement.
-- [ ] Add curriculum: simple target movement, then heading/starting-position variation, then supported physical variation. Keep evaluation worlds out of curriculum selection and tuning.
-- [ ] Save policy, optimizer, normalization fitted on training observations, RNG state, configuration, source hashes and episode/step counts. Resume at verified episode boundaries; do not promise arbitrary mid-episode restoration of hidden WASM/controller/game state without a tested snapshot/replay contract.
-- [ ] Bound environment steps, wall time, worker count, storage and checkpoints. Show training history in the original Simulator interface, with training and frozen evaluation modes clearly separated.
-- [ ] Keep failure prediction optional as a test-selection aid. It must never generate invented transitions, rewards or proof that the policy learned to move.
+- [x] Implement a compact PPO Beta actor-critic using the existing pinned PyTorch 2.8 CPU runtime, with two 32-neuron hidden layers. Test bounded actions, reset behavior and terminal/truncation bootstrap; reuse the existing environment rather than new physics.
+- [x] Execute real CPU gradients with logged rewards and changed actor weights. Three seeds completed eight updates each; this is a pipeline smoke, not evidence of better movement.
+- [x] Add curriculum: simple target movement, then heading/starting-position variation, then supported physical variation. Frozen evaluation worlds remain excluded from curriculum and tuning.
+- [x] Save actor/critic, optimizer, fixed engineering-unit normalization, both RNG states, configuration, source/engine hashes and episode/step counts. Exact interrupted/resumed exported actor equality is tested at committed complete-rollout/episode boundaries; no arbitrary mid-episode WASM restoration.
+- [x] Bound environment steps, collection time, CPU worker count and checkpoint count/read sizes. Show committed history in the existing Motion lab and learned experiments in the original Simulator. CLI training is explicit; browser refresh only reads artifacts.
+- [x] Keep failure prediction separate and unused in these rollouts. Rewards and transitions come from the canonical Simulator, never predicted movement.
 
 **Gate:** a real motion policy trains through the original Simulator and existing controller; interrupted runs resume consistently at the declared boundary. Learning quality is a separate next gate.
 
+Phase 5 smoke delivered 2026-10-05: run `d2f440b7-5b37-4f65-bc15-304d203527a0`, seeds 42/43/44, 3,658 policy steps across 76 episodes, 24 total PPO updates; all actors changed. [Setup, provenance, budgets and limitations](../roboproof/motion_learning/README.md).
+
 ### 6. Prove improvement and show it in the original Simulator
 
-- [ ] Freeze policies before evaluation. Compare untrained policy, learned policy and existing scripted/controller-only baseline on identical worlds, deadlines, actuator limits and task definitions.
-- [ ] Measure success rate, endpoint/heading error, time, collisions and effort; for the validated game stage, add actual score. Show trajectories and failure cases as well as aggregate results.
-- [ ] Evaluate new start/goal cases and supported physical conditions. Repeat training/evaluation across independent seeds and report variation; do not pick only one attractive run.
+- [x] Freeze policies before evaluation. Compare initial untrained policy, learned policy and existing scripted/controller-only baseline on identical frozen worlds, deadlines, actuator limits and task definitions.
+- [x] Retain success rate, endpoint/heading error, time, contact duration and effort proxy for every world, including failures. Saved explicit baseline/learned episodes replay the real trajectories; calibrated energy and full-game score remain separate.
+- [x] Evaluate the frozen new start/goal/physical-condition corpus across three independent training seeds and retain variation; no best-seed selection using the corpus.
 - [ ] Require a measured improvement against a predeclared baseline/metric without unacceptable regressions in the other metrics. If this fails, retain the negative result and revise the hypothesis—not the scoreboard.
-- [ ] Add original-Simulator controls to load a saved policy, run frozen evaluation and replay before/after actions on the same field. RoboProof may provide evidence views, but not a substitute animation/world.
+- [x] Add saved learned-policy experiments, frozen comparison, history refresh and gated verified-policy selection to the existing Motion lab. Exact action playback uses the original 2D/3D Simulator, not substitute animation/physics.
 - [ ] For game learning, distinguish optimizing a simulated scoring strategy from robust movement and from physical robot transfer.
 
 **Gate:** reproducible before/after movement improvement on unseen worlds is visible in the existing Simulator. A successful gradient update, larger network or higher training reward alone does not pass.
+
+**Not passed:** controller, untrained actor and all three learned actors each succeed in 6/24 frozen worlds. Baseline remains the default and verified-policy selection stays disabled. Preserve this negative result. Develop on training/development-only cases and reserve a new untouched final corpus before further held-out improvement claims; never tune against these inspected failures.
 
 ### 7. Scale with AMD only after local correctness
 
@@ -154,7 +158,7 @@ Evidence: `motion-check` passes and retains source/runtime-bound readiness plus 
 
 ## Immediate next deliverable
 
-The original engine, persistent-reference policy interface, Python access, complete transitions, stored exact replay and original-Simulator playback are delivered. Next select and implement a compact bounded CPU motion learner with checkpoint/resume, then frozen before/after evaluation across independent training seeds. No motion training was run during preparation. Nemotron, LocateAnything and AMD are auxiliary/later gates, not substitutes for movement learning.
+The original engine, persistent-reference interface, real PPO CPU gradients, checkpoint/resume, JSON neural inference and original-Simulator playback are delivered. First independent frozen evaluation is negative, so the next deliverable is measured generalization improvement: diagnose learning limitations using training/development-only worlds, train a longer predeclared bounded experiment and evaluate a separately untouched final corpus. Obstacle perception/planning, game learning and hardware calibration still need their own contracts and evidence. Nemotron, LocateAnything and AMD are auxiliary/later gates, not substitutes for movement learning.
 
 ## Optional perception track — preparation added 2026-10-02
 
@@ -168,3 +172,11 @@ At the user's request, LocateAnything is prepared for future visual target groun
 - [ ] Add reviewed/revalidated task approval and original-Simulator playback with reachability/obstacle gates. Camera-click navigation and physical deployment remain unavailable.
 
 This optional track does not block coordinate-based motion learning. LocateAnything supplies visual target evidence, Nemotron coordinates supported tasks, the future policy learns movement, and iraLIB executes bounded control in the original Simulator.
+
+## Agent Skills coordination track — 2026-10-06
+
+The existing local Nemotron coordinator now loads four reviewed workflows: inspect robot configuration, prepare a reach-pose experiment, diagnose one explicitly selected saved experiment and review saved PPO/frozen-evaluation evidence. [Skill contracts and usage](../roboproof/skills/README.md) describe the bounded native tools, on-demand instructions, permission checks and saved hashes. This extends the full project; it does not introduce an independent simulator, robot library or cloud agent.
+
+Skills supply procedural context, not weight training. Movement proposals still require separate approval and execute through original Simulator/iraLIB. Diagnosis and learning review are read-only, keep measured facts separate from model commentary and do not tune, retrain, rerun evaluation or promote a policy. The negative 6/24 improvement result remains unchanged.
+
+Next coordination gate: predeclare multilingual workflow-selection and evidence-grounding cases, measure failures/latency, and retain ambiguity/injection failures. Deeper time-series tools need their own measured tests. This track cannot replace meaningful AMD execution, learned movement generalization, physical calibration, full-game mechanics or camera calibration.

@@ -15,7 +15,7 @@ for(const pin of initial.pins.filter(p=>p.lying)){
   const cup=initial.cups.find(c=>Math.abs(Math.hypot(c.x-pin.x,c.y-pin.y)-5)<1e-7);
   assert(cup);close(pin.x-cup.x,5*outward.x);close(pin.y-cup.y,5*outward.y);
   assert.equal(pin.halves[pin.upIndex],outward.x+outward.y>0?'blue':'red');
-  close(initial.objectPose(pin).z,.8);
+  close(initial.objectPose(pin).z,1.58);
 }
 // Picking up a loaded Cup moves the pair; taking the Pin separately detaches it.
 const game=new Game({physical:false}),robot=game.robots[0];

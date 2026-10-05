@@ -11,7 +11,7 @@ assert(game.setLiftTarget(r.id,24).ok);game.tick(.5);near(r.manipulator.height,1
 assert(game.interact(r.id,'drop').ok);const start=p.body.z;
 game.tick(.1);near(p.body.z,start-D.GRAVITY*.005**2*20*21/2);near(p.body.vz,-D.GRAVITY*.1);
 for(let i=0;i<200;i++)game.tick(.01);
-near(p.body.z,.8);near(p.body.tilt,Math.PI/2);assert(D.resting(game));
+near(p.body.z,1.58);near(p.body.tilt,Math.PI/2);assert(D.resting(game));
 game.setLiftTarget(r.id,0);game.tick(1);game.setRobotPose(r.id,{x:0,y:30});
 assert(!game.interact(r.id,'pickup').ok,'No pickup behind the robot');game.setRobotPose(r.id,{x:0,y:0});
 assert(game.interact(r.id,'pickup').ok);assert(!p.body);assert.equal(p.status,'held');
@@ -79,15 +79,15 @@ console.log('PASS: floor nesting, loss of support, dropped pair separation and f
 // Moving robot transfers normal velocity to an unheld object.
 const push=isolated();push.r.possession.pinId=null;push.r.velocity.vx=10;
 D.release(push.game,push.p,{x:8.5,y:0,z:.8,lying:true});push.game.tick(.01);
-assert(push.p.x>=9.8-1e-7);assert(push.p.body.vx>0);
+assert(push.p.x>=10.58-1e-7);assert(push.p.body.vx>0);
 // Contact between free objects cannot inject normal kinetic energy.
 const pair=isolated();pair.game.robots=[];
 const other={...pair.p,id:'other',body:undefined};pair.game.pins.push(other);
 D.release(pair.game,pair.p,{x:-.7,y:20,z:.8,lying:true},{vx:2});D.release(pair.game,other,{x:.7,y:20,z:.8,lying:true},{vx:-2});
-pair.game.tick(.01);assert(Math.hypot(pair.p.x-other.x,pair.p.y-other.y)>=1.6-1e-7);
+pair.game.tick(.01);assert(Math.hypot(pair.p.x-other.x,pair.p.y-other.y)>=3.16-1e-7);
 assert(pair.p.body.vx**2+other.body.vx**2<=8+1e-7);
 // A robot pinning an object against the perimeter cannot push it outside the field.
 const wall=isolated();wall.r.possession.pinId=null;wall.r.x=61.2;wall.r.velocity.vx=20;
 D.release(wall.game,wall.p,{x:69.1,y:0,z:.8,lying:true});wall.game.tick(.1);
-assert(wall.p.x<=69.4+1e-7);assert(Number.isFinite(wall.p.body.vx));
+assert(wall.p.x<=68.62+1e-7);assert(Number.isFinite(wall.p.body.vx));
 console.log('PASS: robot/object momentum transfer, bounded pair collision and perimeter containment.');

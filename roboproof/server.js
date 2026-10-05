@@ -11,18 +11,22 @@ const {normalizeTask} = require('../simulator/motion');
 const {readiness: perceptionReadiness} = require('./perception');
 const {readiness: motionReadiness} = require('./motion-readiness');
 const {createMotionStore} = require('./motion-store');
+const MotionLearner = require('./motion-learner');
+const {createRegistry} = require('./agent-skills');
+const {motionEvidence} = require('./skill-evidence');
 
 function createServer({reportPath = path.join(__dirname, 'runs/latest/report.json'), timeout = 120000,
-  nemotronClient = createClient(), nemotronDirectory, motionDirectory, agentTimeout = 300000} = {}) {
+  nemotronClient = createClient(), nemotronDirectory, motionDirectory, learningDirectory, agentTimeout = 300000} = {}) {
   let report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : null;
   let activeWorker = null;
   let activeAgent = null;
   const store = createStore(nemotronDirectory);
   const motionStore = createMotionStore(motionDirectory);
+  const skills = createRegistry();
   const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
   const simulatorFiles = new Set(['index.html', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'motion-replay.js',
-    'control-runtime.js', 'control.wasm', 'robot-config.js', 'override.js', 'override-view.js', 'override-geometry.js',
-    'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'models/robot.stl']);
+    'control-runtime.js', 'control.wasm', 'robot-config.js', 'override.js', 'override-view.js', 'override-ui.js', 'override-geometry.js',
+    'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'cad-runtime.js', 'models/robot.stl', 'models/robot.preview.glb', 'models/robot.preview.json']);
   function launchWorker(filename, workerData, response) {
     return new Promise((resolve, reject) => {
       const worker = new Worker(path.join(__dirname, filename), {workerData});
@@ -58,6 +62,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
     if (request.method === 'GET' && pathname === '/api/report') { reply(report ? 200 : 404, report || {error: 'No report yet; run scenarios or load report.json'}); return; }
     if (request.method === 'GET' && pathname === '/api/perception/status') { reply(200, perceptionReadiness()); return; }
     if (request.method === 'GET' && pathname === '/api/motion/status') { reply(200, motionReadiness()); return; }
+    if (request.method === 'GET' && pathname === '/api/motion/learning') { reply(200, MotionLearner.status(learningDirectory)); return; }
     if (request.method === 'GET' && ['/api/motion/latest', '/api/motion/session'].includes(pathname)) {
       try {
         const record = pathname.endsWith('/latest') ? motionStore.latest()
@@ -67,6 +72,12 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       return;
     }
     if (request.method === 'GET' && pathname === '/api/nemotron/status') { reply(200, {...nemotronClient.metadata, available: 'not checked', liveInferenceVerified: false}); return; }
+    if (request.method === 'GET' && pathname === '/api/nemotron/skills') {
+      try { reply(200, {schemaVersion: 1, skills: skills.catalog(), inferencePerformed: false,
+        trainingPerformed: false, arbitraryScriptsEnabled: false}); }
+      catch (error) { reply(400, {error: error.message}); }
+      return;
+    }
     if (request.method === 'GET' && ['/api/nemotron/latest', '/api/nemotron/session'].includes(pathname)) {
       try {
         const record = pathname.endsWith('/latest') ? store.latest() : store.read(new URL(request.url, `http://${authority}`).searchParams.get('id'));
@@ -77,7 +88,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
     if (request.method === 'GET' && pathname.startsWith('/simulator/')) {
       const filename = pathname.slice('/simulator/'.length) || 'index.html';
       if (!simulatorFiles.has(filename)) { reply(404, {error: 'Simulator asset not found'}); return; }
-      const type = {'.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.wasm': 'application/wasm', '.stl': 'application/octet-stream'}[path.extname(filename)];
+      const type = {'.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.wasm': 'application/wasm', '.stl': 'application/octet-stream', '.glb': 'model/gltf-binary', '.json': 'application/json'}[path.extname(filename)];
       response.writeHead(200, {'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
       fs.createReadStream(path.join(__dirname, '../simulator', filename)).pipe(response);
@@ -91,7 +102,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       fs.createReadStream(file).pipe(response);
       return;
     }
-    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
+    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/motion/compare-learned', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
     if (!request.headers['content-type']?.startsWith('application/json')) { reply(415, {error: 'application/json required'}); return; }
     if (activeWorker || activeAgent) { reply(409, {error: 'A simulation or Nemotron request is already running'}); return; }
     try {
@@ -108,9 +119,9 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         const operation = pathname.slice('/api/motion/'.length);
         const allowed = operation === 'run' ? ['mode', 'seed', 'task', 'configuration'] : operation === 'replay' ? ['id'] : [];
         if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) throw Error('Unsupported motion request fields');
-        let workerData = {operation};
+        let workerData = {operation, learningDirectory};
         if (operation === 'run') {
-          if (!['scripted', 'policy-fixture', 'random-fixture'].includes(body.mode) ||
+          if (!['scripted', 'policy-fixture', 'random-fixture', 'learned-experiment'].includes(body.mode) ||
             !Number.isInteger(body.seed) || body.seed < 0 || body.seed > 0xffffffff) throw Error('Supported fixture mode and uint32 seed required');
           workerData = {...workerData, mode: body.mode, seed: body.seed, task: normalizeTask(body.task), configuration: body.configuration ?? {}};
         } else if (operation === 'replay') workerData.report = motionStore.read(body.id).report;
@@ -119,8 +130,17 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         return;
       }
       if (pathname.startsWith('/api/nemotron/')) {
-        const allowed = pathname.endsWith('/plan') ? ['prompt'] : pathname.endsWith('/run') ? ['id'] : [];
+        const allowed = pathname.endsWith('/plan') ? ['prompt', 'evidence'] : pathname.endsWith('/run') ? ['id'] : [];
         if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) throw Error('Unsupported Nemotron request fields');
+        let selectedEvidence = null;
+        if (body.evidence !== undefined) {
+          const selection = body.evidence;
+          if (!selection || typeof selection !== 'object' || Array.isArray(selection) ||
+              Object.keys(selection).some(key => !['source', 'id'].includes(key)) ||
+              !['motion', 'nemotron'].includes(selection.source)) throw Error('Select motion or Nemotron evidence by saved session ID only');
+          const record = selection.source === 'motion' ? motionStore.read(selection.id) : store.read(selection.id);
+          selectedEvidence = motionEvidence(record, selection.source);
+        }
         if (pathname.endsWith('/run')) {
           const record = store.read(body.id);
           if (record.status !== 'prepared') throw Error('A validated Nemotron task must be prepared before approval');
@@ -151,7 +171,8 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         try {
           if (pathname.endsWith('/check')) reply(200, await nemotronClient.check(controller.signal));
           else {
-            const plan = await planTask(body.prompt, nemotronClient, {signal: controller.signal});
+            const plan = await planTask(body.prompt, nemotronClient, {signal: controller.signal,
+              registry: skills, evidence: selectedEvidence, learningDirectory});
             controller.signal.throwIfAborted();
             reply(200, store.create(body.prompt, plan));
           }

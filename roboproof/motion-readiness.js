@@ -41,7 +41,7 @@ function verify() {
   const evidence = {schemaVersion: 1, verifiedAt: new Date().toISOString(), identity: runner.identity,
     checks: {scriptedBaselineSuccess: true, boundedPolicyFixtureSuccess: true, randomEpisodeBounded: true,
       transitionsRecorded: true, exactJsonReplay: true, staleActionStops: true, invalidActionStops: true},
-    readyForBoundedCpuExperiment: true, motionTrainingImplemented: false,
+    readyForBoundedCpuExperiment: true, motionTrainingImplemented: true,
     scope: 'Original-Simulator reach-pose environment smoke, not full regression CI, learned improvement, game validation or physical calibration'};
   writeJson(reportPath, evidence);
   return evidence;
@@ -65,9 +65,9 @@ function readiness(filename = reportPath) {
   return {schemaVersion: 1, engine: 'original VexRobotSimulator', controller: 'iraLIB C++ LTV-LQR + wheel PI/feedforward',
     actionSize: Policy.ACTION_SIZE, observationSize: Policy.OBSERVATION_SIZE, fixedDt: FIXED_DT,
     defaultPolicyIntervalTicks: 5, readyForBoundedCpuExperiment: Boolean(evidence), evidence,
-    motionTrainingImplemented: false, learnedImprovementVerified: false,
+    motionTrainingImplemented: true, learnedImprovementVerified: false,
     issue: issue ?? (evidence ? null : 'Run the explicit motion-check command; GET status does not run experiments'),
-    separateGates: ['Learned policy training and checkpoint/resume', 'Independent frozen before/after evaluation',
+    separateGates: ['Measured learned improvement across independent training seeds', 'Independent frozen before/after evaluation',
       'Full-game mechanics/scoring validation', 'Measured hardware calibration and timing', 'Authorized AMD provider execution',
       'Real camera/calibration and LocateAnything inference'], hardwareExecutionEnabled: false, cloudExecutionEnabled: false};
 }

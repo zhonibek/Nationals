@@ -189,7 +189,7 @@ test('RoboProof runs and replays the original Simulator, rejects altered motion 
   const report = baseline();
   assert.equal(report.reason, 'success');
   assert.equal(report.identity.canonicalSimulator, true);
-  assert.match(report.learningStatus, /not implemented/);
+  assert.match(report.learningStatus, /does not train/);
   assert.deepEqual(replay(report), report);
   assert.throws(() => replay({...report, totalReward: 999}), /does not reproduce/);
   assert.throws(() => replay({...report, identity: {...report.identity, controllerWasmSha256: 'forged'}}), /identity mismatch/);

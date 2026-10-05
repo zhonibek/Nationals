@@ -179,7 +179,7 @@ test('explicit test execution of synthetic proposal reaches goal in original Sim
   const proposal = prepare(fixture());
   const report = baseline(42, proposal.task);
   assert.equal(report.reason, 'success');
-  assert.equal(report.learningStatus, 'scripted benchmark only; motion-policy training is not implemented');
+  assert.equal(report.learningStatus, 'scripted or untrained benchmark; this episode does not train a motion policy');
   assert.ok(report.metrics.positionErrorMeters < 0.02032);
   assert.deepEqual(replay(report), report);
 });

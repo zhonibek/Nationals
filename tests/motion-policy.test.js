@@ -60,7 +60,7 @@ test('full policy transition log and JSON round trip replay exactly without exec
   assert.equal(report.reason, 'success');
   assert.equal(report.transitions.length, report.ticks);
   assert.equal(report.options.controlMode, 'policy');
-  assert.match(report.learningStatus, /not implemented/);
+  assert.match(report.learningStatus, /does not train/);
   assert.deepEqual(replay(JSON.parse(JSON.stringify(report))), report);
   const total = report.transitions.reduce((sum, row) => sum + row.reward, 0);
   assert.equal(total, report.totalReward);

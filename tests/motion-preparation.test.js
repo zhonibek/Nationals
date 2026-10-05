@@ -22,7 +22,7 @@ test('local protocol exposes only bounded canonical operations and no file/shell
   const send = (op, fields = {}) => bridge.handle({protocolVersion: PROTOCOL_VERSION, id: ++id, op, ...fields}).result;
   const contract = send('contract');
   assert.equal(contract.identity.canonicalSimulator, true);
-  assert.equal(contract.motionTrainingImplemented, false);
+  assert.equal(contract.motionTrainingImplemented, true);
   assert.equal(contract.observationSize, 34);
   assert.equal(contract.actionSize, 4);
   assert.throws(() => send('exec', {command: 'anything'}), /Unsupported/);
@@ -131,7 +131,8 @@ test('sensor faults return finite fallback policy vectors and explicit unsuccess
 });
 
 test('motion dashboard only reads status on load; inference, training and experiments are explicit', async () => {
-  const ids = ['check', 'restore', 'evaluate', 'run', 'cancel', 'replay', 'download', 'form', 'status', 'readiness', 'gates'];
+  const ids = ['check', 'restore', 'evaluate', 'run', 'cancel', 'replay', 'download', 'form', 'status', 'readiness', 'gates',
+    'learning-refresh', 'compare-learned', 'use-verified'];
   const elements = new Map(ids.map(id => [`motion-${id}`, {disabled: false, textContent: '', addEventListener() {}}]));
   const requests = [];
   const realm = vm.createContext({document: {getElementById: id => elements.get(id)},
@@ -143,4 +144,6 @@ test('motion dashboard only reads status on load; inference, training and experi
   assert.deepEqual(requests.map(entry => entry.url), ['/api/motion/status']);
   assert.equal(requests[0].options.method, undefined);
   assert.equal(elements.get('motion-readiness').textContent, 'READINESS NOT VERIFIED');
+  assert.equal(elements.get('motion-compare-learned').disabled, true);
+  assert.equal(elements.get('motion-use-verified').disabled, true);
 });

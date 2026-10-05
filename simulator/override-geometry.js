@@ -5,7 +5,7 @@
 })(globalThis,function(){
   'use strict';
   const FIELD_HALF=70.2;
-  const OBJECTS=Object.freeze({height:6.5,halfHeight:3.25,pinRadius:.8,cupRadius:1.575,goalRadius:4.25});
+  const OBJECTS=Object.freeze({height:6.5,halfHeight:3.25,pinRadius:1.58,pinTipRadius:.7,pinShoulderRadius:1.175,cupRadius:1.58,cupWaistRadius:1.16,cupHeight:6.48,goalRadius:4.25});
   const radians=degrees=>degrees*Math.PI/180;
   function rotate(x,y,heading){
     const a=radians(heading),c=Math.cos(a),s=Math.sin(a);
@@ -75,5 +75,19 @@
     }
     return {x:r.x,y:r.y,normals};
   }
-  return {FIELD_HALF,OBJECTS,rotate,corners,halfExtents,touchesPerimeter,circleContact,rectangleContact,resolveRobot};
+  function objectRadius(object){return object.kind==='cup'?OBJECTS.cupRadius:OBJECTS.pinRadius;}
+  function objectFootprint(object,pose){
+    const radius=objectRadius(object),tilt=pose.tilt??(pose.lying?Math.PI/2:0);
+    const heading=radians(pose.yaw||0),length=(OBJECTS.halfHeight-radius)*Math.sin(tilt);
+    if(length<1e-8)return [{x:pose.x,y:pose.y,radius}];
+    return [-1,-.5,0,.5,1].map(fraction=>({
+      x:pose.x+fraction*length*Math.sin(heading),y:pose.y+fraction*length*Math.cos(heading),radius
+    }));
+  }
+  function objectBounds(object,pose){
+    const samples=objectFootprint(object,pose);
+    return {x:Math.max(...samples.map(sample=>Math.abs(sample.x-pose.x)+sample.radius)),
+      y:Math.max(...samples.map(sample=>Math.abs(sample.y-pose.y)+sample.radius))};
+  }
+  return {FIELD_HALF,OBJECTS,rotate,corners,halfExtents,touchesPerimeter,circleContact,rectangleContact,resolveRobot,objectRadius,objectFootprint,objectBounds};
 });

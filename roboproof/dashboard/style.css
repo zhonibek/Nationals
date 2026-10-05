@@ -190,3 +190,8 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12
 #perception li { margin-bottom: 8px; }
 .motion-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin: 18px 0; }
 #motion pre { max-height: 420px; overflow: auto; overflow-wrap: anywhere; }
+#motion-learning-table { overflow-x: auto; }
+#motion-learning-table table { width: 100%; }
+#nemotron pre { max-height: 420px; overflow: auto; overflow-wrap: anywhere; }
+#nemotron-skills { margin: 18px 0; }
+#nemotron-skills h3 { overflow-wrap: anywhere; }

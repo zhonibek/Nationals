@@ -19,7 +19,7 @@ function args(argv) {
     benchmark: ['counts', 'seed', 'out'], diagnose: ['file', 'out'],
     verify: ['scenarios', 'candidate', 'holdout', 'seed', 'out'],
     'motion-baseline': ['seed', 'task', 'configuration', 'out'], 'motion-replay': ['file', 'out'],
-    'motion-check': ['out'], 'motion-evaluate': ['suite', 'out']
+    'motion-check': ['out'], 'motion-evaluate': ['suite', 'out'], 'motion-compare-learned': ['directory', 'out']
   };
   if (!Object.hasOwn(allowed, options.command)) throw Error(`Unknown command: ${options.command}`);
   for (const key of Object.keys(options)) if (key !== 'command' && !allowed[options.command].includes(key)) throw Error(`Unknown option: --${key}`);
@@ -73,6 +73,14 @@ function main(argv = process.argv.slice(2)) {
   const options = args(argv);
   const out = path.resolve(options.out || 'roboproof/runs/latest');
   const seed = number(options, 'seed', 42, 0, 0xffffffff);
+  if (options.command === 'motion-compare-learned') {
+    const result = require('./motion-learner').evaluateLearned(options.directory);
+    if (options.out) writeJson(options.out, result);
+    console.log(JSON.stringify({runId: result.runId, learnedImprovementVerified: result.learnedImprovementVerified,
+      seeds: result.models.map(row => ({seed: row.seed, baseline: row.baseline.success,
+        untrained: row.untrained.success, learned: row.learned.success, gatePassed: row.acceptance.passed}))}));
+    return;
+  }
   if (options.command === 'motion-check' || options.command === 'motion-evaluate') {
     const result = options.command === 'motion-check' ? require('./motion-readiness').verify()
       : require('./motion-evaluation').evaluate(number(options, 'suite', 2, 1, 2));
@@ -94,6 +102,7 @@ function main(argv = process.argv.slice(2)) {
   }
   if (options.command === 'help') {
     console.log('Training preparation: motion-check --out readiness.json\nmotion-evaluate --suite 2 --out evaluation.json');
+    console.log('Motion learner: python -m roboproof.motion_learning.train --seed 42 --seed-count 3 --max-seconds 180\nmotion-compare-learned --directory roboproof/runs/motion/learning');
     console.log('Original Simulator: motion-baseline --seed 42 --task task.json --configuration configuration.json --out report.json\nmotion-replay --file report.json --out replay.json');
     console.log('RoboProof: node roboproof/cli.js <command> [--option value]\nnominal --out result.json\nsample --count 64 --seed 42 --out scenarios.json\nrun --scenarios scenarios.json --out directory\nreplay --file counterexample.json --out replay.json\ndemo --count 64 --holdout 32 --generations 2 --population 8 --out directory\nverify --scenarios scenarios.json --candidate candidate.json --holdout 32 --out directory\ndiagnose --file counterexample.json --out diagnosis.json\nbenchmark --counts 1,10,100 --out benchmark.json');
     return;

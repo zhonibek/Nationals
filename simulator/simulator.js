@@ -433,6 +433,10 @@ class ThreeFieldRenderer {
     this.cadRotationOffset = 0;
     this.cadLoaded = false;
     this.modelMode = 'cad'; // 'cad' or 'procedural'
+    this.cadAutoLoadPromise = null;
+    this.renderQuality = 'fast';
+    this.nextRenderAt = 0;
+    this.performanceWindow = {start: performance.now(), frames: 0};
 
     if (typeof THREE === 'undefined') {
       console.warn("Three.js not loaded.");
@@ -449,7 +453,8 @@ class ThreeFieldRenderer {
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(rect.width || 680, rect.height || 680);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = false;
+    this.renderer.setPixelRatio(1);
     container.appendChild(this.renderer.domElement);
 
     if (typeof THREE.OrbitControls !== 'undefined') {
@@ -461,7 +466,6 @@ class ThreeFieldRenderer {
     this.build3DField();
     this.build3DRobot();
     this.initCadLoaderUI();
-    this.tryAutoLoadCad();
     this.setCameraPreset('iso');
 
     window.addEventListener('resize', () => this.resize());
@@ -682,6 +686,7 @@ class ThreeFieldRenderer {
   }
 
   initCadLoaderUI() {
+    document.getElementById('renderQuality')?.addEventListener('change',event=>this.setRenderQuality(event.target.value));
     const fileInput = document.getElementById('cadFileInput');
     const btnToggleCad = document.getElementById('btnToggleCadModel');
     const btnRotateCad = document.getElementById('btnRotateCad');
@@ -741,156 +746,122 @@ class ThreeFieldRenderer {
   }
 
   async tryAutoLoadCad() {
-    // 1. Check local models/robot.glb or models/robot.stl
-    try {
-      let res = await fetch('models/robot.glb');
-      let ext = 'glb';
-      let name = 'robot.glb';
-      if (!res.ok) {
-        res = await fetch('models/robot.stl');
-        ext = 'stl';
-        name = 'robot.stl';
-      }
-      if (res.ok) {
-        const buffer = await res.arrayBuffer();
-        this.loadCadFromBuffer(buffer, ext, name);
+    for(const filename of ['robot.preview.glb','robot.glb','robot.stl']){
+      try{
+        const response=await fetch('models/'+filename);
+        if(!response.ok)continue;
+        if(Number(response.headers.get('content-length'))>RobotCAD.LIMITS.bytes){
+          await response.body?.cancel();continue;
+        }
+        await this.loadCadFromBuffer(await response.arrayBuffer(),filename.split('.').pop(),filename);
         return;
-      }
-    } catch (e) {}
+      }catch(error){console.warn('CAD fallback:',error.message);}
+    }
 
-    // 2. Check cached IndexedDB model from previous session
     try {
       const cached = await CadStorage.load('current_robot_cad');
       if (cached && cached.data) {
-        this.loadCadFromBuffer(cached.data, cached.ext, cached.name);
+        await this.loadCadFromBuffer(cached.data, cached.ext, cached.name);
         return;
       }
-    } catch (e) {}
+    } catch (error) {console.warn('Cached CAD skipped:',error.message);}
 
-    // Default: use detailed procedural CAD robot
+    this.modelMode = 'procedural';
     this.cadRobot.visible = false;
     this.proceduralRobot.visible = true;
     const badge = document.getElementById('cadStatusBadge');
-    if (badge) badge.textContent = "CAD: VEX V5RC Override";
+    if (badge) badge.textContent = 'CAD недоступен — процедурная модель';
   }
 
-  loadCadFile(file) {
-    const reader = new FileReader();
-    const name = file.name;
-    const ext = name.split('.').pop().toLowerCase();
+  ensureCadLoaded(){
+    if(!this.cadAutoLoadPromise)this.cadAutoLoadPromise=this.tryAutoLoadCad();
+    return this.cadAutoLoadPromise;
+  }
 
-    reader.onload = (e) => {
-      const buffer = e.target.result;
-      this.loadCadFromBuffer(buffer, ext, name);
-      // Persist in IndexedDB for subsequent visits
-      CadStorage.save('current_robot_cad', { name, data: buffer, ext });
-    };
-
-    if (ext === 'obj') {
-      reader.readAsText(file);
-    } else {
-      reader.readAsArrayBuffer(file);
+  async loadCadFile(file) {
+    try{
+      RobotCAD.checkSize(file.size);
+      const name=file.name,ext=name.split('.').pop().toLowerCase();
+      if(!['glb','gltf','stl','obj'].includes(ext))throw Error('Поддерживаются GLB, GLTF, STL и OBJ');
+      await this.ensureCadLoaded();
+      const buffer=ext==='obj'?await file.text():await file.arrayBuffer();
+      await this.loadCadFromBuffer(buffer,ext,name);
+      await CadStorage.save('current_robot_cad',{name,data:buffer,ext});
+    }catch(error){
+      const badge=document.getElementById('cadStatusBadge');
+      if(badge){badge.textContent=error.message;badge.title=error.message;}
     }
   }
 
   loadCadFromBuffer(buffer, ext, filename) {
     const badge = document.getElementById('cadStatusBadge');
     if (badge) badge.textContent = `Загрузка ${ext.toUpperCase()}...`;
+    return new Promise((resolve,reject)=>{
+      const failed=error=>{
+        if(badge)badge.textContent='Ошибка CAD: '+error.message;
+        reject(error);
+      };
+      const onModelReady=model=>{
+        try{this.applyCadModel(model,filename);resolve();}
+        catch(error){RobotCAD.disposeModel(model);failed(error);}
+      };
+      try{
+        RobotCAD.checkSize(typeof buffer==='string'?new TextEncoder().encode(buffer).byteLength:buffer.byteLength);
+        if(ext==='glb')RobotCAD.inspectGlb(buffer);
+        if(ext==='glb'||ext==='gltf'){
+          if(!THREE.GLTFLoader)throw Error('GLTFLoader unavailable');
+          new THREE.GLTFLoader().parse(buffer,'',gltf=>onModelReady(gltf.scene||gltf.scenes[0]),failed);
+        }else if(ext==='stl'){
+          if(!THREE.STLLoader)throw Error('STLLoader unavailable');
+          const geometry=new THREE.STLLoader().parse(buffer);
+          const material=new THREE.MeshStandardMaterial({color:0x94a3b8,metalness:.75,roughness:.35});
+          onModelReady(new THREE.Mesh(geometry,material));
+        }else if(ext==='obj'){
+          if(!THREE.OBJLoader)throw Error('OBJLoader unavailable');
+          onModelReady(new THREE.OBJLoader().parse(typeof buffer==='string'?buffer:new TextDecoder().decode(buffer)));
+        }else throw Error('Unsupported CAD format');
+      }catch(error){failed(error);}
+    });
+  }
 
-    const onModelReady = (model) => {
-      this.applyCadModel(model, filename);
-    };
-
-    try {
-      if (ext === 'glb' || ext === 'gltf') {
-        if (typeof THREE.GLTFLoader === 'undefined') {
-          console.error("GLTFLoader not found.");
-          return;
-        }
-        const loader = new THREE.GLTFLoader();
-        loader.parse(buffer, '', (gltf) => {
-          onModelReady(gltf.scene || gltf.scenes[0]);
-        }, (err) => console.error("GLTF Parse Error:", err));
-      } else if (ext === 'stl') {
-        if (typeof THREE.STLLoader === 'undefined') {
-          console.error("STLLoader not found.");
-          return;
-        }
-        const loader = new THREE.STLLoader();
-        const geometry = loader.parse(buffer);
-        const material = new THREE.MeshStandardMaterial({
-          color: 0x94a3b8,
-          metalness: 0.75,
-          roughness: 0.35
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        onModelReady(mesh);
-      } else if (ext === 'obj') {
-        if (typeof THREE.OBJLoader === 'undefined') {
-          console.error("OBJLoader not found.");
-          return;
-        }
-        const loader = new THREE.OBJLoader();
-        const text = typeof buffer === 'string' ? buffer : new TextDecoder().decode(buffer);
-        const obj = loader.parse(text);
-        onModelReady(obj);
-      }
-    } catch (err) {
-      console.error("CAD load error:", err);
-      if (badge) badge.textContent = "Ошибка CAD";
-    }
+  setRenderQuality(mode){
+    this.renderQuality=mode==='detail'?'detail':'fast';
+    this.renderer.shadowMap.enabled=this.renderQuality==='detail';
+    this.renderer.setPixelRatio(this.renderQuality==='detail'?Math.min(window.devicePixelRatio||1,2):1);
+    this.nextRenderAt=0;
+    this.performanceWindow={start:performance.now(),frames:0};
+    this.resize();
   }
 
   applyCadModel(modelObject, filename) {
-    // Clear previous CAD children
-    while (this.cadRobot.children.length > 0) {
-      this.cadRobot.remove(this.cadRobot.children[0]);
-    }
-
-    // Enable shadows and enhance materials on all meshes
-    modelObject.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        if (!child.material) {
-          child.material = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6, roughness: 0.4 });
-        }
+    const stats=RobotCAD.modelStats(modelObject);
+    RobotCAD.checkCost(stats);
+    const initialBox=new THREE.Box3().setFromObject(modelObject),initialSize=initialBox.getSize(new THREE.Vector3());
+    const maxHorizontal=Math.max(initialSize.x,initialSize.y,initialSize.z);
+    if(!Number.isFinite(maxHorizontal)||maxHorizontal<=0)throw Error('CAD has no finite geometry');
+    modelObject.traverse(part=>{
+      if(part.isMesh){
+        part.castShadow=false;part.receiveShadow=false;
+        if(!part.material)part.material=new THREE.MeshStandardMaterial({color:0x94a3b8,metalness:.6,roughness:.4});
       }
+      part.updateMatrix();part.matrixAutoUpdate=false;
     });
-
-    // Compute bounding box
-    const initialBox = new THREE.Box3().setFromObject(modelObject);
-    const initialSize = initialBox.getSize(new THREE.Vector3());
-
-    // Scale to standard 18" VEX Override starting envelope
-    const maxHorizontal = Math.max(initialSize.x, initialSize.y, initialSize.z);
-    const targetSize = 17.5;
-    const scale = (maxHorizontal > 0) ? (targetSize / maxHorizontal) : 1.0;
-    modelObject.scale.set(scale, scale, scale);
-
-    // Re-center horizontally and place on ground
-    const scaledBox = new THREE.Box3().setFromObject(modelObject);
-    const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
-    modelObject.position.x = -scaledCenter.x;
-    modelObject.position.y = -scaledCenter.y;
-    modelObject.position.z = -scaledBox.min.z + 0.1; // Ground clearance
-
+    modelObject.scale.multiplyScalar(17.5/maxHorizontal);modelObject.updateMatrix();
+    const scaledBox=new THREE.Box3().setFromObject(modelObject),scaledCenter=scaledBox.getCenter(new THREE.Vector3());
+    modelObject.position.x-=scaledCenter.x;modelObject.position.y-=scaledCenter.y;modelObject.position.z-=scaledBox.min.z-.1;
+    modelObject.updateMatrix();
+    for(const previous of [...this.cadRobot.children]){
+      this.cadRobot.remove(previous);RobotCAD.disposeModel(previous);
+    }
     this.cadRobot.add(modelObject);
-    this.cadLoaded = true;
-
-    // Activate CAD mode
-    this.modelMode = 'cad';
-    this.cadRobot.visible = true;
-    this.proceduralRobot.visible = false;
-
-    const btnToggleCad = document.getElementById('btnToggleCadModel');
-    if (btnToggleCad) btnToggleCad.textContent = "🤖 Режим: CAD (Onshape)";
-
-    const badge = document.getElementById('cadStatusBadge');
-    if (badge) {
-      badge.textContent = `CAD: ${filename.substring(0, 16)}`;
-      badge.style.borderColor = "#10b981";
-      badge.style.color = "#34d399";
+    this.cadLoaded=true;this.modelMode='cad';this.cadRobot.visible=true;this.proceduralRobot.visible=false;
+    const button=document.getElementById('btnToggleCadModel');
+    if(button)button.textContent='🤖 Режим: CAD';
+    const badge=document.getElementById('cadStatusBadge');
+    if(badge){
+      badge.textContent=`CAD: ${filename} · ${stats.drawCalls} batches · ${Math.round(stats.triangles/1000)}k triangles`;
+      badge.title='Облегчённая визуальная модель; физика и захват не берутся автоматически из CAD';
+      badge.style.borderColor='#10b981';badge.style.color='#34d399';
     }
   }
 
@@ -940,6 +911,9 @@ class ThreeFieldRenderer {
 
   render() {
     if (!this.isActive || !this.renderer) return;
+    const now=performance.now();
+    if(now<this.nextRenderAt)return;
+    this.nextRenderAt=now+1000/(this.renderQuality==='fast'?30:60)-1;
 
     // Update 3D robot transform
     if (this.robot3D) {
@@ -969,6 +943,13 @@ class ThreeFieldRenderer {
     }
 
     this.renderer.render(this.scene, this.camera);
+    this.performanceWindow.frames++;
+    const elapsed=now-this.performanceWindow.start;
+    if(elapsed>=1000){
+      const status=document.getElementById('renderPerformance'),info=this.renderer.info.render;
+      if(status)status.textContent=`3D ${Math.round(this.performanceWindow.frames*1000/elapsed)} FPS · ${info.calls} draw calls · ${Math.round(info.triangles/1000)}k triangles`;
+      this.performanceWindow={start:now,frames:0};
+    }
   }
 }
 
@@ -1016,7 +997,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     camera3DControls.style.display = 'flex';
     if (threeRenderer) {
       threeRenderer.isActive = true;
+      threeRenderer.performanceWindow={start:performance.now(),frames:0};
       threeRenderer.resize();
+      void threeRenderer.ensureCadLoaded();
     }
   });
 
@@ -1316,7 +1299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnPlay.addEventListener('click', () => {
     if (playback?.finished) playback.restart();
-    if (!playback && !sim.isRunning && sim.routineQueue.length === 0) {
+    if (!playback && !sim.matchMode && !sim.isRunning && sim.routineQueue.length === 0) {
       sim.startRoutine(routineSelect.value);
     }
     sim.isPaused = false;
@@ -1333,8 +1316,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnOverrideStart?.addEventListener('click', () => {
     const choices=Object.fromEntries([...document.querySelectorAll('[data-auto-robot]')].map(el=>[el.dataset.autoRobot,el.value]));
-    const result=sim.startGame(document.getElementById('gameMode').value,choices);
-    document.getElementById('gameFeedback').textContent=result.ok?'Игра началась. В матче автономки работают первые 15 секунд.':result.error;
+    gameUI.stopLift();
+    const mode=document.getElementById('gameMode').value;
+    const result=OverrideUI.startGame(sim,mode,choices,{preload:document.getElementById('practicePreload').checked});
+    document.getElementById('gameFeedback').textContent=result.ok?(mode==='match'?'Матч начался: автономки работают первые 15 секунд.':'Игра началась: WASD — движение, E/Q — подъёмник, F — взять / Toggle.'):result.error;
   });
 
   btnOverrideReset?.addEventListener('click', () => {
@@ -1388,15 +1373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(!sim.matchMode)return;
     sim.activeRobotId=e.target.value;sim.holonomicArcade(0,0,0);sim.fleet?.syncView();
   });
-  document.querySelectorAll('[data-game-action]').forEach(button=>button.addEventListener('click',()=>{
-    const result=!sim.matchMode?{ok:false,error:'Start Override first'}:sim.override.phase==='autonomous'?{ok:false,error:'Manual actions disabled during autonomous'}:sim.override.interact(sim.activeRobotId,button.dataset.gameAction,document.getElementById('gameObject').value);
-    document.getElementById('gameFeedback').textContent=result.ok?'OK':result.error;
-  }));
-  document.querySelectorAll('[data-lift]').forEach(button=>button.addEventListener('click',()=>{
-    const r=sim.override.robots.find(r=>r.id===sim.activeRobotId);
-    const result=sim.override.setLiftTarget(r.id,Math.max(0,Math.min(40,r.manipulator.target+Number(button.dataset.lift))));
-    document.getElementById('gameFeedback').textContent=result.ok?'Подъёмник: цель '+r.manipulator.target.toFixed(1)+'″':result.error;
-  }));
+  const gameUI=OverrideUI.attach(sim,{replay:!!playback});
   document.getElementById('addRuling')?.addEventListener('click',()=>{
     const result=sim.override.adjudicate(sim.activeRobotId,document.getElementById('refRule').value,document.getElementById('refSeverity').value,document.getElementById('refReason').value,{autonomous:document.getElementById('refAuto').checked,awardAWP:document.getElementById('refAWP').checked});
     document.getElementById('gameFeedback').textContent=result.ok?'Решение записано':result.error;
@@ -1408,16 +1385,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   // Keyboard Controls (Holonomic 3-DOF: W/S forward/backward, Q/E or A/D strafe, ArrowLeft/ArrowRight turn)
   const keysDown = {};
-  window.addEventListener('keydown', (e) => {
-    if(e.target?.matches?.('input,select,textarea,[contenteditable]'))return;
-    keysDown[e.key.toLowerCase()] = true;
-    if (e.key === ' ') {
+  const keyboardKey=event=>(event.code?.startsWith('Key')?event.code.slice(3):event.key||'').toLowerCase();
+  window.addEventListener('keydown', (event) => {
+    if(event.ctrlKey||event.altKey||event.metaKey||event.target?.matches?.('input,select,textarea,[contenteditable]'))return;
+    keysDown[keyboardKey(event)] = true;
+    if (event.key === ' '&&!event.repeat) {
       sim.isPaused = !sim.isPaused;
-      e.preventDefault();
+      gameUI.stopLift();event.preventDefault();
     }
   });
-  window.addEventListener('keyup', (e) => {
-    delete keysDown[e.key.toLowerCase()];
+  window.addEventListener('keyup', (event) => {
+    delete keysDown[keyboardKey(event)];
   });
 
   window.addEventListener('blur',()=>{for(const key of Object.keys(keysDown))delete keysDown[key];sim.holonomicArcade(0,0,0);});
@@ -1443,12 +1421,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (keysDown['w'] || keysDown['arrowup']) forward += 1.0;
       if (keysDown['s'] || keysDown['arrowdown']) forward -= 1.0;
-      if (keysDown['d'] || keysDown['e']) strafe += 1.0;
-      if (keysDown['a'] || keysDown['q']) strafe -= 1.0;
+      if (keysDown['d'] || (!sim.matchMode&&keysDown['e'])) strafe += 1.0;
+      if (keysDown['a'] || (!sim.matchMode&&keysDown['q'])) strafe -= 1.0;
       if (keysDown['arrowright']) turn += 0.8;
       if (keysDown['arrowleft']) turn -= 0.8;
 
-      sim.holonomicArcade(forward, strafe, turn);
+      const drivePower=sim.matchMode?Number(document.getElementById('gameDrivePower').value):1;
+      sim.holonomicArcade(forward*drivePower, strafe*drivePower, turn*drivePower);
     } else {
       sim.holonomicArcade(0, 0, 0);
     }
@@ -1461,7 +1440,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const MAX_SUBSTEPS = 15;
     while (physicsAccumulator >= PHYSICS_DT && substeps < MAX_SUBSTEPS) {
       if (playback) playback.step(PHYSICS_DT);
-      else sim.update(PHYSICS_DT);
+      else {gameUI.stepControls(PHYSICS_DT);sim.update(PHYSICS_DT);}
       physicsAccumulator -= PHYSICS_DT;
       substeps++;
     }
@@ -1476,6 +1455,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       threeRenderer.render();
     }
 
+    gameUI.update();
     // Update Override scoreboard and telemetry UI.
     if (sim.override) {
       const overrideState = sim.override.getState();

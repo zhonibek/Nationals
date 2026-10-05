@@ -7,9 +7,11 @@ const {verify} = require('./motion-readiness');
 const {evaluate} = require('./motion-evaluation');
 const {writeJson} = require('./core');
 const path = require('node:path');
+const MotionLearner = require('./motion-learner');
 
 try {
   if (workerData.operation === 'check') parentPort.postMessage(verify());
+  else if (workerData.operation === 'compare-learned') parentPort.postMessage(MotionLearner.evaluateLearned(workerData.learningDirectory));
   else if (workerData.operation === 'evaluate') {
     const result = evaluate(2);
     writeJson(path.join(__dirname, 'runs/motion/evaluation.json'), result);
@@ -21,15 +23,20 @@ try {
       engine: workerData.report.identity.engine});
   } else if (workerData.operation === 'run') {
     const task = normalizeTask(workerData.task);
-    let state = workerData.seed;
-    const report = workerData.mode === 'scripted' ? baseline(workerData.seed, task, workerData.configuration, {recordTransitions: true})
-      : runPolicy({seed: workerData.seed, task, configuration: workerData.configuration,
-        options: {policyIdentity: {kind: 'scripted', id: workerData.mode}},
-        ...(workerData.mode === 'random-fixture' ? {act: () => Array.from({length: 4}, () => {
-          state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-          return state / 4294967296 * 2 - 1;
-        })} : {})});
-    replay(JSON.parse(JSON.stringify(report)));
-    parentPort.postMessage({report, exactReplayVerified: true, inferencePerformed: false, motionPolicyTrained: false});
+    if (workerData.mode === 'learned-experiment') {
+      parentPort.postMessage(MotionLearner.runLearned({seed: workerData.seed, task,
+        configuration: workerData.configuration, directory: workerData.learningDirectory}));
+    } else {
+      let state = workerData.seed;
+      const report = workerData.mode === 'scripted' ? baseline(workerData.seed, task, workerData.configuration, {recordTransitions: true})
+        : runPolicy({seed: workerData.seed, task, configuration: workerData.configuration,
+          options: {policyIdentity: {kind: 'scripted', id: workerData.mode}},
+          ...(workerData.mode === 'random-fixture' ? {act: () => Array.from({length: 4}, () => {
+            state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+            return state / 4294967296 * 2 - 1;
+          })} : {})});
+      replay(JSON.parse(JSON.stringify(report)));
+      parentPort.postMessage({report, exactReplayVerified: true, inferencePerformed: false, motionPolicyTrained: false});
+    }
   } else throw Error('Unsupported motion worker operation');
 } catch (error) { parentPort.postMessage({error: error.message}); }

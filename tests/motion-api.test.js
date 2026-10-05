@@ -33,7 +33,7 @@ test('motion API persists canonical transitions, exact replay and restore withou
     headers: {'Content-Type': 'application/json', ...(origin ? {Origin: origin} : {})}, body: JSON.stringify(body)});
   const status = await (await fetch(`${base}/api/motion/status`)).json();
   assert.equal(status.engine, 'original VexRobotSimulator');
-  assert.equal(status.motionTrainingImplemented, false);
+  assert.equal(status.motionTrainingImplemented, true);
   assert.equal(status.cloudExecutionEnabled, false);
   assert.equal((await fetch(`${base}/api/motion/latest`)).status, 404);
   assert.equal((await post('run', {}, 'https://evil.example')).status, 403);
@@ -57,7 +57,7 @@ test('motion API persists canonical transitions, exact replay and restore withou
   assert.equal(verified.exactReplayVerified, true);
   assert.equal(verified.ticks, 3);
   const page = await (await fetch(`${base}/`)).text();
-  assert.match(page, /Motion training preparation/);
+  assert.match(page, /Motion learning lab/);
   assert.match(page, /LEGACY RESEARCH/);
   assert.doesNotMatch(page, /Local AI root-cause diagnosis/);
   assert.equal((await fetch(`${base}/motion.js`)).status, 200);

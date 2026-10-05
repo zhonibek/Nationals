@@ -120,6 +120,7 @@
       const objects=inventory();this.cups=objects.cups;this.pins=objects.pins;
       for(const pin of this.pins.filter(p=>p.placed))this.goal(pin.goalId).stack.push({type:"pin",id:pin.id});
       this.autoFrozen=false;this.finalScore=null;
+      this.finalBreakdown=null;
       this.robots = makeRobots();
       for(const robot of this.robots){
         const preload=this.pins.find(p=>p.location==="preload"&&p.allianceColor===robot.alliance&&p.status!=="held");
@@ -149,7 +150,7 @@
       this.matchEnded = true;
       this.postMatchSeconds = 0;
       if(this.mode==='match'&&!this.autoFrozen)this.freezeAutonomous();
-      if(!this.physical||Dynamics.resting(this))this.finalScore=this.score();
+      if(!this.physical||Dynamics.resting(this))this.freezeScore();
     }
 
     tick(dt) {
@@ -167,8 +168,8 @@
         }
         if(this.phase==='post_match'){
           this.postMatchSeconds=Math.min(5,this.postMatchSeconds+h);
-          if(this.postMatchSeconds>=5-1e-8){this.postMatchSeconds=5;this.finalScore=this.score();}
-          else if(Dynamics.resting(this))this.finalScore=this.score();
+          if(this.postMatchSeconds>=5-1e-8){this.postMatchSeconds=5;this.freezeScore();}
+          else if(Dynamics.resting(this))this.freezeScore();
         }else{
           this.clock+=h;
           if(this.mode==='match'&&this.clock>=AUTO_SECONDS-1e-8&&this.phase==='autonomous'){this.clock=AUTO_SECONDS;this.freezeAutonomous();this.phase='driver';}
@@ -200,7 +201,11 @@
         if(this.autoFrozen){
           this.autonomousBonus=this.violations.red&&this.violations.blue?{red:0,blue:0}:this.violations.red?{red:0,blue:12}:{red:12,blue:0};
           this.awp.red=!this.violations.red&&(this.awp.red||this.awpAward.red);this.awp.blue=!this.violations.blue&&(this.awp.blue||this.awpAward.blue);
-          if(this.finalScore)for(const a of ["red","blue"])this.finalScore[a]+=this.autonomousBonus[a]-previousBonus[a];
+          if(this.finalScore)for(const a of ["red","blue"]){
+            this.finalScore[a]+=this.autonomousBonus[a]-previousBonus[a];
+            this.finalBreakdown[a].autonomousBonus=this.autonomousBonus[a];
+            this.finalBreakdown[a].total=this.finalScore[a];
+          }
         }
       }
       return result;
@@ -363,21 +368,108 @@
       return Geometry.resolveRobot({...robot,...pose},obstacles);
     }
 
+    pickupHint(robotId,kind='pin'){
+      const robot=this.robots.find(candidate=>candidate.id===robotId);
+      if(kind==='auto'){
+        if(!robot)return null;
+        return ['pin','cup'].map(type=>this.pickupHint(robotId,type)).sort((first,second)=>
+          Number(second.reachable)-Number(first.reachable)||
+          Number(second.distance<=3&&second.heightError<=3)-Number(first.distance<=3&&first.heightError<=3)||
+          (first.distance??Infinity)-(second.distance??Infinity)||
+          (first.heightError??Infinity)-(second.heightError??Infinity))[0];
+      }
+      if(!robot||!['pin','cup'].includes(kind))return null;
+      const grip=this.gripPose(robot,kind),objects=kind==='pin'?this.pins:this.cups;
+      const candidates=objects.filter(object=>object.status==='field'&&object.location==='field').map(object=>{
+        const pose=this.objectPose(object),center=pose.centerZ??(pose.lying?pose.z:pose.z+3.25);
+        const distance=Math.hypot(pose.x-grip.x,pose.y-grip.y),heightError=Math.abs(center-grip.centerZ);
+        const passenger=kind==='cup'?this.pins.find(pin=>pin.supportId===object.id):null;
+        const blocked=robot.possession[kind+'Id']?'Сначала освободите захват: предмет уже удерживается':
+          passenger&&robot.possession.pinId?'В этом Cup есть Pin. Сначала поставьте или отпустите удерживаемый Pin':null;
+        return {id:object.id,kind,passengerId:passenger?.id||null,distance,heightError,liftTarget:clamp(center-3.25,0,40),
+          reachable:!blocked&&distance<=3&&heightError<=3,
+          reason:blocked||(distance>3?'Подведите переднюю вилку ближе к предмету':heightError>3?'Измените высоту подъёмника':'Можно взять')};
+      }).sort((first,second)=>Number(second.reachable)-Number(first.reachable)||
+        Number(second.distance<=3&&second.heightError<=3)-Number(first.distance<=3&&first.heightError<=3)||first.distance-second.distance);
+      const closest=candidates[0];
+      if(!closest)return {kind,reachable:false,reason:'На поле нет свободных предметов этого типа'};
+      return closest;
+    }
+
+    toggleHint(robotId){
+      const robot=this.robots.find(candidate=>candidate.id===robotId);
+      if(!robot)return null;
+      const toggle=[...this.toggles].sort((first,second)=>Math.hypot(first.x-robot.x,first.y-robot.y)-Math.hypot(second.x-robot.x,second.y-robot.y))[0];
+      if(!toggle)return {reachable:false,reason:'На поле нет Toggle'};
+      const distance=Math.hypot(toggle.x-robot.x,toggle.y-robot.y);
+      return {id:toggle.id,distance,reachable:distance<=16,reason:distance<=16?'Можно переключить Toggle':'Подъедьте к Toggle у центра борта'};
+    }
+
+    interactionHint(robotId,kind='auto'){
+      const robot=this.robots.find(candidate=>candidate.id===robotId);
+      if(!robot)return null;
+      const pickup=this.pickupHint(robotId,kind),toggle=this.toggleHint(robotId);
+      const object=pickup?.id?this[pickup.kind](pickup.id):null,pose=object?this.objectPose(object):null;
+      const objectDistance=pose?Math.hypot(pose.x-robot.x,pose.y-robot.y):Infinity;
+      if(toggle?.reachable&&(!pickup?.reachable||toggle.distance<objectDistance))return {...toggle,action:'toggle',kind:'pin'};
+      return pickup?{...pickup,action:'pickup'}:null;
+    }
+
+    interactionKind(robotId,action,kind='auto'){
+      if(kind!=='auto')return kind;
+      if(action==='pickup')return this.pickupHint(robotId,'auto')?.kind||'pin';
+      if(action==='load')return 'pin';
+      const robot=this.robots.find(candidate=>candidate.id===robotId);
+      if(!robot)return 'pin';
+      const cup=this.cup(robot.possession.cupId);
+      if(cup&&this.pins.some(pin=>pin.supportId===cup.id))return 'cup';
+      const held=['cup','pin'].filter(type=>robot.possession[type+'Id']);
+      if(action==='place')held.sort((first,second)=>{
+        const firstHint=this.placementHint(robotId,first),secondHint=this.placementHint(robotId,second);
+        return Number(secondHint.ready)-Number(firstHint.ready)||Number(secondHint.validStack)-Number(firstHint.validStack);
+      });
+      return held[0]||this.pickupHint(robotId,'auto')?.kind||'pin';
+    }
+
+    placementHint(robotId,kind='pin'){
+      const robot=this.robots.find(candidate=>candidate.id===robotId);
+      if(!robot||!['pin','cup'].includes(kind))return null;
+      const object=this[kind](robot.possession[kind+'Id']);
+      if(!object)return {ready:false,reason:'Сначала возьмите предмет'};
+      const pose=this.objectPose(object),goal=[...this.goals].sort((first,second)=>Math.hypot(first.x-pose.x,first.y-pose.y)-Math.hypot(second.x-pose.x,second.y-pose.y))[0];
+      if(!goal)return {ready:false,reason:'На поле нет целей'};
+      const minimum=Math.max(0,goal.height-3.25+goal.stack.length*3.25),maximum=Math.min(40,minimum+8);
+      const distance=Math.hypot(pose.x-goal.x,pose.y-goal.y),top=goal.stack.at(-1);
+      const validStack=kind==='cup'?top?.type==='pin':!top||top.type==='cup';
+      const reason=goal.alliance&&goal.alliance!==robot.alliance?'Цель соперника защищена':
+        this.mode==='match'&&this.clock>=110&&goal.id==='g-neutral-tall'?'SG12: нельзя ставить в центральную цель в эндгейме':
+        !validStack?'Стопка должна чередовать Pin → Cup → Pin':distance>1.1?'Совместите центр вилки с отверстием цели':
+        pose.z<minimum||pose.z>maximum?'Поднимите предмет на высоту стопки':'Можно отпустить над целью';
+      return {goalId:goal.id,distance,minimumLift:minimum,maximumLift:maximum,validStack,ready:reason==='Можно отпустить над целью',reason};
+    }
+
     interact(robotId,action,kind="pin",options={}){
       const robot=this.robots.find(r=>r.id===robotId);
       if(!robot||this.matchEnded)return {ok:false,error:"match ended or unknown robot"};
       if(this.disqualifiedRobots.includes(robotId))return {ok:false,error:"Robot disqualified"};
       if(this.physical&&(this.phase==='pre_match'||(this.phase==='autonomous'&&options.source!=='autonomous')))return {ok:false,error:"Manual actions disabled in this phase"};
+      if(!['auto','pin','cup'].includes(kind))return {ok:false,error:"unknown object type"};
+      if(action==='use'){
+        const hint=this.interactionHint(robotId,kind);
+        if(!hint?.reachable)return {ok:false,error:hint?.reason||'no reachable object'};
+        action=hint.action;kind=hint.kind;
+      }
+      kind=this.interactionKind(robotId,action,kind);
       if(!["pin","cup"].includes(kind))return {ok:false,error:"unknown object type"};
       const key=kind+"Id",objects=kind==="pin"?this.pins:this.cups;
       const held=objects.find(o=>o.id===robot.possession[key]);
       const near=(list,range)=>list.filter(o=>Math.hypot(o.x-robot.x,o.y-robot.y)<=range).sort((a,b)=>Math.hypot(a.x-robot.x,a.y-robot.y)-Math.hypot(b.x-robot.x,b.y-robot.y))[0];
       if(action==="pickup"){
         if(held)return {ok:false,error:"already holding this object type"};
-        const grip=this.gripPose(robot,kind);
         const candidates=objects.filter(o=>o.status==='field'&&o.location!=='alliance-station'&&o.location!=='preload');
-        const object=this.physical?candidates.filter(o=>{const p=this.objectPose(o);return Math.hypot(p.x-grip.x,p.y-grip.y)<=3&&Math.abs((p.centerZ??(p.lying?p.z:p.z+3.25))-grip.centerZ)<=3;}).sort((a,b)=>{const pa=this.objectPose(a),pb=this.objectPose(b);return Math.hypot(pa.x-grip.x,pa.y-grip.y)-Math.hypot(pb.x-grip.x,pb.y-grip.y);})[0]:near(candidates,14);
-        if(!object)return {ok:false,error:"no reachable object"};
+        const hint=this.physical?this.pickupHint(robotId,kind):null;
+        const object=this.physical?(hint?.reachable?objects.find(candidate=>candidate.id===hint.id):null):near(candidates,14);
+        if(!object)return {ok:false,error:hint?.reason||"no reachable object"};
         const passenger=kind==='cup'?this.pins.find(p=>p.supportId===object.id):null;
         if(passenger&&robot.possession.pinId)return {ok:false,error:"free the Pin slot before lifting this stack"};
         this.auditAutonomousContact(robot,object);
@@ -415,7 +507,8 @@
       }
       if(action==="place"){
         if(!held)return {ok:false,error:"nothing held"};
-        const goal=near(this.goals,16);
+        const placement=this.physical?this.placementHint(robotId,kind):null;
+        const goal=this.physical?this.goal(placement?.goalId):near(this.goals,16);
         if(!goal)return {ok:false,error:"no goal within reach"};
         if(goal.alliance&&goal.alliance!==robot.alliance)return {ok:false,error:"opposing alliance goal is protected"};
         if(this.mode==='match'&&this.clock>=110&&goal.id==='g-neutral-tall')return {ok:false,error:'SG12: no midfield placement during endgame'};
@@ -502,11 +595,7 @@
     pinScore(pin, goal, includeMidfield=true) {
       const totals = { red: 0, blue: 0 };
       if (!pin || !pin.placed || !goal) return { alliance: null, points: 0, totals };
-      const index=goal.stack.findIndex(item=>item.id===pin.id),below=goal.stack[index-1],above=goal.stack[index+1];
-      const visibleHalves = Array.isArray(pin.visibleHalves) ? pin.visibleHalves : pin.halves.filter((half,i)=>{
-        const top=i===pin.upIndex;
-        return top?(!above||this.cup(above.id)?.up==="opaque"):(!below||this.cup(below.id)?.up==="transparent");
-      });
+      const visibleHalves=this.visiblePinHalves(pin,goal);
       const yellowOwner = pin.halves.includes("yellow") && (includeMidfield||Math.abs(goal.x)+Math.abs(goal.y)>=MIDFIELD_HALF) ? this.ownerForPin(pin, goal) : null;
       for (const half of visibleHalves) {
         if (half === "red" || half === "blue") totals[half] += POINTS.alliancePin;
@@ -539,6 +628,47 @@
       score.red += this.autonomousBonus.red;
       score.blue += this.autonomousBonus.blue;
       return score;
+    }
+
+    visiblePinHalves(pin,goal){
+      if(Array.isArray(pin.visibleHalves))return [...pin.visibleHalves];
+      const index=goal.stack.findIndex(item=>item.id===pin.id),below=goal.stack[index-1],above=goal.stack[index+1];
+      return pin.halves.filter((half,halfIndex)=>halfIndex===pin.upIndex?
+        (!above||this.cup(above.id)?.up==='opaque'):(!below||this.cup(below.id)?.up==='transparent'));
+    }
+
+    scoreBreakdown(){
+      if(this.finalBreakdown)return clone(this.finalBreakdown);
+      const alliance=()=>({coloredHalves:0,yellowHalves:0,midfieldRobots:0,autonomousBonus:0,coloredPoints:0,yellowPoints:0,midfieldPoints:0,total:0});
+      const result={red:alliance(),blue:alliance(),unownedYellowHalves:0,goals:[],final:false};
+      for(const goal of this.goals){
+        const row={id:goal.id,red:0,blue:0,stack:goal.stack.map(item=>({...item})),pins:[]};
+        for(const item of goal.stack){
+          if(item.type!=='pin')continue;
+          const pin=this.pin(item.id),visible=this.visiblePinHalves(pin,goal),owner=this.ownerForPin(pin,goal);
+          const points=this.pinScore(pin,goal).totals;
+          row.red+=points.red;row.blue+=points.blue;row.pins.push({id:pin.id,visible,hiddenHalves:pin.halves.length-visible.length,yellowOwner:owner,points});
+          for(const half of visible){
+            if(half==='red'||half==='blue')result[half].coloredHalves++;
+            else if(half==='yellow'){if(owner)result[owner].yellowHalves++;else result.unownedYellowHalves++;}
+          }
+        }
+        result.goals.push(row);
+      }
+      for(const robot of this.robots)if(robot.midfield)result[robot.alliance].midfieldRobots++;
+      for(const color of ['red','blue']){
+        const row=result[color];row.autonomousBonus=this.autonomousBonus[color];
+        row.coloredPoints=row.coloredHalves*POINTS.alliancePin;row.yellowPoints=row.yellowHalves*POINTS.yellowPin;
+        row.midfieldPoints=row.midfieldRobots*POINTS.midfieldRobot;
+        row.total=row.coloredPoints+row.yellowPoints+row.midfieldPoints+row.autonomousBonus;
+      }
+      return result;
+    }
+
+    freezeScore(){
+      if(this.finalScore)return;
+      this.finalBreakdown=this.scoreBreakdown();this.finalBreakdown.final=true;
+      this.finalScore={red:this.finalBreakdown.red.total,blue:this.finalBreakdown.blue.total};
     }
 
     evaluateAutonomousBonus() {
@@ -611,5 +741,10 @@
   OverrideGame.layouts = Object.freeze({
     goals: clone(GOAL_LAYOUT), toggles: clone(TOGGLE_LAYOUT), loaders: clone(LOADER_LAYOUT)
   });
+  OverrideGame.calculatePoints=function({coloredHalves=0,yellowHalves=0,midfieldRobots=0,autonomousBonus=0}={}){
+    if(![coloredHalves,yellowHalves,midfieldRobots,autonomousBonus].every(Number.isInteger)||
+      coloredHalves<0||yellowHalves<0||coloredHalves+yellowHalves>126||midfieldRobots<0||midfieldRobots>2||![0,6,12].includes(autonomousBonus))throw Error('Введите целые количества половинок (всего до 126), 0–2 робота и бонус 0/6/12');
+    return coloredHalves*POINTS.alliancePin+yellowHalves*POINTS.yellowPin+midfieldRobots*POINTS.midfieldRobot+autonomousBonus;
+  };
   return OverrideGame;
 });

@@ -12,13 +12,15 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-  <script src="override-geometry.js?v=physics-20260925b"></script>
-  <script src="override-dynamics.js?v=physics-20260925b"></script>
+  <script src="cad-runtime.js?v=cad-20261004"></script>
+  <script src="override-geometry.js?v=game-20261004"></script>
+  <script src="override-dynamics.js?v=game-20261004"></script>
   <script src="override-autonomy.js?v=physics-20260925b"></script>
-  <script src="override.js?v=physics-20260925b"></script>
-  <script src="override-view.js?v=physics-20260925b"></script>
+  <script src="override.js?v=controls-20261005"></script>
+  <script src="override-view.js?v=game-20261004"></script>
+  <script src="override-ui.js?v=calculator-20261005"></script>
   
-  <link rel="stylesheet" href="simulator.css?v=cascade-20260919">
+  <link rel="stylesheet" href="simulator.css?v=calculator-20261005">
 </head>
 <body>
 
@@ -89,7 +91,7 @@
           <button id="btnPause" class="btn btn-secondary" title="Пауза">⏸ Пауза</button>
           <button id="btnStep" class="btn btn-secondary" title="Один шаг симуляции (10 мс)">⏭ Шаг</button>
           <button id="btnReset" class="btn btn-danger" title="Сброс в (0,0,0)">🔄 Сброс</button>
-          <button id="btnOverrideStart" class="btn btn-primary" title="Начать выбранный режим Override">🏁 Override</button>
+          <button id="btnOverrideStart" class="btn btn-primary" title="Включить физику предметов, захват и подсчёт очков">🏁 Начать игру</button>
           <button id="btnOverrideReset" class="btn btn-secondary" title="Сбросить матч Override">⏱ Сброс матча</button>
         </div>
 
@@ -105,6 +107,13 @@
         </div>
       </div>
 
+      <section class="game-guide" aria-label="Как играть">
+        <div><h2>Игровая песочница Override</h2><p>Начни игру → подведи вилку к Pin, Cup или Cup + Pin → F. E/Q — подъёмник вверх/вниз. Рядом с Toggle кнопка F переключает его.</p></div>
+        <div class="game-guide-actions"><button id="gameFinish" class="btn btn-secondary" disabled>Завершить и зафиксировать счёт</button></div>
+        <p id="gameModeStatus" role="status">Игровая физика включается кнопкой «Начать игру».</p>
+        <label><input id="gameSolid" type="checkbox" checked> Непрозрачное отображение деталей (на очки не влияет)</label>
+        <label><input id="gameColliders" type="checkbox"> Показать контуры коллизий в 2D</label>
+      </section>
       <!-- Jerry.io Banner Hint -->
       <div id="jerryBanner" class="mode-banner jerry-active" style="display: none;">
         <span>🎯 <strong>Режим Jerry.io активен:</strong> Кликайте в любое место поля, чтобы добавить точку пути! Перетаскивайте точки мышью, настраивайте угол стрелки и запускайте путь робота!</span>
@@ -137,6 +146,8 @@
             <input type="file" id="cadFileInput" accept=".glb,.gltf,.stl,.obj" style="display: none;">
             <button id="btnRotateCad" class="cam-btn" title="Повернуть CAD модель на 90° по часовой стрелке">🔄 90°</button>
             <span id="cadStatusBadge" class="cad-badge">CAD: VEX V5RC Override</span>
+            <label>3D <select id="renderQuality"><option value="fast">Быстро · без теней · 30 FPS</option><option value="detail">Тени · до 60 FPS</option></select></label>
+            <span id="renderPerformance" role="status"></span>
           </div>
         </div>
 
@@ -178,20 +189,33 @@
       <div class="viewport-toolbar" style="flex-wrap:wrap"><span id="matchStatus" role="status"></span><button id="exportMatch" class="btn btn-secondary">Скачать протокол JSON</button></div>
       <div class="viewport-toolbar" style="flex-wrap:wrap">
         <label>Режим <select id="gameMode"><option value="practice">Тренировка ∞</option><option value="match">Матч 2:00</option></select></label>
-        <button class="btn btn-secondary" data-lift="-2">Подъёмник −2″</button>
-        <button class="btn btn-secondary" data-lift="2">Подъёмник +2″</button>
+        <label><input id="practicePreload" type="checkbox"> Preload Pin при старте тренировки</label>
+        <button class="btn btn-secondary" data-lift="-2">Вниз −2″ [Q]</button>
+        <button class="btn btn-secondary" data-lift="2">Вверх +2″ [E]</button>
+        <button id="gameLiftToGoal" class="btn btn-secondary">Высота для цели</button>
         <span id="liftStatus" role="status"></span>
         <label>Робот <select id="gameRobot"><option>red-1</option><option>red-2</option><option>blue-1</option><option>blue-2</option></select></label>
-        <label>Предмет <select id="gameObject"><option value="pin">Pin</option><option value="cup">Cup</option></select></label>
-        <button class="btn btn-secondary" data-game-action="pickup">Взять</button>
+        <label>Захват <select id="gameObject"><option value="auto">Авто · Pin / Cup / Cup + Pin</option><option value="pin">Только Pin</option><option value="cup">Только Cup / Cup + Pin</option></select></label>
+        <button class="btn btn-primary" data-game-action="use">Взять / Toggle [F]</button>
         <button class="btn btn-secondary" data-game-action="load">Match Load</button>
-        <button class="btn btn-secondary" data-game-action="flip">Перевернуть</button>
-        <button class="btn btn-secondary" data-game-action="place">Поставить в цель</button>
-        <button class="btn btn-secondary" data-game-action="drop">Положить</button>
-        <button class="btn btn-secondary" data-game-action="toggle">Переключить Toggle</button>
-        <span id="gameFeedback" role="status">Для игры нажмите Override. Действия требуют близости к предмету.</span>
+        <button class="btn btn-secondary" data-game-action="flip">Перевернуть [T]</button>
+        <button class="btn btn-secondary" data-game-action="place">Поставить в цель [G]</button>
+        <button class="btn btn-secondary" data-game-action="drop">Отпустить [R]</button>
+        <span id="gameFeedback" role="status">Нажмите «Начать игру». F работает с ближайшей доступной деталью или Toggle.</span>
       </div>
-      <p style="padding:0 1rem;color:#94a3b8;font-size:.8rem">LTV-LQR → PID скорости колёс + feedforward. Подъёмник и столкновения — приближённая модель. Для захвата подведите переднюю вилку к предмету; для установки совместите её с целью и поднимите на высоту стопки.</p>
+      <section class="game-help" aria-label="Подсказки захвата"><p id="actionHint" role="status"></p><p id="possessionStatus"></p><p id="placementHint"></p><label>Мощность ручного движения <input id="gameDrivePower" type="range" min="0.1" max="1" step="0.05" value="0.35"></label><p>Удерживайте E — вверх, Q — вниз; отпустите клавишу, чтобы остановить подъёмник. F берёт Pin, Cup или всю связку Cup + Pin; рядом с Toggle — переключает его. G ставит, R отпускает; связка отпускается вместе. В тренировке захват по умолчанию пустой; в матче сохраняется стартовый preload. Максимум один Pin и один Cup: при занятом Pin сначала освободите его, чтобы взять другую связку. Cup ставится поверх Pin, не в пустую цель; очки появляются после попадания.</p><details><summary>Точные подсказки и Match Load</summary><p id="pickupHint"></p><p id="cupPickupHint"></p><p>Зелёный круг у вилки = можно взять. Захват требует близости и правильной высоты. Для Match Load выберите Pin или Cup; в «Авто» загружается Pin.</p></details></section>
+      <section id="scoreCalculator" class="game-score" aria-label="Калькулятор очков">
+        <h2>Калькулятор очков</h2><p id="scoreState">ТЕКУЩИЙ СЧЁТ</p>
+        <div class="game-score-totals"><article class="score-red"><h3>Красные <strong id="points-red">0</strong></h3><p id="formula-red"></p></article><article class="score-blue"><h3>Синие <strong id="points-blue">0</strong></h3><p id="formula-blue"></p></article></div>
+        <p>Считаются видимые половинки, не целые детали: цветные × 5, жёлтые с владельцем × 10, роботы в центре × 8, плюс бонус автономки. Cup сам очков не даёт.</p><p id="scoreExplanation"></p>
+        <details><summary>Очки по каждой цели</summary><div class="game-score-table"><table><thead><tr><th>Цель</th><th>Стопка снизу вверх</th><th>Красные</th><th>Синие</th></tr></thead><tbody id="goalPoints"></tbody></table></div></details>
+        <details open><summary>Ручной калькулятор — не меняет поле</summary>
+          <div class="game-guide-actions"><button id="calculator-red" class="btn btn-secondary">Взять значения красных</button><button id="calculator-blue" class="btn btn-secondary">Взять значения синих</button><button id="calculatorReset" class="btn btn-secondary">Обнулить расчёт</button></div>
+          <div id="pointCalculator" class="game-guide-actions"><label>Видимые цветные половинки <input id="calc-coloredHalves" type="number" min="0" max="126" step="1" value="0"></label><label>Видимые жёлтые с владельцем <input id="calc-yellowHalves" type="number" min="0" max="126" step="1" value="0"></label><label>Роботы в центре <input id="calc-midfieldRobots" type="number" min="0" max="2" step="1" value="0"></label><label>Бонус автономки <select id="calc-autonomousBonus"><option>0</option><option>6</option><option>12</option></select></label><output id="manualPoints" aria-live="polite">0 очков</output></div>
+          <p id="manualFormula"></p><p id="calculatorError" role="alert"></p><p>Кнопки берут снимок текущих или итоговых значений для одного альянса. Ручной расчёт не изменяет игровой счёт. Пустые и некорректные поля не считаются нулём.</p>
+        </details>
+        <p>Правила и размеры сверены с <a href="https://www.vexrobotics.com/override-manual" target="_blank" rel="noopener">VEX Override v2.0</a>. Контакты и массы приближённые: это ещё не калиброванный цифровой двойник.</p>
+      </section>
       <!-- Jerry.io Waypoints Panel -->
       <div id="jerryPanel" class="jerry-panel">
         <div class="jerry-header">
@@ -375,9 +399,10 @@
   </div>
 
   <!-- Footer Keyboard Hints -->
+  <aside class="score-dock" aria-label="Постоянное табло очков"><span id="scoreDockState">Текущий · предварительный</span><div><span class="score-dock-red">Красные <strong id="scoreDock-red">0</strong></span><span class="score-dock-blue">Синие <strong id="scoreDock-blue">0</strong></span><a href="#scoreCalculator">Калькулятор ↓</a></div></aside>
   <footer class="footer-tips">
     <div>
-      🎮 <strong>Полнонаправленное управление (Holonomic 3-DOF):</strong> <span class="kbd">W</span> / <span class="kbd">S</span> (газ вперед/назад), <span class="kbd">Q</span> / <span class="kbd">E</span> или <span class="kbd">A</span> / <span class="kbd">D</span> (боковой стрейф влево/вправо), стрелки влево/вправо (поворот).
+      🎮 <strong>Управление:</strong> <span class="kbd">W</span> / <span class="kbd">S</span> — вперёд/назад, <span class="kbd">A</span> / <span class="kbd">D</span> — стрейф, ←/→ — поворот. В игре: <span class="kbd">E</span> — подъёмник вверх, <span class="kbd">Q</span> — вниз, <span class="kbd">F</span> — взять / Toggle, G — поставить, R — отпустить. В тесте движения Q/E также работают как стрейф.
     </div>
     <div>
       Пауза / Возобновление: <span class="kbd">Пробел</span>
@@ -391,6 +416,6 @@
   <script src="motion.js?v=robotai-20261002"></script>
   <script src="motion-replay.js?v=robotai-20261002"></script>
   <script src="nemotron-task.js?v=robotai-20261001"></script>
-  <script src="simulator.js?v=robotai-20261001"></script>
+  <script src="simulator.js?v=controls-20261005"></script>
 </body>
 </html>

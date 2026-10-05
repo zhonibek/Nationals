@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "filename": "main.glb",
+    "sha256": "fb85389f0c7fdde73d6c06977ff9fbe26c8d8c5afc8ddc7f66ed0b3b4a179cfe",
+    "bytes": 166172592,
+    "nodes": 609,
+    "meshes": 114,
+    "meshInstances": 301,
+    "drawCalls": 117612,
+    "triangles": 6404505
+  },
+  "merged": {
+    "bytes": 102573268,
+    "nodes": 609,
+    "meshes": 114,
+    "meshInstances": 301,
+    "drawCalls": 396,
+    "triangles": 6404505
+  },
+  "preview": {
+    "filename": "robot.preview.glb",
+    "sha256": "08ec34073e8715919fbe47064206819d1ee254e470a227683ca9eeaca4732a33",
+    "bytes": 5066300,
+    "nodes": 609,
+    "meshes": 114,
+    "meshInstances": 301,
+    "drawCalls": 366,
+    "triangles": 406719
+  },
+  "optimizer": "gltfpack 1.3",
+  "options": [
+    "-si",
+    "0.05",
+    "-kn",
+    "-noq",
+    "-ke"
+  ],
+  "scope": "Lossy visual CAD preview only; no collision, mass or joint calibration. Original file is not modified."
+}

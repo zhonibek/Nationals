@@ -74,7 +74,7 @@
       for(const key of ['x','y','theta','v','vx','vy','Vx','Vy','w','odom','odomVelocity','ekfPose','wheelOmega','motorVolts','motorCurrents','wheelSlips','batteryVoltage','pathHistory','telemetry','brainLcdLines','activeTrajectory','plannedSplineVisual','lastMotionResult'])this.host[key]=e.sim[key];
       this.host.controllerLcdLines=[`Override ${this.game.phase}`,`${this.host.activeRobotId}: ${e.status}`,e.error||`Step ${e.index}/${e.steps.length}`];
     }
-    report(){return {format:'nationals-match-v1',programs:Object.fromEntries([...this.entries].map(([id,e])=>[id,e.steps])),state:this.game.getState(),events:this.game.events,trace:this.trace};}
+    report(){return {format:'nationals-match-v1',programs:Object.fromEntries([...this.entries].map(([id,e])=>[id,e.steps])),state:this.game.getState(),scoreBreakdown:this.game.scoreBreakdown(),events:this.game.events,trace:this.trace};}
   }
   return OverrideFleet;
 });
