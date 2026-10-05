@@ -1,185 +1,84 @@
-<p align="center">
-  <img src="assets/ira_logo.jpg" alt="International Robotics Academy Logo" width="100%">
-</p>
+# IRAlib / Nationals
 
-<p align="center">
-  <img src="https://img.shields.io/badge/IRAlib-v2.0.0--Pro-crimson?style=for-the-badge&logo=cplusplus" alt="Version">
-  <img src="https://img.shields.io/badge/PROS-v4.2.2-black?style=for-the-badge" alt="PROS">
-  <img src="https://img.shields.io/badge/VEX_V5-Nationals_Ready-red?style=for-the-badge" alt="VEX V5">
-  <img src="https://img.shields.io/badge/Eigen-v3.4-blue?style=for-the-badge" alt="Eigen">
-  <img src="https://img.shields.io/badge/Location-Almaty%2C_Kazakhstan-white?style=for-the-badge&logo=google-maps&logoColor=red" alt="Almaty, Kazakhstan">
-</p>
+C++ robot control and simulation for **VEX V5**, built with **PROS 4.2.2**, **Eigen**, and **LemLib foundations**.
 
-<hr>
+This repository brings together robot configuration, autonomous routines, control and localization modules, diagnostics, and a browser simulator. It is an engineering project for studying and developing competition robot behavior. Hardware timing, accuracy, and reliability should be evaluated on the configured robot.
 
-# IRAlib — Next-Generation VEX V5 Control Architecture
+## Review the project in five minutes
 
-**IRAlib** is an advanced, high-performance VEX V5 robotics control framework developed at the **International Robotics Academy (Almaty, Kazakhstan)** for competitive robotics, engineered specifically for the Kazakhstan National Championship and international VEX World Championships.
+1. Read [`src/main.cpp`](src/main.cpp) for motor/sensor configuration, competition lifecycle functions, autonomous routines, and driver control.
+2. Explore [`src/subsystems`](src/subsystems) for the control, estimation, and diagnostic modules.
+3. Run the simulator checks below, then open the browser simulator.
+4. Read [`docs/TUNING_GUIDE.md`](docs/TUNING_GUIDE.md) for calibration and tuning procedures.
 
-Combining modern state-space control theory, real-time optimal trajectory tracking, nonlinear state estimation, and intelligent hardware safety watchdogs, **IRAlib** represents the cutting edge of competitive mobile robotics programming.
+## Components
 
----
+| Area | Implementation |
+| --- | --- |
+| Motion control | PID and LQR controllers, LTV path follower, velocity controller, fuzzy gain adjustment |
+| Trajectory generation | Quintic spline generator |
+| Localization | Odometry, extended Kalman filter, particle-filter modules, sensor-based pose resets |
+| Diagnostics | Motor connection/temperature monitor and optical color sorter |
+| Competition integration | Autonomous routine dispatcher, holonomic driving, controller-based calibration tests |
+| Simulation | JavaScript robot/field model, visualization, and headless validation scripts |
 
-## ⚡ Key Architectural Features
+The presence of a module does not mean every autonomous routine uses it. Follow the call sites in `src/main.cpp` and the subsystem implementations when assessing integration.
 
-### 🏎️ 1. State-Space & Optimal Control
-- **LTV-LQR Trajectory Tracking**: Linear Time-Varying controller executing high-speed curved paths using an **online DARE Riccati solver** (Structure-Preserving Doubling Algorithm) on ARM Cortex-A9 at 100 Hz.
-- **LQR Optimal State Feedback**: Full-state feedback ($u = k_P e - k_V v - k_A a + k_I \int e$) with EMA low-pass filtering and anti-derivative kick logic.
-- **TCS (Traction Control System)**: Active anti-slip module preventing tire spinout during explosive launches by throttling torque to match the maximum static friction limit.
-- **Adaptive Fuzzy Logic Control (FLC)**: Takagi-Sugeno fuzzy inference system dynamically scaling $k_P$ and $k_V$ based on instantaneous position error and velocity.
-- **Jerk-Limited Quintic Splines**: On-the-fly $C^2$-continuous 5th-order Hermite spline generator with strict bounds on maximum jerk ($j \le 3.5\,\text{m/s}^3$).
-- **PIDf Inner-Loop Velocity Controller**: Hyperbolic tangent friction feedforward ($kS \cdot \tanh, kV, kA$) coupled with closed-loop PI velocity tracking.
+## Run the browser simulator
 
-### 📍 2. Localization & Sensor Fusion
-- **5-State Extended Kalman Filter (EKF)**: Fuses differential drive motor encoders, spring-loaded tracking wheels, and V5 Inertial Sensor (IMU) with covariance estimation.
-- **Adaptive Monte Carlo Localization (AMCL)**: 2000-particle filter utilizing distance sensor raycasting against field walls for continuous 2D relocalization.
-- **Multi-Sensor Recalibration Suite (`OdomReset`)**: High-precision wall bumper, optical centerline, and 4-way trigonometric distance sensor resets.
+From the repository root, using Python:
 
-### 🛡️ 3. Safety & Diagnostic Subsystems
-- **Watchdog Health Monitor (`MotorMonitor`)**: Background diagnostic task continuously verifying Smart Port cable connections and motor temperatures ($>55^\circ\text{C}$), providing haptic rumble and LCD notifications.
-- **Automated Color Sorter**: Optical sensor game piece identification and automatic opposing alliance ejection with runtime color switching.
-
----
-
-## 📐 System Control Flow
-
-```mermaid
-graph TD
-    A[Quintic Spline / Waypoints] -->|State Profile x,y,θ,v,ω| B[LTV-LQR DARE Solver]
-    C[Point Target / Heading] -->|Target Pose| D[Fuzzy-LQR Controller]
-    
-    B -->|v_cmd, ω_cmd| E[TCS + Velocity Controller]
-    D -->|Target Velocities| E
-    
-    E -->|Feedforward + Feedback Voltage| F[V5 Drivetrain Motors]
-    
-    G[Sensors: IMU + Encoders + Pods] --> H[5-State EKF Filter]
-    G --> I[MotorMonitor Watchdog]
-    G --> J[AMCL Localization]
-    
-    H -->|Fused Pose x,y,θ| B
-    H -->|Fused Pose x,y,θ| D
-    I -->|Haptic & LCD Alerts| K[Driver Controller]
+```bash
+python -m http.server 8000 --directory simulator
 ```
 
----
+Open **http://localhost:8000** in a browser. The viewer loads Three.js and related scripts from public CDNs, so it requires internet access for those dependencies. A local HTTP server also helps the browser load the robot model reliably.
 
-## 📂 Codebase Structure
+The simulator is a JavaScript model. Its results do not establish numerical equivalence with the C++ firmware or measured performance on a physical robot.
 
-```
-include/
-├── Eigen/                     # Header-only Eigen C++ template library for linear algebra
-├── lemlib/                    # LemLib core foundations (Chassis, Pose, Odometry, Math)
-└── subsystems/
-    ├── subsystems.hpp         # Master header for all subsystems
-    ├── VelocityController.hpp # PIDf inner-loop controller with Active TCS
-    ├── MotorMonitor.hpp       # Real-time motor disconnect & overtemp watchdog
-    ├── ColorSorter.hpp        # Optical sensor piece sorter
-    ├── OdomReset.hpp          # Wall, line, and 4-distance sensor localization
-    ├── ekf/
-    │   └── EKF.hpp            # 5-State Extended Kalman Filter
-    ├── flc/
-    │   └── FuzzyLogic.hpp     # Adaptive Fuzzy Logic Controller
-    ├── trajectory/
-    │   └── QuinticSpline.hpp  # Jerk-limited 5th-order spline generator
-    ├── ltv/
-    │   ├── State.hpp          # Trajectory waypoint definition
-    │   └── ltv.hpp            # LTV-LQR DARE optimal trajectory follower
-    └── mcl/
-        └── MCL.hpp            # AMCL particle filter localization
-src/
-├── main.cpp                   # Competition entrypoint with interactive test suite
-└── subsystems/
-    ├── VelocityController.cpp
-    ├── MotorMonitor.cpp
-    ├── ColorSorter.cpp
-    ├── OdomReset.cpp
-    ├── ekf/EKF.cpp
-    ├── flc/FuzzyLogic.cpp
-    ├── trajectory/QuinticSpline.cpp
-    ├── ltv/ltv.cpp
-    └── mcl/MCL.cpp
-docs/
-└── TUNING_GUIDE.md            # Comprehensive step-by-step tuning manual
+## Run validation scripts
+
+Requirements: Node.js; no npm packages are needed for these two scripts.
+
+```bash
+node simulator/test_physics.js
+node simulator/test_holonomic_drive.js
 ```
 
----
+Both scripts completed successfully during a local review on **5 October 2026**:
 
-## 🛠️ Interactive Tuning Test Suite
+- Physics suite: seven checks covering model behavior, state finiteness, motor limits, inertia changes, filtering, controller behavior, and wall collision.
+- Holonomic suite: three trajectory checks covering translation while rotating, circular motion, and lateral zig-zag motion.
 
-In driver control mode (`opcontrol`), use the interactive controller buttons for live tuning:
+These are simulator checks. Firmware compilation and physical robot operation were not verified in that review.
 
-| Button | Action | Purpose |
-| :--- | :--- | :--- |
-| **[ A ]** | **360° Track Width Spin** | Spin exactly 360° to calibrate effective track width. |
-| **[ B ]** | **24" Linear Drive Test** | Test straight line accuracy, settle time, and $k_P/k_V$. |
-| **[ Y ]** | **90° Angular Snap Test** | Test heading stiffness and overshoot damping. |
-| **[ UP ]** | **LTV S-Curve Trajectory** | Run a 2-meter smooth curved path with real-time DARE solving. |
-| **[ RIGHT ]** | **Quintic Spline Test** | Generate and track a $C^2$ jerk-limited 5th-order spline on-the-fly. |
-| **[ DOWN ]** | **$k_S$ Characterization** | Measure the static friction voltage required to start moving. |
-| **[ X ]** | **LQR $\leftrightarrow$ PID Toggle** | Switch between Optimal LQR and Classic PID on the fly. |
+## Build the firmware
 
-> 📖 **Full Tuning Manual:** See [docs/TUNING_GUIDE.md](docs/TUNING_GUIDE.md) for detailed step-by-step instructions.
+Install the official PROS toolchain for VEX V5 and run from the repository root:
 
----
-
-## 🚀 Quick Start Example
-
-```cpp
-#include "main.h"
-#include "lemlib/api.hpp"
-#include "subsystems/subsystems.hpp"
-
-// Drivetrain & Motors (Correct physical left/right wiring)
-pros::MotorGroup leftMotors({-3, 18, -5}, pros::MotorGearset::blue);
-pros::MotorGroup rightMotors({-10, 3, -17}, pros::MotorGearset::blue);
-
-lemlib::Drivetrain drivetrain(&leftMotors, &rightMotors, 10.5, lemlib::Omniwheel::NEW_325, 450.0, 2.0);
-lemlib::Chassis chassis(drivetrain, linearController, angularController, lateralLQR, angularLQR, sensors);
-
-// Cascaded LTV + TCS Velocity Controller
-VelocityControllerConfig velConfig{ 
-    .kV = 6.2, 
-    .KA_straight = 0.25, 
-    .KS_straight = 0.45, 
-    .KP_straight = 2.0,
-    .enableTCS = true,
-    .maxSlipRatio = 0.18
-};
-lemlib::LTVPathFollower ltvFollower(chassis, leftMotors, rightMotors, velConfig);
-
-void autonomous() {
-    // 1. Generate and follow a smooth Jerk-Limited Quintic Spline
-    auto path = lemlib::QuinticSplineGenerator::generateTrajectory({
-        .start = lemlib::Pose(0, 0, 0),
-        .end = lemlib::Pose(24.0, 48.0, 45.0),
-        .maxVel = 1.2,
-        .maxAccel = 2.0,
-        .maxJerk = 3.5
-    });
-
-    ltvFollower.followTrajectory(path, {.log = true});
-    ltvFollower.waitUntilDone();
-
-    // 2. High-precision LQR snap turn
-    chassis.useLQR();
-    chassis.turnToHeading(90, 1000);
-    chassis.waitUntilDone();
-}
+```bash
+pros make
 ```
 
----
+The project configuration specifies the PROS **4.2.2** kernel. Review motor ports, polarity, sensor configuration, geometry, and control gains in `src/main.cpp` before using the firmware on hardware. The browser simulator lives outside `src/` and is separate from the firmware build.
 
-## 🏛️ About International Robotics Academy
+## Repository map
 
-**International Robotics Academy (IRA)** is located in **Almaty, Kazakhstan**, educating the next generation of world-class roboticists and control engineers.
+```text
+src/main.cpp                 Robot configuration and competition routines
+src/subsystems/              Control, localization, and diagnostic modules
+include/subsystems/          Subsystem interfaces
+src/lemlib/                  LemLib-based control and odometry code
+include/Eigen/               Bundled numerical computing headers
+simulator/                   Browser viewer and validation scripts
+docs/TUNING_GUIDE.md         Calibration and tuning procedures
+project.pros                 PROS project configuration
+```
 
-- 📍 **Location**: Almaty, Kazakhstan
-- 🏆 **Focus**: Advanced Controls Theory, Embedded Systems, VEX V5 Competition Robotics
+## Current validation limits
 
----
+The repository needs a hardware results record to substantiate claims about tracking error, settling time, loop frequency, and competition reliability. Useful evidence would include the tested commit, hardware configuration, repeated trials, logs, and a robot demonstration video. Simulation alone does not establish these results.
 
-## 📄 License & Acknowledgments
+## Attribution and license
 
-- **License**: [MIT License](LICENSE)
-- **Acknowledgments**: Thanks to [LemLib](https://github.com/LemLib/LemLib) and [Eigen](https://gitlab.com/libeigen/eigen) for foundational frameworks.
+This project incorporates [LemLib](https://github.com/LemLib/LemLib), [Eigen](https://gitlab.com/libeigen/eigen), and the [PROS](https://github.com/purduesigbots/pros) ecosystem. The `lemlib` directories contain foundational library code; they should not be presented as wholly original work. See the repository [MIT license](LICENSE) and bundled dependency notices for their respective terms. Preserve upstream copyright notices.
