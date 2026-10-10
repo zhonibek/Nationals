@@ -21,6 +21,7 @@ function runPolicy({seed = 42, task = DEFAULT_TASK, configuration = {}, options 
   const runner = loadHeadless();
   const episode = runner.createEpisode();
   episode.reset(seed, configuration, task, {...options, controlMode: 'policy'});
+  if (typeof act.reset === 'function') act.reset({referenceDurationSeconds: episode.referenceAdapter.duration});
   while (!episode.terminated && !episode.truncated) {
     const observation = episode.observe();
     episode.policyStep(act(Policy.vector(observation), structuredClone(observation)));

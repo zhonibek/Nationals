@@ -187,6 +187,9 @@
         <div id="ruleLog" role="log"></div>
       </details>
       <div class="viewport-toolbar" style="flex-wrap:wrap"><span id="matchStatus" role="status"></span><button id="exportMatch" class="btn btn-secondary">Скачать протокол JSON</button></div>
+      <div class="viewport-toolbar" style="flex-wrap:wrap"><button id="askTactics" class="btn btn-secondary" type="button">Спросить тактический AI</button><button id="stopTactics" class="btn btn-secondary" type="button" disabled>Стоп AI</button></div>
+      <p id="tacticsStatus" role="status" aria-live="polite">Передаётся только компактный снимок игры локальному Nemotron. Это совет, не автопилот.</p>
+      <div id="tacticsReply" hidden><h3>Тактический совет · не выполнен</h3><p id="tacticsMessage"></p><a href="/#nemotron" target="_blank" rel="noopener">Открыть координатор · Robot tools → Restore saved experiment</a></div>
       <div class="viewport-toolbar" style="flex-wrap:wrap">
         <label>Режим <select id="gameMode"><option value="practice">Тренировка ∞</option><option value="match">Матч 2:00</option></select></label>
         <label><input id="practicePreload" type="checkbox"> Preload Pin при старте тренировки</label>
@@ -416,6 +419,8 @@
   <script src="motion.js?v=robotai-20261002"></script>
   <script src="motion-replay.js?v=robotai-20261002"></script>
   <script src="nemotron-task.js?v=robotai-20261001"></script>
+  <script src="tactics-snapshot.js?v=tactics-20261006"></script>
+  <script src="tactics-ui.js?v=tactics-20261006"></script>
   <script src="simulator.js?v=controls-20261005"></script>
 </body>
 </html>

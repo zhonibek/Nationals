@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
   <script src="player.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="learning-summary.js" defer></script>
   <script src="motion.js" defer></script>
   <script src="nemotron.js" defer></script>
   <script src="perception.js" defer></script>
@@ -69,32 +70,43 @@
     </section>
 
     <section id="nemotron" class="panel" aria-labelledby="nemotron-title">
-      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / LOCAL AGENT SKILLS</p><h2 id="nemotron-title">Robot engineering assistant</h2></div><span id="nemotron-connection" class="badge">MODEL NOT CHECKED</span></div>
-      <p class="muted">Nemotron loads a reviewed skill, calls its permitted tools and saves the evidence. Movement proposals still need your approval and use the original Nationals Simulator and iraLIB—not a separate physics model.</p>
-      <p id="nemotron-provider" class="hint"></p>
-      <p class="hint">The bundled CPU runtime can take minutes per request. You can cancel; opening this panel never starts inference or a simulation.</p>
-      <p id="nemotron-skills-status" class="hint">Loading the local skill catalog does not call a model or train it.</p>
-      <div id="nemotron-skills" class="proposal-grid"></div>
-      <div class="nemotron-actions"><button id="nemotron-check" class="secondary" type="button">Check connection</button><button id="nemotron-restore" class="secondary" type="button">Restore saved session</button></div>
-      <div class="nemotron-actions"><button id="nemotron-inspect" class="secondary" type="button">Explain robot &amp; controllers</button><button id="nemotron-learning" class="secondary" type="button">Review saved learning progress</button><button id="nemotron-diagnose-latest" class="secondary" type="button">Diagnose latest Motion lab experiment</button></div>
-      <form id="nemotron-form">
-        <label for="nemotron-prompt">Ask about the robot, learning evidence, or an explicit movement target</label>
-        <textarea id="nemotron-prompt" rows="3" maxlength="4000" required placeholder="From (0,0), move to x=0 inches, y=24 inches, heading 0 degrees."></textarea>
-        <div class="nemotron-actions"><button id="nemotron-plan" type="submit">Ask Nemotron</button><button id="nemotron-cancel" class="secondary" type="button" disabled>Cancel</button></div>
-      </form>
-      <p id="nemotron-status" class="status" role="status" aria-live="polite">Local inference only. No model request has been made.</p>
-      <div id="nemotron-session" hidden>
-        <p id="nemotron-message"></p>
-        <div id="nemotron-proposal" hidden><h3 id="nemotron-task-title">Validated proposal · not yet measured</h3><pre id="nemotron-task"></pre>
-          <div class="nemotron-actions"><button id="nemotron-run" type="button">Approve &amp; run in original Simulator</button><a id="nemotron-simulator" target="_blank" rel="noopener">Open original 2D / 3D Simulator</a></div>
-        </div>
-        <div id="nemotron-result" hidden><h3>Measured simulator result</h3><p id="nemotron-outcome"></p><pre id="nemotron-metrics"></pre><button id="nemotron-explain-run" class="secondary" type="button">Ask Nemotron to diagnose this saved run</button></div>
-        <div id="nemotron-analysis" hidden><h3>Read-only tool evidence · separate from model commentary</h3><pre id="nemotron-analysis-facts"></pre><p class="caveat">The explanation is model commentary, not verified causality. No new simulation, training or policy promotion runs during analysis.</p></div>
-        <p id="nemotron-loaded-skills" class="hint"></p>
-        <button id="nemotron-download" class="secondary" type="button">Download session &amp; evidence</button>
-        <details><summary>Nemotron tool calls, usage and saved provenance</summary><pre id="nemotron-log"></pre></details>
+      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / LOCAL AI</p><h2 id="nemotron-title">Chat with Nemotron</h2></div><span id="nemotron-connection" class="badge">MODEL NOT CHECKED</span></div>
+      <p class="muted">Ask a question, read the answer, keep talking. Your conversation stays on this computer.</p>
+      <div class="nemotron-actions"><button id="nemotron-new-chat" class="secondary" type="button">New chat</button><button id="nemotron-restore-chat" class="secondary" type="button">Restore chat</button><button id="nemotron-check" class="secondary" type="button">Check connection</button></div>
+      <div class="nemotron-chat-window" tabindex="0" aria-label="Conversation">
+        <div id="nemotron-chat-empty" class="nemotron-chat-empty"><h3>What would you like to talk about?</h3><p>Try “What is PID?” or “Explain our robot AI in simple words.” You can write in English or Russian.</p></div>
+        <div id="nemotron-messages" role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions"></div>
       </div>
-      <p class="caveat">Agent Skills provide instructions and restricted tools; they do not retrain Nemotron. The separate PPO learner is experimental and has not passed the improvement gate. Approved tasks here use the existing controller. No camera, obstacle avoidance, game-score optimization, shell or physical robot access. Prompts and selected compact evidence stay local; no cloud calls or paid APIs.</p>
+      <p id="nemotron-thinking" class="hint" role="status" hidden>Nemotron is replying…</p>
+      <form id="nemotron-form" class="nemotron-composer">
+        <label for="nemotron-prompt">Message Nemotron</label>
+        <textarea id="nemotron-prompt" rows="3" maxlength="2000" required placeholder="Ask anything…"></textarea>
+        <div class="nemotron-actions"><button id="nemotron-plan" type="submit">Send</button><button id="nemotron-cancel" class="secondary" type="button" disabled>Stop</button><span class="hint">Enter to send · Shift+Enter for a new line</span></div>
+      </form>
+      <p id="nemotron-status" class="status" role="status" aria-live="polite">Ready to chat. The local CPU model can take a minute or more to answer.</p>
+      <p class="hint">Chatting never moves the robot. For a movement task, use Robot tools below and approve the proposed simulation separately.</p>
+      <div id="nemotron-session" class="nemotron-tool-reply" hidden>
+        <h3>Robot tool reply</h3><p id="nemotron-message"></p>
+        <div id="nemotron-proposal" hidden><h3 id="nemotron-task-title">Proposed movement · waiting for your approval</h3><p id="nemotron-task-summary"></p>
+          <div class="nemotron-actions"><button id="nemotron-run" type="button">Approve &amp; run in original Simulator</button><a id="nemotron-simulator" target="_blank" rel="noopener">Open original 2D / 3D Simulator</a></div>
+          <details><summary>Exact task coordinates</summary><pre id="nemotron-task"></pre></details>
+        </div>
+        <div id="nemotron-result" hidden><h3>Measured simulator result</h3><p id="nemotron-outcome"></p><button id="nemotron-explain-run" class="secondary" type="button">Explain this result</button><details><summary>Measured numbers</summary><pre id="nemotron-metrics"></pre></details></div>
+        <details id="nemotron-analysis" hidden><summary>Evidence behind this explanation</summary><pre id="nemotron-analysis-facts"></pre><p class="caveat">Model explanations are not verified causes. This review does not rerun or train anything.</p></details>
+        <details><summary>Tool calls and technical details</summary><p id="nemotron-loaded-skills" class="hint"></p><button id="nemotron-download" class="secondary" type="button">Download session &amp; evidence</button><pre id="nemotron-log"></pre></details>
+      </div>
+      <details class="nemotron-tools"><summary>Robot tools</summary>
+        <p class="hint">These read real project evidence or prepare a task. They are separate from ordinary chat and can take several model calls.</p>
+        <div class="nemotron-actions"><button id="nemotron-prepare" type="button">Prepare simulation from my message</button><button id="nemotron-restore" class="secondary" type="button">Restore saved experiment</button></div>
+        <div class="nemotron-actions"><button id="nemotron-inspect" class="secondary" type="button">Explain robot &amp; controllers</button><button id="nemotron-learning" class="secondary" type="button">Review learning progress</button><button id="nemotron-diagnose-latest" class="secondary" type="button">Explain latest Motion lab result</button><button id="nemotron-tactics" class="secondary" type="button">Explain game rules &amp; tactics</button></div>
+        <p class="hint">For advice on the current board, open the original Simulator and click “Спросить тактический AI”. Rules and tactics are read-only; subtask dispatch and learned game scoring are not enabled.</p>
+        <p id="nemotron-skills-status" class="hint">Loading the skill catalog does not call a model or train it.</p><div id="nemotron-skills" class="proposal-grid"></div>
+      </details>
+      <details class="nemotron-tools"><summary>Connection, privacy &amp; limitations</summary>
+        <p id="nemotron-provider" class="hint"></p><button id="nemotron-chat-download" class="secondary" type="button" disabled>Export chat</button>
+        <p class="hint">Replies appear after completion, not token by token. Recent messages provide model context; longer conversations remain saved but may not fit entirely into its small context window. New chat does not delete older files. Chat is not training or measured robot evidence.</p>
+        <p class="caveat">Nemotron is a small local model, not ChatGPT or Claude. Agent Skills do not retrain it. The separate PPO learner is experimental and has not passed the improvement gate. Approved tasks use the existing Simulator and iraLIB controller. No camera, obstacle avoidance, game-score optimization, shell or physical robot access; no cloud calls or paid APIs.</p>
+      </details>
     </section>
 
     <section id="perception" class="panel" aria-labelledby="perception-title">

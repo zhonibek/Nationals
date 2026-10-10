@@ -1374,6 +1374,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     sim.activeRobotId=e.target.value;sim.holonomicArcade(0,0,0);sim.fleet?.syncView();
   });
   const gameUI=OverrideUI.attach(sim,{replay:!!playback});
+  NationalsTacticsUI.attach(sim,{replay:!!playback});
   document.getElementById('addRuling')?.addEventListener('click',()=>{
     const result=sim.override.adjudicate(sim.activeRobotId,document.getElementById('refRule').value,document.getElementById('refSeverity').value,document.getElementById('refReason').value,{autonomous:document.getElementById('refAuto').checked,awardAWP:document.getElementById('refAWP').checked});
     document.getElementById('gameFeedback').textContent=result.ok?'Решение записано':result.error;

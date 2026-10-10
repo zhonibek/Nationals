@@ -91,6 +91,45 @@ test('explicit learned experiments share canonical transitions and replay; statu
   assert.throws(() => Learner.runLearned({directory}), /pointer/);
 });
 
+test('original-engine learned comparison writes the contract required by its status reader', context => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-evaluation-roundtrip-'));
+  context.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  fixture(directory);
+  const evaluation = Learner.evaluateLearned(directory);
+  const saved = Learner.status(directory);
+  assert.equal(evaluation.policyContractVersion, 1);
+  assert.equal(evaluation.models[0].results.length, require('../roboproof/motion-evaluation').suite(2).cases.length);
+  assert.equal(saved.available, true);
+  assert.equal(saved.staleEvaluation, false);
+  assert.deepEqual(saved.evaluation, evaluation);
+  assert.equal(saved.learnedImprovementVerified, false);
+});
+
+test('matching negative evaluation restores readable status and missing contract stays stale', context => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-evaluation-status-'));
+  context.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  fixture(directory);
+  const {record, runDirectory} = Learner.latest(directory);
+  const evaluation = {schemaVersion: 1, runId: record.runId, suiteVersion: 2, policyContractVersion: 1,
+    identity: record.identity, policyHashes: record.models.map(row => row.policySha256),
+    corpusSha256: require('../roboproof/motion-evaluation').suite(2).corpusSha256,
+    models: [], learnedImprovementVerified: false};
+  const filename = path.join(runDirectory, 'evaluation.json');
+  fs.writeFileSync(filename, JSON.stringify(evaluation));
+  const saved = Learner.status(directory);
+  assert.equal(saved.available, true);
+  assert.equal(saved.staleEvaluation, false);
+  assert.deepEqual(saved.evaluation, evaluation);
+  assert.equal(saved.learnedImprovementVerified, false);
+  delete evaluation.policyContractVersion;
+  fs.writeFileSync(filename, JSON.stringify(evaluation));
+  const older = Learner.status(directory);
+  assert.equal(older.available, true);
+  assert.equal(older.staleEvaluation, true);
+  assert.equal(older.evaluation, null);
+  assert.equal(older.learnedImprovementVerified, false);
+});
+
 test('learning API is read-only until explicit experiment and blocks paths, cloud and cross-origin requests', async context => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-learning-api-'));
   fixture(directory);

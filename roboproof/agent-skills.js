@@ -8,7 +8,8 @@ const DEFINITIONS = Object.freeze({
   'inspect-robot': ['get_robot_profile', 'finish_analysis'],
   'prepare-motion-experiment': ['get_motion_contract', 'prepare_reach_pose'],
   'diagnose-motion': ['get_saved_motion_evidence', 'finish_analysis'],
-  'verify-motion-improvement': ['get_learning_summary', 'finish_analysis']
+  'verify-motion-improvement': ['get_learning_summary', 'finish_analysis'],
+  'plan-game-tactics': ['get_game_rules', 'get_game_snapshot', 'finish_analysis']
 });
 const MAX_SKILL_BYTES = 12 * 1024;
 const MAX_LOADED_SKILLS = 2;

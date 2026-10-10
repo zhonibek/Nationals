@@ -37,7 +37,7 @@ function fixture(responses) {
 test('reviewed skills progressively load with hashes and fixed permissions', () => {
   const registry = createRegistry();
   const catalog = registry.catalog();
-  assert.equal(catalog.length, 4);
+  assert.equal(catalog.length, 5);
   assert(catalog.every(entry => !entry.instructions && /^[a-f0-9]{64}$/.test(entry.sha256)));
   const session = registry.session();
   assert.equal(session.permits('prepare_reach_pose'), false);
@@ -135,11 +135,15 @@ test('saved failed motion is compactly measured; missing evidence never becomes 
 test('learning skill retains negative results and discards stale evaluation counts', context => {
   const directory = temporary(context);
   assert.equal(learningSummary(directory).motionPolicyTrained, false);
-  const snapshot = {available: true, status: 'completed', models: [{seed: 42, policySha256: 'current', steps: 40,
+  const identity = require('../simulator/headless').loadHeadless().identity;
+  const runId = '11111111-1111-4111-8111-111111111111';
+  const snapshot = {available: true, status: 'completed', runId, identity, models: [{seed: 42, policySha256: 'current', steps: 40,
     updates: 1, trained: true, actorWeightsChanged: true}], motionPolicyTrained: true, learnedImprovementVerified: false,
-    evaluation: {policyHashes: ['current'], corpusSha256: suite(2).corpusSha256, models: [{seed: 42,
+    evaluation: {runId, identity, policyHashes: ['current'], corpusSha256: suite(2).corpusSha256, models: [{seed: 42,
       baseline: {success: 6, count: 24}, untrained: {success: 6, count: 24}, learned: {success: 6, count: 24},
-      acceptance: {passed: false}, results: [{id: 'failed-world', learned: {reason: 'time_limit'}}]}]}};
+      acceptance: {passed: false, regressions: [], contactRegressions: [], meanTimeImprovementFraction: 0,
+        meanEffortImprovementFraction: 0, rule: 'Fixture gate, no measured improvement'},
+      results: [{id: 'failed-world', learned: {reason: 'time_limit'}}]}]}};
   context.mock.method(MotionLearner, 'status', () => snapshot);
   const summary = learningSummary(directory);
   assert.equal(summary.motionPolicyTrained, true);
@@ -166,7 +170,7 @@ test('dashboard skill API reads only selected evidence, saves provenance and can
   context.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   const base = `http://127.0.0.1:${server.address().port}`;
   const catalog = await (await fetch(`${base}/api/nemotron/skills`)).json();
-  assert.equal(catalog.skills.length, 4);
+  assert.equal(catalog.skills.length, 5);
   assert.equal(catalog.inferencePerformed, false);
   assert.equal(client.calls.length, 0);
   assert.equal((await fetch(`${base}/api/nemotron/skills`, {headers: {Origin: 'https://evil.example'}})).status, 403);

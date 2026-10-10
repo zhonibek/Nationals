@@ -12,21 +12,25 @@ const {readiness: perceptionReadiness} = require('./perception');
 const {readiness: motionReadiness} = require('./motion-readiness');
 const {createMotionStore} = require('./motion-store');
 const MotionLearner = require('./motion-learner');
+const {readIndependentEvaluation} = require('./independent-learning');
 const {createRegistry} = require('./agent-skills');
 const {motionEvidence} = require('./skill-evidence');
+const {chatReply, validateConversation} = require('./nemotron-chat');
+const Tactics = require('./tactics');
 
 function createServer({reportPath = path.join(__dirname, 'runs/latest/report.json'), timeout = 120000,
-  nemotronClient = createClient(), nemotronDirectory, motionDirectory, learningDirectory, agentTimeout = 300000} = {}) {
+  nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, agentTimeout = 300000} = {}) {
   let report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : null;
   let activeWorker = null;
   let activeAgent = null;
   const store = createStore(nemotronDirectory);
+  const chatStore = createStore(nemotronChatDirectory || path.join(__dirname, 'runs/nemotron-chat'));
   const motionStore = createMotionStore(motionDirectory);
   const skills = createRegistry();
-  const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
+  const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/learning-summary.js', ['learning-summary.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
   const simulatorFiles = new Set(['index.html', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'motion-replay.js',
     'control-runtime.js', 'control.wasm', 'robot-config.js', 'override.js', 'override-view.js', 'override-ui.js', 'override-geometry.js',
-    'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'cad-runtime.js', 'models/robot.stl', 'models/robot.preview.glb', 'models/robot.preview.json']);
+    'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'cad-runtime.js', 'tactics-snapshot.js', 'tactics-ui.js', 'models/robot.stl', 'models/robot.preview.glb', 'models/robot.preview.json']);
   function launchWorker(filename, workerData, response) {
     return new Promise((resolve, reject) => {
       const worker = new Worker(path.join(__dirname, filename), {workerData});
@@ -62,7 +66,14 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
     if (request.method === 'GET' && pathname === '/api/report') { reply(report ? 200 : 404, report || {error: 'No report yet; run scenarios or load report.json'}); return; }
     if (request.method === 'GET' && pathname === '/api/perception/status') { reply(200, perceptionReadiness()); return; }
     if (request.method === 'GET' && pathname === '/api/motion/status') { reply(200, motionReadiness()); return; }
-    if (request.method === 'GET' && pathname === '/api/motion/learning') { reply(200, MotionLearner.status(learningDirectory)); return; }
+    if (request.method === 'GET' && pathname === '/api/motion/learning') {
+      const status = MotionLearner.status(learningDirectory);
+      const independentResearch = readIndependentEvaluation(status, learningDirectory);
+      reply(200, {...status, independentResearch,
+        learnedImprovementVerified: status.learnedImprovementVerified === true &&
+          !(independentResearch.available && !independentResearch.gateReportedPassed)});
+      return;
+    }
     if (request.method === 'GET' && ['/api/motion/latest', '/api/motion/session'].includes(pathname)) {
       try {
         const record = pathname.endsWith('/latest') ? motionStore.latest()
@@ -72,6 +83,14 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       return;
     }
     if (request.method === 'GET' && pathname === '/api/nemotron/status') { reply(200, {...nemotronClient.metadata, available: 'not checked', liveInferenceVerified: false}); return; }
+    if (request.method === 'GET' && ['/api/nemotron/chat/latest', '/api/nemotron/chat/session'].includes(pathname)) {
+      try {
+        const record = pathname.endsWith('/latest') ? chatStore.latest()
+          : chatStore.read(new URL(request.url, `http://${authority}`).searchParams.get('id'));
+        reply(record ? 200 : 404, record ? validateConversation(record) : {error: 'No saved chat yet'});
+      } catch (error) { reply(400, {error: error.message}); }
+      return;
+    }
     if (request.method === 'GET' && pathname === '/api/nemotron/skills') {
       try { reply(200, {schemaVersion: 1, skills: skills.catalog(), inferencePerformed: false,
         trainingPerformed: false, arbitraryScriptsEnabled: false}); }
@@ -102,7 +121,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       fs.createReadStream(file).pipe(response);
       return;
     }
-    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/motion/compare-learned', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
+    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/motion/compare-learned', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run', '/api/nemotron/chat'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
     if (!request.headers['content-type']?.startsWith('application/json')) { reply(415, {error: 'application/json required'}); return; }
     if (activeWorker || activeAgent) { reply(409, {error: 'A simulation or Nemotron request is already running'}); return; }
     try {
@@ -130,8 +149,14 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         return;
       }
       if (pathname.startsWith('/api/nemotron/')) {
-        const allowed = pathname.endsWith('/plan') ? ['prompt', 'evidence'] : pathname.endsWith('/run') ? ['id'] : [];
+        const chatting = pathname === '/api/nemotron/chat';
+        const allowed = chatting ? ['message', 'id'] : pathname.endsWith('/plan') ? ['prompt', 'evidence', 'gameSnapshot'] : pathname.endsWith('/run') ? ['id'] : [];
         if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) throw Error('Unsupported Nemotron request fields');
+        const conversation = chatting && body.id !== undefined ? validateConversation(chatStore.read(body.id)) : null;
+        if (body.gameSnapshot !== undefined) {
+          if (body.evidence !== undefined) throw Error('Select game or motion evidence, not both');
+          Tactics.gameEvidence(body.gameSnapshot);
+        }
         let selectedEvidence = null;
         if (body.evidence !== undefined) {
           const selection = body.evidence;
@@ -170,9 +195,15 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         response.once('close', cancelled);
         try {
           if (pathname.endsWith('/check')) reply(200, await nemotronClient.check(controller.signal));
+          else if (chatting) {
+            const record = await chatReply(body.message, conversation, nemotronClient, {signal: controller.signal});
+            controller.signal.throwIfAborted();
+            reply(200, conversation ? chatStore.save({...record, id: conversation.id, createdAt: conversation.createdAt})
+              : chatStore.create(body.message, record));
+          }
           else {
             const plan = await planTask(body.prompt, nemotronClient, {signal: controller.signal,
-              registry: skills, evidence: selectedEvidence, learningDirectory});
+              registry: skills, evidence: selectedEvidence, learningDirectory, gameSnapshot: body.gameSnapshot});
             controller.signal.throwIfAborted();
             reply(200, store.create(body.prompt, plan));
           }

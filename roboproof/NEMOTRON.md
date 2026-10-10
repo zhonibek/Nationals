@@ -1,6 +1,6 @@
 # Local Nemotron inside RobotAI
 
-Nemotron is the high-level task coordinator, not the motion learner. Its four reviewed [Agent Skills](skills/README.md) inspect robot configuration, prepare bounded reach-pose proposals, diagnose selected saved experiments and review PPO learning evidence. Execution still waits for a separate approval and uses the existing `simulator/engine.js` and source-checked iraLIB C++ WASM controller. No independent robot physics, gain changes or firmware access are added.
+Nemotron provides ordinary local conversation and a separate high-level task coordinator, not the motion learner. Its five reviewed [Agent Skills](skills/README.md) inspect robot configuration, prepare bounded reach-pose proposals, diagnose selected saved experiments, review PPO learning evidence and advise on game tactics. Execution still waits for a separate approval and uses the existing `simulator/engine.js` and source-checked iraLIB C++ WASM controller. No independent robot physics, gain changes or firmware access are added.
 
 ## Start and try it
 
@@ -17,12 +17,31 @@ Setup downloads approximately 2.84 GB of model weights plus the portable CPU run
 Open [RoboProof / RobotAI](http://127.0.0.1:8766/#nemotron):
 
 1. **Check connection** verifies that the configured model alias is served. Availability alone is not inference evidence.
-2. Enter `From (0,0), move to x=24 inches, y=0 inches, heading 0 degrees. Use a 10-second deadline.` and click **Ask Nemotron**.
-3. Review the structured coordinates, heading, deadline and model summary. Schema validation does not prove that a model understood your intention correctly.
-4. Click **Approve & run in original Simulator**. A bounded worker executes the actual shared engine and independently checks exact same-runtime replay. The displayed outcome and metrics come from that run, not from the model's narration.
-5. **Open original 2D / 3D Simulator**, then **Load Nemotron task** and the normal Play button, to visualize the same task through the existing project UI. This is a separate visual execution, not an exact replay of the server report. Its native routine completion is not the benchmark's settling/deadline gate. The 3D view uses the existing public Three.js CDN assets.
+2. Type an ordinary question and click **Send**, or press Enter. Shift+Enter inserts a newline. Read the reply in the conversation and send a follow-up. **Stop** cancels a pending request; it does not fabricate a reply. Answers appear after completion, not token by token; CPU inference can take a minute or more.
+3. The latest chat restores on page load without inference. **Restore chat** reads it again; **New chat** starts a separate conversation without deleting old files. Completed turns save atomically in ignored `roboproof/runs/nemotron-chat/<uuid>.json`. The privacy details include **Export chat**. This history is not training or verified movement evidence.
 
-**Restore saved session** restores the latest saved model proposal/result after browser or server restart. **Download session & evidence** exports its JSON. Sessions persist as `roboproof/runs/nemotron/<uuid>.json`; approvals, tool evidence, provider identity, token usage, inference wall time and measured report/replay are saved. Model weights are pretrained and unchanged; saved sessions are not training checkpoints. Completed run approvals are idempotent.
+To prepare movement rather than only discuss it:
+
+1. Expand **Robot tools**. Enter `From (0,0), move to x=24 inches, y=0 inches, heading 0 degrees. Use a 10-second deadline.` and click **Prepare simulation from my message**. If the input is empty, this explicitly selected action uses the latest sent chat message, not a model reply or inferred coordinate.
+2. Read the plain-language proposal, coordinates and deadline. Exact JSON, evidence and tool logs are under expandable details. Schema validation does not prove that a model understood your intention correctly.
+3. Click **Approve & run in original Simulator**. A bounded worker executes the actual shared engine and independently checks exact same-runtime replay. The displayed outcome and metrics come from that run, not from the model's narration.
+4. **Open original 2D / 3D Simulator**, then **Load Nemotron task** and the normal Play button, to visualize the same task through the existing project UI. This is a separate visual execution, not an exact replay of the server report. Its native routine completion is not the benchmark's settling/deadline gate. The 3D view uses the existing public Three.js CDN assets.
+
+**Restore saved experiment** restores the latest saved model proposal/result after browser or server restart. **Download session & evidence** in the tool details exports its JSON. Experiments persist separately as `roboproof/runs/nemotron/<uuid>.json`; approvals, tool evidence, provider identity, token usage, inference wall time and measured report/replay are saved. Tool replies are separate from ordinary chat memory. Model weights are pretrained and unchanged; saved sessions are not training checkpoints. Completed run approvals are idempotent.
+
+## Conversation versus robot tools
+
+Ordinary chat uses one authenticated local completion without function calls, forced skill selection or simulator execution. Only the server-owned saved user/assistant messages enter conversational history; API clients cannot supply assistant/system messages, paths, provider endpoints or tasks. Answers may be wrong; without an explicitly selected robot-tool workflow, the model cannot read current robot settings, saved training results or telemetry.
+
+The small 4,096-token runtime uses a conservative recent-context budget: up to three previous complete turns plus the current message, within 2,400 UTF-8 bytes, and at most 512 output tokens. A message is at most 2,000 characters and 2,400 UTF-8 bytes. Older messages remain visible/saved but may fall outside model context. A saved chat holds up to 50 completed turns; start a new chat after that. Output-limit truncation is visibly labeled. No chat content is parsed into a movement command or approval, and chat UUIDs cannot be approved as experiments.
+
+The interface is conversation-first, not a claim of ChatGPT/Claude model quality. The same local Nemotron weights and CPU runtime remain in use; this change adds neither GPU support nor training.
+
+## Tactical adviser, not autonomous play
+
+Under Robot tools, **Explain game rules & tactics** invokes the fifth skill. In the original Simulator served through RoboProof, start Override and click **Спросить тактический AI** to explicitly supply a compact current snapshot. The adviser reads `get_game_rules` and `get_game_snapshot` before finishing through read-only analysis. It uses a reviewed Override v2.0 subset and original engine constants/source hashes, not unrestricted manual ingestion or a learned winning strategy. The full normative PDF could not be fetched during this update.
+
+Snapshots are bounded, fresh at submission and structurally checked, but browser-supplied—not independently authenticated/replayed facts. Nearby objects are partial visibility; state may change during slow inference. The model cannot access another board, dispatch motion/manipulation/perception, run a game, predict verified score or approve a snapshot as movement. The simulator displays advice as plain text and has Stop AI; replay/standalone-file views cannot call this workflow. [Hierarchy and remaining gates](../docs/TACTICAL_AI_PLAN.md).
 
 The portable model server runs in the background. Closing the browser does not stop it. The start script prints its PID; stop that specific process when finished. Do not start another copy on the same port. Stop the foreground RoboProof server with Ctrl+C. Neither server starts automatically after reboot.
 
@@ -49,7 +68,7 @@ The default portable endpoint automatically reads the generated private local ke
 
 - Model endpoint must be loopback `/v1`; foreign hosts, credentials in URLs, redirects and remote cloud endpoints are rejected. Nebius and paid APIs are disabled, regardless of existing cloud credits.
 - The model runtime has a generated private API key, restricted CORS, disabled web UI and disabled built-in agent/command tools. No key is sent to the browser or saved in sessions.
-- The catalog is initially metadata-only. `load_skill` activates at most two reviewed skills; their fixed resource/task tools are `get_robot_profile`, `get_saved_motion_evidence`, `get_learning_summary`, `get_motion_contract` and `prepare_reach_pose`. `ask_clarification` safely ends a request without a task; `finish_analysis` requires real tool evidence. Native function calls are required, and preparation is hidden until the contract is read. Unloaded tools and plain-text completion claims fail closed. Only fixed nominal configuration and user-selected compact saved evidence can be read; no arbitrary shell/files/network, custom handlers, motor-voltage output or physical robot endpoint.
+- In the separate robot-tool workflow, the catalog is initially metadata-only. `load_skill` activates at most two reviewed skills; their fixed resource/task tools are `get_robot_profile`, `get_saved_motion_evidence`, `get_learning_summary`, `get_motion_contract` and `prepare_reach_pose`. `ask_clarification` safely ends a request without a task; `finish_analysis` requires real tool evidence. Native function calls are required for that workflow, and preparation is hidden until the contract is read. Unloaded tools and plain-text preparation claims fail closed. Only fixed nominal configuration and user-selected compact saved evidence can be read; no arbitrary shell/files/network, custom handlers, motor-voltage output or physical robot endpoint.
 - Prompt: 1..4,000 characters. At most six model turns; 1,024 output tokens per turn; one tool call per turn; no automatic inference retries. Per-request timeout defaults to 120 seconds, configurable from 1..300 seconds. The server's total planning budget is 300 seconds.
 - Provider output is capped at 256 KiB. Truncated, parallel, duplicate, malformed or unsupported tool calls fail closed; no fallback rule-based output is labeled Nemotron.
 - Task validation is shared with `simulator/motion.js`: X/Y within ±60 inches, heading within ±180 degrees, deadline 0.01..60 seconds in 0.01-second increments. Seed is fixed at 42; no model-selected physics changes.

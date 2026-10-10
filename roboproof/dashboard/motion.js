@@ -85,24 +85,46 @@
     text('learning-status', !result.available ? result.message :
       `${result.status.toUpperCase()} · ${result.models.filter(row => row.trained).length} trained seeds · ` +
       (result.learnedImprovementVerified ? 'FROZEN IMPROVEMENT GATE PASSED' : 'IMPROVEMENT NOT VERIFIED · baseline remains the default'));
+    if (result.independentResearch?.available) {
+      const research = result.independentResearch;
+      const source = research.sourceRuntimeMatches ? 'Source/runtime matched' : 'Historical source/runtime';
+      const scores = research.models.map(row => `seed ${row.seed}: ${row.learned.success}/${row.learned.count} learned, ` +
+        `${row.successRegressions} success regressions`).join(' · ');
+      text('learning-status', `${element('learning-status').textContent} · ${source} independent test: ${scores} · ` +
+        (research.gateReportedPassed ? 'Gate reported passed; research only, no promotion' : 'INDEPENDENT GATE FAILED'));
+    }
     text('learning-details', json(result));
     const container = element('learning-table');
     container.replaceChildren();
     if (result.available) {
       const table = document.createElement('table');
       const heading = document.createElement('tr');
-      for (const label of ['Seed', 'Steps / updates', 'Baseline', 'Untrained', 'Learned', 'Gate']) {
+      for (const label of ['Seed', 'Steps / updates', 'Baseline', 'Untrained', 'Learned', 'Gate', 'Latest PPO diagnostics']) {
         const cell = document.createElement('th');
         cell.textContent = label;
         heading.appendChild(cell);
       }
       table.appendChild(heading);
       for (const model of result.models) {
-        const evaluated = result.evaluation?.models.find(row => row.policySha256 === model.policySha256);
+        const research = result.independentResearch?.available ? result.independentResearch : null;
+        const measured = research?.models.find(row => row.seed === model.seed && row.policySha256 === model.policySha256);
+        const evaluated = measured ? {...measured, acceptance: {passed: measured.gateReportedPassed}}
+          : result.evaluation?.models.find(row => row.policySha256 === model.policySha256);
         const score = value => value ? `${value.success}/${value.count}` : 'Not evaluated';
+        const latest = model.history?.at(-1);
+        const number = value => Number.isFinite(value) ? value.toFixed(4) : 'Not recorded';
+        const diagnostics = globalThis.MotionLearningSummary?.describeDiagnostics(model.history) ?? (latest?.meanApproxKL !== undefined
+          ? `KL ${number(latest.meanApproxKL)} · clip ${number(latest.clipFraction)} · entropy ${number(latest.meanEntropy)} · ` +
+            `actor ${number(latest.meanActorLoss)} · critic ${number(latest.meanCriticLoss)} · ` +
+            `explained variance ${number(latest.valueExplainedVariance)} · ` +
+            `sampled action std ${(latest.sampledActionStd ?? []).map(number).join('/')} · ` +
+            `sampled action boundary ${number(latest.sampledActionBoundaryFraction)} · ` +
+            `world stages ${Object.values(latest.curriculumStageCounts ?? {}).join('/')}`
+          : 'Not recorded in this older run');
         const row = document.createElement('tr');
         for (const value of [model.seed, `${model.steps} / ${model.updates}`, score(evaluated?.baseline),
-          score(evaluated?.untrained), score(evaluated?.learned), evaluated ? (evaluated.acceptance.passed ? 'Pass' : 'Failed') : 'Pending']) {
+          score(evaluated?.untrained), score(evaluated?.learned), evaluated ?
+            `${evaluated.acceptance.passed ? 'Pass' : 'Failed'}${measured ? ' · independent research' : ''}` : 'Pending', diagnostics]) {
           const cell = document.createElement('td');
           cell.textContent = String(value);
           row.appendChild(cell);

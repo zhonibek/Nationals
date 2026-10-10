@@ -2,9 +2,11 @@
 
 ## RoboProof
 
-RobotAI motion lab: the original Simulator now exposes bounded continuous reference actions, a persistent iraLIB controller, a local Python adapter and complete action/transition replay. [Environment contract and limitations](docs/MOTION_EPISODE_CONTRACT.md). Run `node roboproof/cli.js motion-check`, then `node roboproof/server.js` and open http://127.0.0.1:8766/#motion. This prepares a bounded CPU reach-task experiment; **motion-policy training is not implemented yet**.
+RobotAI motion lab: the original Simulator exposes bounded continuous reference actions, a persistent iraLIB controller, a local Python adapter and complete action/transition replay. A bounded CPU PPO learner now records real gradient updates, checkpoints and frozen comparisons, but **learned improvement has not been verified**. [Learner and limits](roboproof/motion_learning/README.md), [environment contract](docs/MOTION_EPISODE_CONTRACT.md). Run `node roboproof/cli.js motion-check`, then `node roboproof/server.js` and open http://127.0.0.1:8766/#motion.
 
 RobotAI: локальный Nemotron предлагает задачу движения, а исходный Simulator и iraLIB выполняют её после подтверждения. [Установка, запуск и ограничения](roboproof/NEMOTRON.md). Это координация задач, не обученная политика движения.
+
+Tactical AI: локальный Nemotron читает проверенный набор правил Override и явно выбранный снимок исходного Simulator, затем предлагает условные приоритеты. Кнопка **Спросить тактический AI** не запускает действия; автоматическая координация motion/manipulation/perception и обученная игровая стратегия пока не реализованы. [Архитектура и дальнейшие этапы](docs/TACTICAL_AI_PLAN.md).
 
 LocateAnything: [подготовка будущего зрения робота](roboproof/perception/README.md) — парсер, калибровочные проверки и общий формат задачи Simulator. Инференс, камера и автоматическое движение отключены; веса этой модели не скачаны.
 

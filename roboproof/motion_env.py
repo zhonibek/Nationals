@@ -92,7 +92,8 @@ class MotionEnvironment:
             request["task"] = task
         result = self._request("reset", **request)
         self._needs_reset = False
-        return result["vector"], {"identity": result["identity"], "options": result["options"]}
+        return result["vector"], {"identity": result["identity"], "options": result["options"],
+                                  "referenceDurationSeconds": result["referenceDurationSeconds"]}
 
     def step(self, action):
         if self._needs_reset:

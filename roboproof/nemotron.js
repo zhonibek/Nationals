@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createRegistry} = require('./agent-skills');
 const SkillEvidence = require('./skill-evidence');
+const Tactics = require('./tactics');
+const {compactRules} = require('./tactics-context');
 
 const MAX_TURNS = 6;
 const MAX_TOKENS = 1024;
@@ -33,13 +35,17 @@ const TOOLS = [
     }}}},
   {type: 'function', function: {name: 'load_skill', description: 'Activate one reviewed skill from the supplied catalog. Read its instructions before using its tools.',
     parameters: {type: 'object', additionalProperties: false, required: ['name'], properties: {
-      name: {type: 'string', enum: ['inspect-robot', 'prepare-motion-experiment', 'diagnose-motion', 'verify-motion-improvement']}
+      name: {type: 'string', enum: ['inspect-robot', 'prepare-motion-experiment', 'diagnose-motion', 'verify-motion-improvement', 'plan-game-tactics']}
     }}}},
   {type: 'function', function: {name: 'get_robot_profile', description: 'Read the actual nominal robot configuration and supported controller path; no file or gain changes.',
     parameters: {type: 'object', properties: {}, additionalProperties: false}}},
   {type: 'function', function: {name: 'get_saved_motion_evidence', description: 'Read compact measured evidence from the user-selected saved run only. Does not rerun simulation.',
     parameters: {type: 'object', properties: {}, additionalProperties: false}}},
   {type: 'function', function: {name: 'get_learning_summary', description: 'Read saved PPO training and frozen comparison, including failures. Does not train, evaluate or promote a policy.',
+    parameters: {type: 'object', properties: {}, additionalProperties: false}}},
+  {type: 'function', function: {name: 'get_game_rules', description: 'Read the reviewed Override rule subset, engine hashes, scoring constants and supported/future subtask roles.',
+    parameters: {type: 'object', properties: {}, additionalProperties: false}}},
+  {type: 'function', function: {name: 'get_game_snapshot', description: 'Read the explicitly supplied compact Simulator snapshot, or report its absence. No live camera or game execution.',
     parameters: {type: 'object', properties: {}, additionalProperties: false}}},
   {type: 'function', function: {name: 'get_motion_contract', description: 'Read the real supported simulator task, units, bounds and limitations before proposing a task.',
     parameters: {type: 'object', properties: {}, additionalProperties: false}}},
@@ -124,18 +130,23 @@ function createClient(config = configuration(), fetchImpl = fetch) {
       if (!Array.isArray(result.data) || !result.data.some(row => row.id === config.model)) throw Error('Configured Nemotron model is not served by this endpoint');
       return {...metadata, available: true, liveInferenceVerified: false};
     },
+    chat: (messages, signal) => request('chat/completions', {model: config.model, messages,
+      stream: false, max_tokens: 512, temperature: 0.6, top_p: 0.95,
+      chat_template_kwargs: {enable_thinking: false}}, signal),
     complete: (messages, signal, allowedTools = TOOLS) => request('chat/completions', {model: config.model, messages, tools: allowedTools,
       tool_choice: 'required', parallel_tool_calls: false, stream: false, max_tokens: MAX_TOKENS,
       temperature: 0.6, top_p: 0.95, chat_template_kwargs: {enable_thinking: false}}, signal)
   };
 }
 
-async function planTask(prompt, client = createClient(), {signal, registry = createRegistry(), evidence = null, learningDirectory} = {}) {
+async function planTask(prompt, client = createClient(), {signal, registry = createRegistry(), evidence = null, learningDirectory, gameSnapshot = null} = {}) {
   if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 4000) throw Error('Task prompt must contain 1..4000 characters');
   const started = performance.now();
+  const game = gameSnapshot ? Tactics.gameEvidence(gameSnapshot) : null;
   const skills = registry.session();
   await client.check(signal);
   const catalog = skills.catalog.map(({name, description}) => ({name, description}));
+  const relevantCatalog = game ? catalog.filter(entry => entry.name === 'plan-game-tactics') : catalog;
   const activeInstructions = new Map();
   const messages = [{role: 'system', content: ''},
     {role: 'user', content: prompt.trim()}];
@@ -145,11 +156,15 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     signal?.throwIfAborted();
     messages[0].content = `${INSTRUCTIONS}\n${activeInstructions.size
-      ? `Active reviewed instructions:\n${[...activeInstructions.values()].join('\n\n')}\nOther skill names: ${catalog.filter(entry => !activeInstructions.has(entry.name)).map(entry => entry.name).join(', ')}`
-      : `Skill catalog: ${JSON.stringify(catalog)}`}\nUser-selected motion evidence available: ${Boolean(evidence)}`;
+      ? `Active reviewed instructions:\n${[...activeInstructions.values()].join('\n\n')}\nOther skill names: ${relevantCatalog.filter(entry => !activeInstructions.has(entry.name)).map(entry => entry.name).join(', ')}`
+      : `Skill catalog: ${JSON.stringify(relevantCatalog)}`}\nUser-selected motion evidence available: ${Boolean(evidence)}\n` +
+      `Selected game snapshot available: ${Boolean(game)}. ${game ? 'Only plan-game-tactics may activate for this read-only request.' : ''}`;
     const allowedTools = TOOLS.filter(tool => (['load_skill', 'ask_clarification'].includes(tool.function.name) || skills.permits(tool.function.name)) &&
       (tool.function.name !== 'prepare_reach_pose' || log.some(entry => entry.name === 'get_motion_contract')) &&
-      (tool.function.name !== 'finish_analysis' || Object.keys(analysisEvidence).length > 0));
+      (tool.function.name !== 'finish_analysis' || (Object.keys(analysisEvidence).length > 0 &&
+        (!skills.permits('get_game_rules') || (analysisEvidence.gameRules && log.some(entry => entry.name === 'get_game_snapshot'))))))
+      .map(tool => game && tool.function.name === 'load_skill' ? {...tool, function: {...tool.function,
+        parameters: {...tool.function.parameters, properties: {name: {type: 'string', enum: ['plan-game-tactics']}}}}} : tool);
     const response = await client.complete(messages, signal, allowedTools);
     const choice = response.choices?.[0];
     if (!choice || ['length', 'content_filter'].includes(choice.finish_reason)) throw Error('Nemotron did not complete a bounded response; no task was executed');
@@ -185,11 +200,15 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
       objectKeys(argumentsValue, ['message'], 'arguments');
       if (typeof argumentsValue.message !== 'string' || !argumentsValue.message.trim() || argumentsValue.message.length > 4000) throw Error('Agent message must contain 1..4000 characters');
       if (call.function.name === 'finish_analysis' && !Object.keys(analysisEvidence).length) throw Error('Read actual tool evidence before finishing an analysis');
+      if (call.function.name === 'finish_analysis' && skills.permits('get_game_rules') &&
+          (!analysisEvidence.gameRules || !log.some(entry => entry.name === 'get_game_snapshot'))) throw Error('Read reviewed game rules and snapshot availability before finishing tactics');
+      if (call.function.name === 'finish_analysis' && game && !analysisEvidence.game) throw Error('Read the selected game snapshot before finishing tactics');
       result = {commentaryVerified: false, executableTask: false};
       log.push({name: call.function.name, arguments: argumentsValue, result});
       return {...common, status: call.function.name === 'finish_analysis' ? 'analyzed' : 'clarification', message: argumentsValue.message.trim()};
     } else if (call.function.name === 'load_skill') {
       objectKeys(argumentsValue, ['name'], 'arguments');
+      if (game && argumentsValue.name !== 'plan-game-tactics') throw Error('Selected game snapshots permit read-only tactics only');
       result = skills.load(argumentsValue.name);
       activeInstructions.set(result.name, result.instructions);
       common.skills.loaded = skills.provenance();
@@ -203,6 +222,13 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
     } else if (call.function.name === 'get_learning_summary') {
       objectKeys(argumentsValue, [], 'arguments');
       result = analysisEvidence.learning = SkillEvidence.learningSummary(learningDirectory);
+    } else if (call.function.name === 'get_game_rules') {
+      objectKeys(argumentsValue, [], 'arguments');
+      result = analysisEvidence.gameRules = Tactics.rules();
+    } else if (call.function.name === 'get_game_snapshot') {
+      objectKeys(argumentsValue, [], 'arguments');
+      result = game ?? {available: false, message: 'Use Ask tactical AI in the original Simulator to share a fresh game snapshot'};
+      if (game) analysisEvidence.game = game;
     } else if (call.function.name === 'get_motion_contract') {
       objectKeys(argumentsValue, [], 'arguments');
       result = CONTRACT;
@@ -217,8 +243,10 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
     } else throw Error('Unsupported Nemotron tool; no command or file access is permitted');
     log.push({name: call.function.name, arguments: argumentsValue, result});
     messages.push({role: 'assistant', content: null, tool_calls: [{id: call.id, type: 'function', function: call.function}]});
-    messages.push({role: 'tool', tool_call_id: call.id, content: JSON.stringify(call.function.name === 'load_skill'
-      ? {name: result.name, allowedTools: result.allowedTools, instructions: 'Loaded into active system context'} : result)});
+    const modelResult = call.function.name === 'load_skill'
+      ? {name: result.name, allowedTools: result.allowedTools, instructions: 'Loaded into active system context'}
+      : call.function.name === 'get_game_rules' ? {reviewedRules: compactRules(result).text} : result;
+    messages.push({role: 'tool', tool_call_id: call.id, content: JSON.stringify(modelResult)});
   }
   throw Error(`Nemotron reached its ${MAX_TURNS}-turn budget; no task was executed`);
 }

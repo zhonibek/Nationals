@@ -26,8 +26,13 @@ function createBridge() {
     else if (request.op === 'reset') {
       const observation = episode.reset(request.seed, request.configuration, request.task,
         {...request.options, controlMode: 'policy'});
-      result = {observation, vector: Policy.vector(observation), options: episode.options, identity: runner.identity};
-    } else if (request.op === 'step') result = episode.policyStep(request.action);
+      result = {observation, vector: Policy.vector(observation), options: episode.options, identity: runner.identity,
+        referenceDurationSeconds: episode.referenceAdapter.duration};
+    } else if (request.op === 'step') {
+      result = episode.policyStep(request.action);
+      result.info = {...result.info, rewardComponents: {...result.rewardComponents},
+        cumulativeEffortProxyVAs: episode.effortProxyVAs, cumulativeContactSeconds: episode.sim.contactSeconds};
+    }
     else if (request.op === 'observe') result = {observation: episode.observe(), vector: Policy.vector(episode.observe())};
     else if (request.op === 'stop') {
       episode.applyAction({type: 'stop'});

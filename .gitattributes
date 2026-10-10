@@ -1,0 +1,2 @@
+include/robot_config.hpp text eol=lf
+simulator/robot-config.js text eol=lf

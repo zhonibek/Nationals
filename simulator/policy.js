@@ -100,6 +100,9 @@
     if (!observation.policyState) throw Error('A policy-mode observation is required');
     const previous = observation.previousAction?.type === 'policy' ? observation.previousAction.values : DEFAULT_ACTION;
     const state = observation.policyState;
+    const groups = [[observation.pose, 3], [observation.velocity, 3], [observation.wheelRimSpeeds, 4],
+      [observation.targetError, 4], [previous, 4], [state.reference, 6], [state.offset, 3], [state.offsetVelocity, 3]];
+    if (groups.some(([values, width]) => !Array.isArray(values) || values.length !== width)) throw Error('Invalid fixed-length sensor policy observation');
     const result = [...observation.pose, ...observation.velocity, ...observation.wheelRimSpeeds,
       ...observation.targetError, ...previous, observation.remainingSeconds, ...state.reference,
       state.referenceSeconds, state.pace, ...state.offset, ...state.offsetVelocity, state.actionAgeTicks];
