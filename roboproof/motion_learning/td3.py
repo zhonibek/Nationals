@@ -4,7 +4,7 @@ import math
 import torch
 from torch import nn
 
-from .model import control_prior_loss
+from .model import control_prior_loss, validate_network_width
 
 
 ALGORITHM = "td3-beta-mean-reference-v1"
@@ -215,12 +215,13 @@ class ReservoirReplayBuffer(ReplayBuffer):
 
 
 class TwinQ(nn.Module):
-    def __init__(self, scales):
+    def __init__(self, scales, network_width=32):
         super().__init__()
+        self.network_width = validate_network_width(network_width)
         self.register_buffer("scales", scales.detach().clone())
         inputs = len(scales) + 4
-        self.first = nn.Sequential(nn.Linear(inputs, 32), nn.Tanh(), nn.Linear(32, 32), nn.Tanh(), nn.Linear(32, 1))
-        self.second = nn.Sequential(nn.Linear(inputs, 32), nn.Tanh(), nn.Linear(32, 32), nn.Tanh(), nn.Linear(32, 1))
+        self.first = nn.Sequential(nn.Linear(inputs, network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh(), nn.Linear(network_width, 1))
+        self.second = nn.Sequential(nn.Linear(inputs, network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh(), nn.Linear(network_width, 1))
 
     def forward(self, observations, actions):
         inputs = torch.cat((torch.clamp(observations / self.scales, -10, 10), actions), dim=-1)
@@ -229,7 +230,7 @@ class TwinQ(nn.Module):
 
 def clipped_target(target_actor, target_critics, batch, gamma, noise_std, noise_clip):
     with torch.no_grad():
-        noise = (torch.randn_like(batch["actions"]) * noise_std).clamp(-noise_clip, noise_clip)
+        noise = (torch.randn_like(batch["actions"], device="cpu") * noise_std).clamp(-noise_clip, noise_clip).to(batch["actions"].device)
         actions = (mean_action(target_actor, batch["next_observations"]) + noise).clamp(-1, 1)
         first, second = target_critics(batch["next_observations"], actions)
         discount = torch.pow(gamma, batch["horizons"].float()) if "horizons" in batch else gamma
@@ -250,7 +251,7 @@ class TD3Learner:
             raise ValueError("Bounded deterministic actor/twin-Q configuration required")
         self.actor = actor
         self.target_actor = copy.deepcopy(actor).requires_grad_(False)
-        self.critics = TwinQ(actor.scales)
+        self.critics = TwinQ(actor.scales, actor.network_width).to(actor.scales.device)
         self.target_critics = copy.deepcopy(self.critics).requires_grad_(False)
         self.actor_optimizer = torch.optim.Adam(actor.parameters(), lr=actor_rate)
         self.critic_optimizer = torch.optim.Adam(self.critics.parameters(), lr=critic_rate)
@@ -280,7 +281,7 @@ class TD3Learner:
             if (not isinstance(values, dict) or values.keys() != expected.keys() or
                     any(not isinstance(values[key], torch.Tensor) or values[key].shape != tensor.shape or
                         values[key].dtype != tensor.dtype or not torch.isfinite(values[key]).all() for key, tensor in expected.items()) or
-                    not torch.equal(values["scales"], self.actor.scales)):
+                    not torch.equal(values["scales"].detach().cpu(), self.actor.scales.detach().cpu())):
                 raise ValueError("Finite TD3 model states and identical sensor scales required")
         self.target_actor.load_state_dict(state["targetActor"])
         self.critics.load_state_dict(state["critics"])
@@ -304,7 +305,11 @@ class TD3Learner:
             raise ValueError("Finite inverse-probability critic weights and independent uniform actor batch required")
         if actor_batch is not None and "importance_weights" in actor_batch:
             raise ValueError("Actor and its priors require independent uniform replay")
-        actor_data = batch if actor_batch is None else actor_batch
+        device = self.actor.scales.device
+        batch = {name: value.to(device) if isinstance(value, torch.Tensor) else value for name, value in batch.items()}
+        weights = batch.get("importance_weights")
+        actor_data = batch if actor_batch is None else {
+            name: value.to(device) if isinstance(value, torch.Tensor) else value for name, value in actor_batch.items()}
         targets, target_actions = clipped_target(self.target_actor, self.target_critics, batch,
             self.gamma, self.target_noise_std, self.target_noise_clip)
         first, second = self.critics(batch["observations"], batch["actions"])
@@ -328,11 +333,11 @@ class TD3Learner:
             try:
                 distribution, _ = self.actor(actor_data["observations"], encoded=True)
                 actor_loss = -self.critics(actor_data["observations"], distribution.mean * 2 - 1)[0].mean()
-                pace_loss = residual_kl = torch.tensor(0.0)
+                pace_loss = residual_kl = actor_loss.new_zeros(())
                 if policy_regularization != "none":
                     pace_loss, residual_kl = control_prior_loss(distribution, actor_data["required_paces"])
                     actor_loss = actor_loss + pace_weight * pace_loss + 0.02 * residual_kl
-                anchor_loss = measured_anchor.loss(self.actor, anchor_profile) if anchor_weight else torch.tensor(0.0)
+                anchor_loss = measured_anchor.loss(self.actor, anchor_profile) if anchor_weight else actor_loss.new_zeros(())
                 actor_loss = actor_loss + anchor_weight * anchor_loss
                 if not torch.isfinite(actor_loss):
                     raise RuntimeError("Nonfinite mean actor loss; no checkpoint published")

@@ -10,7 +10,8 @@ import uuid
 import torch
 
 from roboproof.motion_env import MotionEnvironment
-from .model import MotionActorCritic, export, update, public_deadline_floor, FEATURE_TRANSFORMS, TEMPORAL_FEATURES, DEADLINE_FEATURES, HISTORY_FRAMES, DEADLINE_CONTEXT, normalization_definition, exploration_factor, validate_policy_kl_limit
+from .checkpoint_limits import checkpoint_size_limit
+from .model import MotionActorCritic, export, update, public_deadline_floor, FEATURE_TRANSFORMS, TEMPORAL_FEATURES, DEADLINE_FEATURES, HISTORY_FRAMES, DEADLINE_CONTEXT, NETWORK_WIDTHS, validate_network_width, normalization_definition, exploration_factor, validate_policy_kl_limit
 from .objective import LearningObjective, OBJECTIVE, PROFILES, SETTLING_MARGIN_OBJECTIVE, objective_definition, discount_parameters, return_estimator
 from .imitation import collect_demonstration, imitation_update, TEACHER_PACES, TEACHER_SELECTIONS, MeasuredAnchor, demonstration_samples, ANCHOR_CAPACITY, ANCHOR_ROWS_PER_WORLD, ANCHOR_LOSS_PROFILES, POSE_BUDGET_SCALES
 
@@ -111,12 +112,19 @@ def exclude_frozen_world(world):
     return world
 
 
-def atomic_json(filename, value):
+def atomic_json(filename, value, *, actor=False):
     filename = Path(filename)
     filename.parent.mkdir(parents=True, exist_ok=True)
     temporary = filename.with_suffix(filename.suffix + ".tmp")
     encoded = json.dumps(value, allow_nan=False, separators=(",", ":")) + "\n"
-    if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
+    if actor and (value.get("schemaVersion") != 1 or value.get("policyContractVersion") != 1 or
+                  value.get("algorithm") not in ("ppo-beta-reference-v1", "td3-beta-mean-reference-v1") or
+                  value.get("observationSize") != 34 or value.get("actionSize") != 4):
+        raise ValueError("Motion actor contract required for actor publication")
+    if actor:
+        validate_network_width(value.get("width"))
+    maximum_bytes = (8 if actor else 4) * 1024 * 1024
+    if len(encoded.encode("utf-8")) > maximum_bytes:
         raise ValueError("Learning artifact exceeds bounded reader size")
     temporary.write_text(encoded, encoding="utf-8")
     temporary.replace(filename)
@@ -128,6 +136,8 @@ def digest(filename):
 
 def source_identity():
     names = ["roboproof/motion_learning/model.py", "roboproof/motion_learning/train.py", "roboproof/motion_learning/objective.py", "roboproof/motion_learning/imitation.py",
+             "roboproof/motion_learning/checkpoint_limits.py",
+             "roboproof/motion_learning/teacher_profiles.py",
              "roboproof/motion_env.py", "roboproof/motion-bridge.js",
              "tests/fixtures/motion-evaluation-worlds.json", "tests/fixtures/motion-evaluation-worlds-v2.json"]
     return {name: hashlib.sha256((ROOT / name).read_text(encoding="utf-8-sig").replace("\r\n", "\n").encode()).hexdigest()
@@ -140,6 +150,7 @@ def compatible_config(previous, current):
             previous.get("initialization") == current.get("initialization") and previous.get("objective") == current.get("objective") and
             previous.get("policyRegularization", "none") == current.get("policyRegularization", "none") and
             previous.get("featureTransform", "identity-v1") == current.get("featureTransform", "identity-v1") and
+            previous.get("networkWidth", 32) == current.get("networkWidth", 32) and
             previous.get("warmStartUpdates", 0) == current.get("warmStartUpdates", 0) and
             previous.get("demonstrationAnchorWeight", 0) == current.get("demonstrationAnchorWeight", 0) and
             previous.get("teacherSelection", "minimum-effort-v1") == current.get("teacherSelection", "minimum-effort-v1") and
@@ -223,9 +234,11 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
     expected_estimator = return_estimator(config.get("objective", "canonical-v1"))
     if config.get("returnEstimator", expected_estimator) != expected_estimator:
         raise ValueError("Declared return estimator mismatch")
+    checkpoint_limit = checkpoint_size_limit(config)
     torch.manual_seed(seed)
     generator = random.Random(seed)
-    model = MotionActorCritic(config.get("initialization", "conservative-v1"), config.get("featureTransform", "identity-v1"))
+    model = MotionActorCritic(config.get("initialization", "conservative-v1"), config.get("featureTransform", "identity-v1"),
+                             network_width=config.get("networkWidth", 32))
     anchor_weight = config.get("demonstrationAnchorWeight", 0)
     measured_anchor = MeasuredAnchor(len(model.scales)) if anchor_weight else None
     optimizer = torch.optim.Adam([
@@ -239,7 +252,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
     checkpoint_path = directory / "checkpoint.pt"
     identity = environment.contract["identity"]
     if resume:
-        if not checkpoint_path.is_file() or checkpoint_path.stat().st_size > 4 * 1024 * 1024:
+        if not checkpoint_path.is_file() or checkpoint_path.stat().st_size > checkpoint_limit:
             raise ValueError("Bounded episode-boundary checkpoint required")
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
         if (checkpoint["schemaVersion"] != 1 or checkpoint["identity"] != identity or
@@ -264,7 +277,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
         raise ValueError("Use an explicit resume, never overwrite a run")
     initial_path = directory / "initial-policy.json"
     if not resume:
-        atomic_json(initial_path, export(model, identity, seed, 0, 0))
+        atomic_json(initial_path, export(model, identity, seed, 0, 0), actor=True)
     exposure_path = directory / "exposure.json"
     if exposure_path.is_file() and exposure_path.stat().st_size > 4 * 1024 * 1024:
         raise ValueError("Teacher exposure journal exceeds bounded reader size")
@@ -273,7 +286,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
     def save():
         exported = export(model, identity, seed, steps, updates)
         policy_name = f"policy-{updates:04d}.json"
-        atomic_json(directory / policy_name, exported)
+        atomic_json(directory / policy_name, exported, actor=True)
         checkpoint = {"schemaVersion": 1, "identity": identity, "sources": sources, "config": config,
                       "seed": seed, "torchVersion": str(torch.__version__), "model": model.state_dict(),
                       "optimizer": optimizer.state_dict(), "worldRng": generator.getstate(),
@@ -284,7 +297,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
             checkpoint["measuredAnchor"] = measured_anchor.state()
         temporary = checkpoint_path.with_suffix(".pt.tmp")
         torch.save(checkpoint, temporary)
-        if temporary.stat().st_size > 4 * 1024 * 1024:
+        if temporary.stat().st_size > checkpoint_limit:
             raise ValueError("Checkpoint exceeds bounded reader size")
         temporary.replace(checkpoint_path)
         row = {"seed": seed, "steps": steps, "episodes": episodes, "updates": updates, "trained": updates > 0,
@@ -423,7 +436,9 @@ def run(directory=DEFAULT_DIRECTORY, seed=42, seed_count=3, updates=8, max_steps
         rollout_steps=128, max_seconds=180, resume=None, initialization="broad-pace-v1", objective=OBJECTIVE, curriculum=CURRICULUM,
         policy_regularization="none", feature_transform="identity-v1", warm_start_updates=0, demonstration_anchor_weight=0,
         teacher_selection="minimum-effort-v1", deadline_pace_loss_weight=1, demonstration_anchor_loss_profile="uniform-action-v1",
-        exploration_concentration=1, online_anchor_interval=0, ppo_actor_learning_rate=0.001, target_policy_kl=None):
+        exploration_concentration=1, online_anchor_interval=0, ppo_actor_learning_rate=0.001, target_policy_kl=None,
+        network_width=32):
+    network_width = validate_network_width(network_width)
     exploration_concentration = exploration_factor(exploration_concentration)
     target_policy_kl = validate_policy_kl_limit(target_policy_kl)
     ppo_actor_learning_rate = validate_ppo_actor_learning_rate(ppo_actor_learning_rate)
@@ -478,6 +493,7 @@ def run(directory=DEFAULT_DIRECTORY, seed=42, seed_count=3, updates=8, max_steps
                   "likelihood": "Replay per-transition factor for PPO unit-action log probabilities and entropy",
                   "inference": "Unchanged deterministic Beta mean; no action projection or frozen head"},
               "featureTransform": feature_transform,
+              "networkWidth": network_width,
               "normalizationDefinition": normalization_definition(feature_transform),
               "warmStartUpdates": warm_start_updates,
               "teacherSelection": teacher_selection,
@@ -577,6 +593,7 @@ def main():
     parser.add_argument("--demonstration-anchor-weight", type=float, default=0)
     parser.add_argument("--demonstration-anchor-loss-profile", choices=ANCHOR_LOSS_PROFILES, default="uniform-action-v1")
     parser.add_argument("--teacher-selection", choices=TEACHER_SELECTIONS, default="minimum-effort-v1")
+    parser.add_argument("--network-width", type=int, choices=NETWORK_WIDTHS, default=32)
     arguments = parser.parse_args()
     run(**vars(arguments))
 

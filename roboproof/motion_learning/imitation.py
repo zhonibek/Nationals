@@ -4,6 +4,9 @@ import time
 import torch
 from torch import nn
 
+from .teacher_profiles import (DEFAULT_TEACHER_PROFILE, MEASURED_LATE_POSE_PROFILE, TEACHER_PROFILES,
+                              base_plans, probe_plans, combined_plan, teacher_action, validate_episode_count)
+
 
 TEACHER_PACES = (0.85, 0.95, 1.0)
 TEACHER_SELECTIONS = ("minimum-effort-v1", "pose-deadline-margin-v2")
@@ -57,8 +60,8 @@ def demonstration_samples(rows):
 class MeasuredAnchor:
     def __init__(self, feature_size):
         self.feature_size = feature_size
-        self.features = torch.empty((0, feature_size), dtype=torch.float32)
-        self.targets = torch.empty((0, 4), dtype=torch.float32)
+        self.features = torch.empty((0, feature_size), dtype=torch.float32, device="cpu")
+        self.targets = torch.empty((0, 4), dtype=torch.float32, device="cpu")
 
     def restore(self, state):
         if not isinstance(state, dict) or state.get("schemaVersion") != 1:
@@ -70,14 +73,14 @@ class MeasuredAnchor:
                 features.dtype != torch.float32 or targets.dtype != torch.float32 or
                 not torch.isfinite(features).all() or not torch.isfinite(targets).all() or torch.any(targets.abs() > 1)):
             raise ValueError("Bounded finite measured anchor required")
-        self.features = features.detach().clone()
-        self.targets = targets.detach().clone()
+        self.features = features.detach().cpu().clone()
+        self.targets = targets.detach().cpu().clone()
 
     def append(self, rows):
         if not rows:
             return
-        features = torch.tensor([row["modelInput"] for row in rows], dtype=torch.float32)
-        targets = torch.tensor([row["teacherAction"] for row in rows], dtype=torch.float32)
+        features = torch.tensor([row["modelInput"] for row in rows], dtype=torch.float32, device="cpu")
+        targets = torch.tensor([row["teacherAction"] for row in rows], dtype=torch.float32, device="cpu")
         if (features.shape[1:] != (self.feature_size,) or targets.shape != (len(rows), 4) or
                 not torch.isfinite(features).all() or not torch.isfinite(targets).all() or torch.any(targets.abs() > 1)):
             raise ValueError("Finite collected anchor inputs and bounded actions required")
@@ -92,18 +95,24 @@ class MeasuredAnchor:
             raise ValueError("Unsupported measured anchor loss profile")
         if not len(self.features):
             raise ValueError("A measured anchor needs successful training demonstrations")
-        indices = torch.randperm(len(self.features))[:32]
+        indices = torch.randperm(len(self.features), device="cpu")[:32]
         distribution, _ = model(self.features[indices], encoded=True)
-        difference = distribution.mean * 2 - 1 - self.targets[indices]
-        scales = torch.tensor(POSE_BUDGET_SCALES if profile == "pose-budget-v2" else (1, 1, 1, 1), dtype=torch.float32)
+        difference = distribution.mean * 2 - 1 - self.targets[indices].to(distribution.mean.device)
+        scales = torch.tensor(POSE_BUDGET_SCALES if profile == "pose-budget-v2" else (1, 1, 1, 1),
+                              dtype=torch.float32, device=distribution.mean.device)
         return (difference * scales).square().mean()
 
 
-def collect_demonstration(environment, model, world, deadline, step_budget, teacher_selection="minimum-effort-v1"):
+def collect_demonstration(environment, model, world, deadline, step_budget, teacher_selection="minimum-effort-v1",
+                          teacher_profile=DEFAULT_TEACHER_PROFILE):
     if isinstance(step_budget, bool) or not isinstance(step_budget, int) or step_budget < 0:
         raise ValueError("Bounded teacher step budget required")
     if teacher_selection not in TEACHER_SELECTIONS:
         raise ValueError("Unsupported teacher selection profile")
+    if teacher_profile not in TEACHER_PROFILES:
+        raise ValueError("Unsupported measured teacher profile")
+    if teacher_profile != DEFAULT_TEACHER_PROFILE:
+        return collect_late_pose_demonstration(environment, model, world, deadline, step_budget, teacher_selection, teacher_profile)
     candidates = []
     observed_steps = 0
     for pace in TEACHER_PACES:
@@ -142,20 +151,87 @@ def collect_demonstration(environment, model, world, deadline, step_budget, teac
             "attempts": [{key: value for key, value in candidate.items() if key != "rows"} for candidate in candidates]}
 
 
+def collect_late_pose_demonstration(environment, model, world, deadline, step_budget, teacher_selection,
+                                   teacher_profile=MEASURED_LATE_POSE_PROFILE):
+    if isinstance(step_budget, bool) or not isinstance(step_budget, int) or step_budget < 0:
+        raise ValueError("Bounded teacher step budget required")
+    if teacher_selection not in TEACHER_SELECTIONS:
+        raise ValueError("Unsupported teacher selection profile")
+    if teacher_profile not in TEACHER_PROFILES or teacher_profile == DEFAULT_TEACHER_PROFILE:
+        raise ValueError("Explicit late-pose teacher profile required")
+    candidates = []
+    observed_steps = 0
+
+    def attempt(plan):
+        nonlocal observed_steps
+        if time.monotonic() >= deadline or observed_steps >= step_budget:
+            return False
+        validate_episode_count(len(candidates) + 1, teacher_profile)
+        observation, reset_info = environment.reset(seed=world["seed"], task=world["task"], configuration=world["configuration"],
+            options={"recordTransitions": False, "policyIdentity": {"kind": "scripted", "id": "training-teacher"}})
+        duration = reset_info["referenceDurationSeconds"]
+        model.reset_policy_state(duration)
+        rows = []
+        total_reward = 0
+        while True:
+            if time.monotonic() >= deadline or observed_steps >= step_budget:
+                return False
+            action = teacher_action(plan, observation, duration)
+            features = model.encode_observation(observation)
+            rows.append({"modelInput": features.tolist(), "teacherAction": list(action)})
+            observation, reward, terminated, truncated, info = environment.step(action)
+            total_reward += reward
+            observed_steps += 1
+            if terminated or truncated:
+                break
+        report = environment.report()
+        candidates.append({"pace": plan["pace"], "plan": dict(plan), "reason": report["reason"],
+            "metrics": report["metrics"], "canonicalReward": total_reward, "rows": rows,
+            **teacher_margins(report["metrics"], world["task"])})
+        return True
+
+    def interrupted():
+        return {"interrupted": True, "observedSteps": observed_steps,
+            "attempts": [{key: value for key, value in candidate.items() if key != "rows"} for candidate in candidates]}
+
+    for plan in base_plans(teacher_profile):
+        if not attempt(plan):
+            return interrupted()
+    base_candidates = list(candidates)
+    plans = probe_plans(base_candidates, teacher_profile)
+    for plan in plans:
+        if not attempt(plan):
+            return interrupted()
+    if plans:
+        baseline = next(candidate for candidate in base_candidates if candidate["pace"] == plans[0]["pace"])
+        plan = combined_plan(baseline, candidates[3:], teacher_profile)
+        if plan is not None and sum(plan[axis] != 0 for axis in ("right", "forward", "heading")) >= 2:
+            if not attempt(plan):
+                return interrupted()
+    selected = select_demonstration(candidates, teacher_selection)
+    return {"interrupted": False, "observedSteps": observed_steps,
+        "rows": selected["rows"] if selected else [], "selectedPace": selected["pace"] if selected else None,
+        "selectedPlan": dict(selected["plan"]) if selected else None, "teacherProfile": teacher_profile,
+        "teacherSelection": teacher_selection, "selectedMarginScore": selected["marginScore"] if selected else None,
+        "canonicalReward": selected["canonicalReward"] if selected else candidates[-1]["canonicalReward"],
+        "reason": "success" if selected else candidates[-1]["reason"],
+        "attempts": [{key: value for key, value in candidate.items() if key != "rows"} for candidate in candidates]}
+
+
 def imitation_update(model, optimizer, rows, epochs=32):
     if not rows or not isinstance(epochs, int) or not 1 <= epochs <= 64:
         raise ValueError("Bounded nonempty imitation minibatches required")
-    features = torch.tensor([row["modelInput"] for row in rows], dtype=torch.float32)
-    targets = torch.tensor([row["teacherAction"] for row in rows], dtype=torch.float32)
+    features = torch.tensor([row["modelInput"] for row in rows], dtype=torch.float32, device="cpu")
+    targets = torch.tensor([row["teacherAction"] for row in rows], dtype=torch.float32, device="cpu")
     if features.shape[1:] != (len(model.scales),) or targets.shape != (len(rows), 4) or not torch.isfinite(features).all() or \
             not torch.isfinite(targets).all() or torch.any(targets.abs() > 1):
         raise ValueError("Finite collected inputs and bounded teacher actions required")
     parameters = [*model.body.parameters(), *model.actor.parameters()]
     losses, weights, norms = [], [], []
     for _ in range(epochs):
-        for indices in torch.randperm(len(rows)).tensor_split(math.ceil(len(rows) / 64)):
+        for indices in torch.randperm(len(rows), device="cpu").tensor_split(math.ceil(len(rows) / 64)):
             distribution, _ = model(features[indices], encoded=True)
-            loss = (distribution.mean * 2 - 1 - targets[indices]).square().mean()
+            loss = (distribution.mean * 2 - 1 - targets[indices].to(distribution.mean.device)).square().mean()
             if not torch.isfinite(loss):
                 raise RuntimeError("Nonfinite imitation loss; no checkpoint published")
             optimizer.zero_grad()

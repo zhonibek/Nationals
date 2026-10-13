@@ -15,6 +15,8 @@ const {writeJson} = require('./core');
 const ROOT = path.resolve(__dirname, '..');
 const SOURCES = ['roboproof/motion_learning/model.py', 'roboproof/motion_learning/train.py', 'roboproof/motion_learning/objective.py',
   'roboproof/motion_learning/td3.py', 'roboproof/motion_learning/td3_train.py',
+  'roboproof/motion_learning/execution.py', 'roboproof/motion_learning/checkpoint_limits.py',
+  'roboproof/motion_learning/teacher_profiles.py',
   'roboproof/motion_learning/imitation.py',
   'roboproof/motion_env.py', 'roboproof/motion-bridge.js', 'roboproof/motion-development.js', 'roboproof/motion-experiment.js',
   'roboproof/motion-learner.js', 'roboproof/motion-evaluation.js', 'roboproof/motion-exposures.js', 'roboproof/motion.js'];

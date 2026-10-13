@@ -39,7 +39,7 @@ function readJson(filename, maximum = 1024 * 1024) {
 }
 
 function policy(filename, expectedHash) {
-  const {value: data, sha256} = readJson(filename);
+  const {value: data, sha256} = readJson(filename, 8 * 1024 * 1024);
   if (expectedHash && sha256 !== expectedHash) throw Error('Policy checkpoint hash mismatch');
   return policyFromSnapshot(data, sha256);
 }
@@ -60,10 +60,10 @@ function policyFromSnapshot(value, sha256) {
   if (deadline && !isDeepStrictEqual(data.deadlineContext, {schemaVersion: 1, settlingReserveSeconds: 2,
     input: 'public-reference-duration-at-reset'})) throw Error('Deadline feature definition mismatch');
   if (data.schemaVersion !== 1 || !['ppo-beta-reference-v1', 'td3-beta-mean-reference-v1'].includes(data.algorithm) || data.policyContractVersion !== 1 ||
-      data.observationSize !== 34 || data.actionSize !== 4 || data.width !== 32 ||
+      data.observationSize !== 34 || data.actionSize !== 4 || !Number.isInteger(data.width) || ![32, 64, 128, 256].includes(data.width) ||
       !validInteger(data.trainingSeed) || !validInteger(data.steps) || !validInteger(data.updates) ||
       data.trained !== (data.updates > 0) || !Array.isArray(data.scales) || data.scales.length !== featureCount ||
-      !data.scales.every(value => Number.isFinite(value) && value > 0 && value <= 100) ||
+      !Array.from(data.scales).every(value => Number.isFinite(value) && value > 0 && value <= 100) ||
       !Array.isArray(data.layers) || data.layers.length !== 3) throw Error('Unsupported bounded motion model');
   if (deadline && data.scales[featureCount - 1] !== 1) throw Error('Deadline feature scale mismatch');
   if (featureTransform === settlingNormalization) {
@@ -84,14 +84,14 @@ function policyFromSnapshot(value, sha256) {
     if (!isDeepStrictEqual(data.scales, expected)) throw Error('Sensor augmentation scale mismatch');
   }
   if (!isDeepStrictEqual(data.identity, loadHeadless().identity)) throw Error('Motion model engine/controller identity mismatch');
-  const dimensions = [[featureCount, 32], [32, 32], [32, 8]];
+  const dimensions = [[featureCount, data.width], [data.width, data.width], [data.width, 8]];
   for (let index = 0; index < dimensions.length; index++) {
     const [inputs, outputs] = dimensions[index];
     const layer = data.layers[index];
     const finite = value => Number.isFinite(value) && Math.abs(value) <= 10000;
     if (!layer || !Array.isArray(layer.weight) || layer.weight.length !== outputs ||
-        !Array.isArray(layer.bias) || layer.bias.length !== outputs || !layer.bias.every(finite) ||
-        layer.weight.some(row => !Array.isArray(row) || row.length !== inputs || !row.every(finite))) throw Error('Malformed motion model weights');
+        !Array.isArray(layer.bias) || layer.bias.length !== outputs || !Array.from(layer.bias).every(finite) ||
+        Array.from(layer.weight).some(row => !Array.isArray(row) || row.length !== inputs || !Array.from(row).every(finite))) throw Error('Malformed motion model weights');
   }
   let observationHistory = [], initialContext = null, referenceDurationSeconds = null;
   const act = observation => {

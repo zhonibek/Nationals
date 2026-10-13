@@ -10,9 +10,12 @@ import uuid
 import torch
 
 from roboproof.motion_env import MotionEnvironment
+from .checkpoint_limits import checkpoint_size_limit
+from .execution import DEVICES, prepare_execution, snapshot_cuda_rng, restore_cuda_rng
 from .imitation import MeasuredAnchor, collect_demonstration, demonstration_samples, imitation_update
-from .model import MotionActorCritic, FEATURE_TRANSFORMS, DEADLINE_FEATURES, DEADLINE_CONTEXT, normalization_definition, public_deadline_floor, export
+from .model import MotionActorCritic, FEATURE_TRANSFORMS, DEADLINE_FEATURES, DEADLINE_CONTEXT, NETWORK_WIDTHS, validate_network_width, normalization_definition, public_deadline_floor, export
 from .objective import LearningObjective, SETTLING_MARGIN_OBJECTIVE, PROFILES, objective_definition
+from .teacher_profiles import DEFAULT_TEACHER_PROFILE, TEACHER_PROFILES, teacher_profile_definition
 from .td3 import ALGORITHM, ReplayBuffer, ReservoirReplayBuffer, TD3Learner, TrainingExploration, complete_episode_returns
 from .train import ROOT, CURRICULA, atomic_json, digest, source_identity as ppo_source_identity, training_world, exclude_frozen_world, curriculum_definition
 
@@ -22,7 +25,7 @@ DEFAULT_DIRECTORY = ROOT / "roboproof/runs/motion/td3"
 
 def source_identity():
     result = ppo_source_identity()
-    for name in ("roboproof/motion_learning/td3.py", "roboproof/motion_learning/td3_train.py"):
+    for name in ("roboproof/motion_learning/td3.py", "roboproof/motion_learning/td3_train.py", "roboproof/motion_learning/execution.py"):
         result[name] = hashlib.sha256((ROOT / name).read_text(encoding="utf-8-sig").replace("\r\n", "\n").encode()).hexdigest()
     return result
 
@@ -36,7 +39,13 @@ def configuration(seed, seed_count, updates, max_steps, rollout_steps, warm_star
                   objective, curriculum, gradient_steps, replay_capacity, exploration_std,
                   demonstration_anchor_weight, policy_regularization, deadline_pace_loss_weight, n_steps=1,
                   critic_terminal_fraction=0, replay_strategy="recent-ring-v1", exploration_profile="iid-v1",
-                  pose_exploration_std=None, exploration_correlation_seconds=0):
+                  pose_exploration_std=None, exploration_correlation_seconds=0, network_width=32, training_device="cpu",
+                  teacher_profile=DEFAULT_TEACHER_PROFILE):
+    network_width = validate_network_width(network_width)
+    if training_device not in DEVICES:
+        raise ValueError("Explicit supported training device required")
+    if teacher_profile not in TEACHER_PROFILES:
+        raise ValueError("Explicit supported measured teacher profile required")
     limits = ((seed, 0, 2**32 - 3), (seed_count, 1, 3), (updates, 1, 100), (max_steps, 1, 50000),
               (rollout_steps, 16, 1024), (warm_start_updates, 0, 16), (gradient_steps, 1, 32), (replay_capacity, 64, 2048), (n_steps, 1, 32))
     if any(isinstance(value, bool) or not isinstance(value, int) or not lower <= value <= upper for value, lower, upper in limits):
@@ -54,11 +63,14 @@ def configuration(seed, seed_count, updates, max_steps, rollout_steps, warm_star
     exploration = TrainingExploration(exploration_std, exploration_profile, pose_exploration_std, exploration_correlation_seconds)
     return {"seed": seed, "seedCount": seed_count, "updates": updates, "maxSteps": max_steps, "rolloutSteps": rollout_steps,
             "algorithm": ALGORITHM, "initialization": "broad-pace-v1", "featureTransform": feature_transform,
+            "networkWidth": network_width, "trainingDevice": training_device,
             "normalizationDefinition": normalization_definition(feature_transform),
             "deadlineContextDefinition": dict(DEADLINE_CONTEXT) if feature_transform in DEADLINE_FEATURES else None,
             "objective": objective, "objectiveDefinition": objective_definition(objective), "curriculum": curriculum,
             "curriculumDefinition": curriculum_definition(curriculum), "warmStartUpdates": warm_start_updates,
-            "teacherSelection": "pose-deadline-margin-v2", "demonstrationAnchorWeight": demonstration_anchor_weight,
+            "teacherSelection": "pose-deadline-margin-v2", "teacherProfile": teacher_profile,
+            "teacherProfileDefinition": teacher_profile_definition(teacher_profile),
+            "demonstrationAnchorWeight": demonstration_anchor_weight,
             "demonstrationAnchorLossProfile": "pose-budget-v2", "gradientSteps": gradient_steps, "replayCapacity": replay_capacity,
             "batchSize": 64, "explorationStd": exploration_std, "policyRegularization": policy_regularization, "nStepReturns": n_steps,
             "deadlinePaceLossWeight": deadline_pace_loss_weight, "criticTerminalFraction": critic_terminal_fraction,
@@ -66,7 +78,7 @@ def configuration(seed, seed_count, updates, max_steps, rollout_steps, warm_star
             "explorationProfile": exploration_profile, "poseExplorationStd": exploration.pose_standard_deviation,
             "explorationCorrelationSeconds": exploration_correlation_seconds,
             "td3Definition": {"actor": "Deterministic Beta mean, every reference axis learned; no value-only critic branch",
-                "critics": "Independent twin-Q32x32 value estimators; original Simulator remains the environment",
+                "critics": f"Independent twin-Q{network_width}x{network_width} value estimators; original Simulator remains the environment",
                 "discountFactor": 1.0, "targetTau": 0.005, "policyDelay": 2, "targetNoiseStd": 0.05, "targetNoiseClip": 0.1,
                 "actorLearningRate": 0.0003, "criticLearningRate": 0.0003, "imitationLearningRate": 0.001,
                 "terminal": "Success, fault and original task deadline all stop bootstrap; never cross resets",
@@ -99,12 +111,16 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
          ("deadline_pace_loss_weight", "deadlinePaceLossWeight"), ("n_steps", "nStepReturns"),
          ("critic_terminal_fraction", "criticTerminalFraction"), ("replay_strategy", "replayStrategy"),
          ("exploration_profile", "explorationProfile"), ("pose_exploration_std", "poseExplorationStd"),
-         ("exploration_correlation_seconds", "explorationCorrelationSeconds"))})
+         ("exploration_correlation_seconds", "explorationCorrelationSeconds"), ("network_width", "networkWidth"),
+         ("training_device", "trainingDevice"), ("teacher_profile", "teacherProfile"))})
     if config != expected:
         raise ValueError("TD3 method definition mismatch")
+    checkpoint_limit = checkpoint_size_limit(config)
+    device, execution = prepare_execution(config["trainingDevice"])
     torch.manual_seed(seed)
     generator = random.Random(seed)
-    actor = MotionActorCritic(config["initialization"], config["featureTransform"], value_critic=False)
+    actor = MotionActorCritic(config["initialization"], config["featureTransform"], value_critic=False,
+                             network_width=config["networkWidth"]).to(device)
     learner = TD3Learner(actor)
     exploration = TrainingExploration(config["explorationStd"], config["explorationProfile"],
                                       config["poseExplorationStd"], config["explorationCorrelationSeconds"])
@@ -118,12 +134,13 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
     directory.mkdir(parents=True, exist_ok=True)
     checkpoint_path = directory / "checkpoint.pt"
     if resume:
-        if not checkpoint_path.is_file() or checkpoint_path.stat().st_size > 4 * 1024 * 1024:
+        if not checkpoint_path.is_file() or checkpoint_path.stat().st_size > checkpoint_limit:
             raise ValueError("Bounded TD3 checkpoint required")
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
         if (checkpoint["schemaVersion"] != 1 or checkpoint["algorithm"] != ALGORITHM or checkpoint["identity"] != identity or
                 checkpoint["sources"] != sources or checkpoint["seed"] != seed or checkpoint["torchVersion"] != str(torch.__version__) or
-                not compatible_config(checkpoint["config"], config) or not torch.equal(checkpoint["model"]["scales"], actor.scales)):
+                checkpoint.get("execution") != execution or not compatible_config(checkpoint["config"], config) or
+                not torch.equal(checkpoint["model"]["scales"], actor.scales.detach().cpu())):
             raise ValueError("TD3 checkpoint source/runtime/configuration/scale mismatch")
         actor.load_state_dict(checkpoint["model"])
         learner.restore(checkpoint["learner"])
@@ -132,21 +149,23 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
             anchor.restore(checkpoint["measuredAnchor"])
         generator.setstate(checkpoint["worldRng"])
         torch.set_rng_state(checkpoint["torchRng"])
+        restore_cuda_rng(checkpoint.get("cudaRng"), device)
         steps, episodes, updates, history, collection_steps, discarded_total = (checkpoint[key] for key in
             ("steps", "episodes", "updates", "history", "collectionSteps", "discardedCollectionStepsTotal"))
     elif checkpoint_path.exists():
         raise ValueError("Explicit resume required; never overwrite TD3 history")
     initial_path = directory / "initial-policy.json"
     if not resume:
-        atomic_json(initial_path, export(actor, identity, seed, 0, 0, ALGORITHM))
+        atomic_json(initial_path, export(actor, identity, seed, 0, 0, ALGORITHM), actor=True)
     exposure_path = directory / "exposure.json"
     exposures = json.loads(exposure_path.read_text())["cases"] if exposure_path.is_file() else []
 
     def save():
         exported = export(actor, identity, seed, steps, updates, ALGORITHM)
         policy_name = f"policy-{updates:04d}.json"
-        atomic_json(directory / policy_name, exported)
+        atomic_json(directory / policy_name, exported, actor=True)
         checkpoint = {"schemaVersion": 1, "algorithm": ALGORITHM, "identity": identity, "sources": sources, "config": config,
+                      "execution": execution, "cudaRng": snapshot_cuda_rng(device),
                       "seed": seed, "torchVersion": str(torch.__version__), "model": actor.state_dict(), "learner": learner.state(),
                       "replay": replay.state(), "worldRng": generator.getstate(), "torchRng": torch.get_rng_state(),
                       "steps": steps, "episodes": episodes, "updates": updates, "history": history,
@@ -155,7 +174,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
             checkpoint["measuredAnchor"] = anchor.state()
         temporary = checkpoint_path.with_suffix(".pt.tmp")
         torch.save(checkpoint, temporary)
-        if temporary.stat().st_size > 4 * 1024 * 1024:
+        if temporary.stat().st_size > checkpoint_limit:
             raise ValueError("TD3 checkpoint exceeds bounded reader size")
         temporary.replace(checkpoint_path)
         summary = {"seed": seed, "steps": steps, "episodes": episodes, "updates": updates, "trained": updates > 0,
@@ -163,7 +182,8 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
                    "policyFile": policy_name, "policySha256": digest(directory / policy_name), "initialSha256": digest(initial_path),
                    "actorWeightsChanged": updates > 0 and json.loads(initial_path.read_text())["layers"][-1] != exported["layers"][-1],
                    "history": history, "td3GradientUpdates": learner.gradient_updates, "td3ActorUpdates": learner.actor_updates,
-                   "replayRows": replay.count}
+                   "replayRows": replay.count, "networkWidth": config["networkWidth"], "trainingDevice": config["trainingDevice"],
+                   "cudaPeakAllocatedBytes": torch.cuda.max_memory_allocated(device) if device.type == "cuda" else None}
         atomic_json(directory / "summary.json", summary)
         if on_checkpoint:
             on_checkpoint(summary)
@@ -176,6 +196,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
     discarded = 0
     while updates < config["updates"] and observed < config["maxSteps"] and time.monotonic() < deadline:
         world_state, torch_state = generator.getstate(), torch.get_rng_state()
+        cuda_state = snapshot_cuda_rng(device)
         start_observed = observed
         rows, worlds, anchor_rows = [], [], []
         warm = updates < config["warmStartUpdates"]
@@ -190,7 +211,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
             atomic_json(exposure_path, {"schemaVersion": 1, "cases": exposures})
             if warm:
                 demonstration = collect_demonstration(environment, actor, world, deadline, config["maxSteps"] - observed,
-                                                      config["teacherSelection"])
+                                                      config["teacherSelection"], config["teacherProfile"])
                 observed += demonstration["observedSteps"]
                 if demonstration["interrupted"]:
                     interrupted = True
@@ -200,6 +221,8 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
                 worlds.append({**world, "reason": "success" if demonstration["rows"] else "teacher-unavailable",
                                "canonicalReward": demonstration["canonicalReward"], "teacherAttempts": demonstration["attempts"],
                                "teacherSelectedPace": demonstration["selectedPace"]})
+                if config["teacherProfile"] != DEFAULT_TEACHER_PROFILE:
+                    worlds[-1]["teacherSelectedPlan"] = demonstration["selectedPlan"]
                 continue
             observation, reset_info = environment.reset(seed=world["seed"], task=world["task"], configuration=world["configuration"],
                 options={"recordTransitions": False, "policyIdentity": {
@@ -237,6 +260,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
             collection_steps = observed
             generator.setstate(world_state)
             torch.set_rng_state(torch_state)
+            restore_cuda_rng(cuda_state, device)
             summary = save()
             break
         if warm:
@@ -282,16 +306,18 @@ def run(directory=DEFAULT_DIRECTORY, seed=201, seed_count=1, updates=64, max_ste
         objective=SETTLING_MARGIN_OBJECTIVE, curriculum="mixed-full-reach-v5", gradient_steps=32, replay_capacity=1024,
         exploration_std=0.05, demonstration_anchor_weight=10, policy_regularization="public-deadline-residual-v1",
         deadline_pace_loss_weight=40, n_steps=1, critic_terminal_fraction=0, replay_strategy="recent-ring-v1",
-        exploration_profile="iid-v1", pose_exploration_std=None, exploration_correlation_seconds=0):
+        exploration_profile="iid-v1", pose_exploration_std=None, exploration_correlation_seconds=0,
+        network_width=32, training_device="cpu", teacher_profile=DEFAULT_TEACHER_PROFILE):
     if isinstance(max_seconds, bool) or not isinstance(max_seconds, int) or not 1 <= max_seconds <= 900:
         raise ValueError("Bounded TD3 wall-clock budget required")
     config = configuration(seed, seed_count, updates, max_steps, rollout_steps, warm_start_updates, feature_transform,
                            objective, curriculum, gradient_steps, replay_capacity, exploration_std,
                            demonstration_anchor_weight, policy_regularization, deadline_pace_loss_weight, n_steps,
                            critic_terminal_fraction, replay_strategy, exploration_profile,
-                           pose_exploration_std, exploration_correlation_seconds)
+                           pose_exploration_std, exploration_correlation_seconds, network_width, training_device, teacher_profile)
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
+    device, execution = prepare_execution(training_device)
     directory = Path(directory).resolve()
     run_id = resume or str(uuid.uuid4())
     if str(uuid.UUID(run_id)) != run_id:
@@ -301,12 +327,13 @@ def run(directory=DEFAULT_DIRECTORY, seed=201, seed_count=1, updates=64, max_ste
     sources = source_identity()
     if resume:
         previous = json.loads(manifest_path.read_text())
-        if previous["sources"] != sources or not compatible_config(previous["config"], config):
+        if previous["sources"] != sources or previous.get("execution") != execution or not compatible_config(previous["config"], config):
             raise ValueError("TD3 run source/configuration mismatch")
     elif run_directory.exists():
         raise ValueError("Never overwrite an existing TD3 run")
     manifest = {"schemaVersion": 1, "runId": run_id, "config": config, "sources": sources, "status": "running",
-                "device": "cpu", "torch": str(torch.__version__), "models": previous["models"] if resume else [], "learnedImprovementVerified": False,
+                "device": training_device, "execution": execution, "torch": str(torch.__version__),
+                "models": previous["models"] if resume else [], "learnedImprovementVerified": False,
                 "scope": "Experimental deterministic reference learner; original Simulator/iraLIB only, no obstacle/game/AMD/hardware claim"}
 
     def publish():
@@ -314,6 +341,8 @@ def run(directory=DEFAULT_DIRECTORY, seed=201, seed_count=1, updates=64, max_ste
         atomic_json(directory / "latest.json", {"schemaVersion": 1, "runId": run_id})
 
     deadline = time.monotonic() + max_seconds
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
     publish()
     try:
         with MotionEnvironment() as environment:
@@ -363,6 +392,9 @@ def main():
     parser.add_argument("--exploration-profile", choices=("iid-v1", "ou-pose-v1"), default="iid-v1")
     parser.add_argument("--pose-exploration-std", type=float, default=None)
     parser.add_argument("--exploration-correlation-seconds", type=float, default=0)
+    parser.add_argument("--network-width", type=int, choices=NETWORK_WIDTHS, default=32)
+    parser.add_argument("--training-device", choices=DEVICES, default="cpu")
+    parser.add_argument("--teacher-profile", choices=TEACHER_PROFILES, default=DEFAULT_TEACHER_PROFILE)
     run(**vars(parser.parse_args()))
 
 

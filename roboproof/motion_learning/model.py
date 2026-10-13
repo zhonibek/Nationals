@@ -23,6 +23,15 @@ DEADLINE_FEATURES = ("deadline-context-v1", "long-history-deadline-v1", SETTLING
 DEADLINE_CONTEXT = {"schemaVersion": 1, "settlingReserveSeconds": 2, "input": "public-reference-duration-at-reset"}
 
 
+NETWORK_WIDTHS = (32, 64, 128, 256)
+
+
+def validate_network_width(value):
+    if isinstance(value, bool) or not isinstance(value, int) or value not in NETWORK_WIDTHS:
+        raise ValueError("Network width must be an integer in32,64,128,256")
+    return value
+
+
 def normalization_definition(feature_transform):
     if feature_transform not in FEATURE_TRANSFORMS:
         raise ValueError("Unsupported motion feature transform")
@@ -90,8 +99,9 @@ def reference_frame_features(observations):
 
 
 class MotionActorCritic(nn.Module):
-    def __init__(self, initialization="conservative-v1", feature_transform="identity-v1", value_critic=True):
+    def __init__(self, initialization="conservative-v1", feature_transform="identity-v1", value_critic=True, network_width=32):
         super().__init__()
+        self.network_width = validate_network_width(network_width)
         if feature_transform not in FEATURE_TRANSFORMS:
             raise ValueError("Unsupported motion feature transform")
         self.feature_transform = feature_transform
@@ -110,12 +120,12 @@ class MotionActorCritic(nn.Module):
         if feature_transform in DEADLINE_FEATURES:
             scales.append(1)
         self.register_buffer("scales", torch.tensor(scales, dtype=torch.float32))
-        self.body = nn.Sequential(nn.Linear(len(scales), 32), nn.Tanh(), nn.Linear(32, 32), nn.Tanh())
-        self.actor = nn.Linear(32, 8)
+        self.body = nn.Sequential(nn.Linear(len(scales), network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh())
+        self.actor = nn.Linear(network_width, 8)
         if not isinstance(value_critic, bool):
             raise ValueError("Explicit value critic flag required")
-        self.critic_body = nn.Sequential(nn.Linear(len(scales), 32), nn.Tanh(), nn.Linear(32, 32), nn.Tanh()) if value_critic else None
-        self.critic = nn.Linear(32, 1) if value_critic else None
+        self.critic_body = nn.Sequential(nn.Linear(len(scales), network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh()) if value_critic else None
+        self.critic = nn.Linear(network_width, 1) if value_critic else None
         nn.init.zeros_(self.actor.weight)
         with torch.no_grad():
             if initialization == "conservative-v1":
@@ -140,7 +150,7 @@ class MotionActorCritic(nn.Module):
             self.reference_duration = float(public_reference_duration)
 
     def encode_observation(self, observation, advance_state=True):
-        raw = torch.tensor(observation, dtype=torch.float32)
+        raw = torch.tensor(observation, dtype=torch.float32, device="cpu")
         if raw.shape != (34,) or not torch.isfinite(raw).all():
             raise ValueError("Exactly 34 finite raw sensor values required")
         if self.feature_transform == "identity-v1":
@@ -149,7 +159,7 @@ class MotionActorCritic(nn.Module):
         if self.feature_transform == "reference-frame-v1":
             return current
         if self.feature_transform in AUGMENTED_FEATURES:
-            units = torch.tensor(augmentation_units(self.feature_transform), dtype=torch.float32)
+            units = torch.tensor(augmentation_units(self.feature_transform), dtype=torch.float32, device="cpu")
             local = torch.tanh(current[list(AUGMENTATION_INDICES)] / units)
             current = torch.cat((current, local))
         floor = None
@@ -165,7 +175,7 @@ class MotionActorCritic(nn.Module):
             self.initial_context = context
         inputs = (*padded, context)
         if floor is not None:
-            inputs = (*inputs, torch.tensor([floor], dtype=torch.float32))
+            inputs = (*inputs, torch.tensor([floor], dtype=torch.float32, device="cpu"))
         return torch.cat(inputs)
 
     def forward(self, observations, encoded=False):
@@ -176,6 +186,7 @@ class MotionActorCritic(nn.Module):
             raise ValueError("Temporal replay minibatches require encoded observations")
         elif self.feature_transform == "reference-frame-v1":
             observations = reference_frame_features(observations)
+        observations = observations.to(self.scales.device)
         normalized = torch.clamp(observations / self.scales, -10, 10)
         hidden = self.body(normalized)
         concentrations = torch.nn.functional.softplus(self.actor(hidden)) + 1
@@ -369,11 +380,11 @@ def update(model, optimizer, rows, epochs=4, gamma=0.99, decay=0.95, policy_regu
             critic_loss = (values - returns[indices]).square().mean()
             entropy = sampling.entropy().sum(-1).mean()
             loss = actor_loss + 0.5 * critic_loss - 0.001 * entropy
-            pace_loss = residual_kl = torch.tensor(0.0)
+            pace_loss = residual_kl = loss.new_zeros(())
             if required_pace is not None:
                 pace_loss, residual_kl = control_prior_loss(distribution, required_pace[indices])
                 loss = loss + deadline_pace_loss_weight * pace_loss + 0.02 * residual_kl
-            anchor_loss = measured_anchor.loss(model, anchor_loss_profile) if anchor_weight else torch.tensor(0.0)
+            anchor_loss = measured_anchor.loss(model, anchor_loss_profile) if anchor_weight else loss.new_zeros(())
             loss = loss + anchor_weight * anchor_loss
             if not torch.isfinite(loss):
                 raise RuntimeError("Nonfinite PPO loss; no checkpoint published")
@@ -440,7 +451,7 @@ def export(model, identity, seed, steps, updates, algorithm="ppo-beta-reference-
     def layer(module):
         return {"weight": module.weight.detach().tolist(), "bias": module.bias.detach().tolist()}
     return {"schemaVersion": 1, "algorithm": algorithm, "policyContractVersion": 1,
-            "observationSize": 34, "actionSize": 4, "width": 32, "scales": model.scales.detach().tolist(),
+            "observationSize": 34, "actionSize": 4, "width": model.network_width, "scales": model.scales.detach().tolist(),
             "featureTransform": model.feature_transform, "featureInputSize": len(model.scales),
             **({"historyFrames": model.history_frames, "initialContextSize": 4} if model.feature_transform in TEMPORAL_FEATURES else {}),
             **({"deadlineContext": dict(DEADLINE_CONTEXT)} if model.feature_transform in DEADLINE_FEATURES else {}),
