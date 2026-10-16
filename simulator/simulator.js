@@ -1156,6 +1156,8 @@ class VexRobotSimulator {
       case "testDiagonal":this.queueAction({type:"pose",targetX:24,targetY:24,targetTheta:0});break;
       case "testBezier":
         this.queueAction({type:"bezier",points:[[0,0],[0,16],[24,8],[24,24]],startHeading:0,endHeading:90,desc:"Pedro Bezier -> LTV-LQR -> PID"});break;
+      case "testGVT":
+        this.queueAction({type:"gvt",points:[[0,0],[0,16],[24,8],[24,24]],startHeading:0,endHeading:90,desc:"Pedro GVT Vector Field -> LTV-LQR -> PID"});break;
       case "testQuinticSpline":
         this.buildSplineTest();
         break;
@@ -1416,12 +1418,12 @@ class VexRobotSimulator {
     } else if (action.type === "intake") {
       this.intakeVoltage = action.voltage;
     }
-    if(["drive","strafe","diagonal","drivePoint","pose","turn","spline","bezier"].includes(action.type)){
+    if(["drive","strafe","diagonal","drivePoint","pose","turn","spline","bezier","gvt"].includes(action.type)){
       action.startSI=[this.odom.x*INCH_TO_METER,this.odom.y*INCH_TO_METER,this.odom.theta*DEG_TO_RAD];
       action.endSI=[(action.targetX??this.odom.x)*INCH_TO_METER,(action.targetY??this.odom.y)*INCH_TO_METER,
         (action.targetHeading??action.targetTheta??action.endHeading??this.odom.theta)*DEG_TO_RAD];
       action.duration=action.type==="spline"?(this.activeTrajectory.at(-1)?.time??-1):this.productionControl?.duration(action.startSI,action.endSI);
-      if(action.type==="bezier")action.duration=this.productionControl?.bezier(action.points,action.startHeading*DEG_TO_RAD,action.endHeading*DEG_TO_RAD);
+      if(action.type==="bezier"||action.type==="gvt")action.duration=this.productionControl?.bezier(action.points,action.startHeading*DEG_TO_RAD,action.endHeading*DEG_TO_RAD);
       action.settledSeconds=0;
       // Defaults follow the feasible reference; explicit caller deadlines are honored.
       if(action.timeout == null || action.timeout === 0) action.timeout=(action.duration+3)*1000;
@@ -1458,6 +1460,35 @@ class VexRobotSimulator {
       if(time>=action.duration){v=0;w=0;}
       ref=[x,y,Math.PI/2-h,v*Math.cos(h),v*Math.sin(h),-w];
     }else if(action.type==="bezier")ref=this.productionControl.bezierReference(time);
+    else if(action.type==="gvt"){
+      const rx=this.odom.x, ry=this.odom.y, pts=action.points;
+      let bestT=action.lastT||0, bestDist=Infinity;
+      const tMin=Math.max(0, bestT-0.10), tMax=Math.min(1, bestT+0.30);
+      for(let step=0; step<=30; step++){
+        const cT=tMin + (tMax-tMin)*(step/30);
+        const u=1-cT, u2=u*u, u3=u2*u, t2=cT*cT, t3=t2*cT;
+        const px=u3*pts[0][0] + 3*u2*cT*pts[1][0] + 3*u*t2*pts[2][0] + t3*pts[3][0];
+        const py=u3*pts[0][1] + 3*u2*cT*pts[1][1] + 3*u*t2*pts[2][1] + t3*pts[3][1];
+        const d2=(rx-px)*(rx-px) + (ry-py)*(ry-py);
+        if(d2<bestDist){ bestDist=d2; bestT=cT; }
+      }
+      action.lastT=bestT;
+      const t=bestT, u=1-t, u2=u*u, u3=u2*u, t2=t*t, t3=t2*t;
+      const px=u3*pts[0][0] + 3*u2*t*pts[1][0] + 3*u*t2*pts[2][0] + t3*pts[3][0];
+      const py=u3*pts[0][1] + 3*u2*t*pts[1][1] + 3*u*t2*pts[2][1] + t3*pts[3][1];
+      const dx=3*u2*(pts[1][0]-pts[0][0]) + 6*u*t*(pts[2][0]-pts[1][0]) + 3*t2*(pts[3][0]-pts[2][0]);
+      const dy=3*u2*(pts[1][1]-pts[0][1]) + 6*u*t*(pts[2][1]-pts[1][1]) + 3*t2*(pts[3][1]-pts[2][1]);
+      const dMag=Math.hypot(dx,dy)||1e-6, tx=dx/dMag, ty=dy/dMag;
+      const remMeters=(1-t)*(action.duration||5.0)*0.25;
+      const vTarget=(remMeters<=0.015)?0:Math.min(0.45, Math.sqrt(2*0.8*Math.max(0, remMeters)));
+      const vEff=(remMeters>0.02 && vTarget<0.08)?0.08:vTarget;
+      const vx=tx*vEff, vy=ty*vEff;
+      const startH=action.startHeading*DEG_TO_RAD, endH=action.endHeading*DEG_TO_RAD;
+      const targetH=(t>=0.99)?endH:(startH + normalizeAngle(endH-startH)*t);
+      const w_ff=(t>=0.99||remMeters<=0.015)?0:(normalizeAngle(endH-startH)/Math.max(action.duration,1.0))*(vEff/0.45);
+      ref=[px*INCH_TO_METER, py*INCH_TO_METER, targetH, vx, vy, w_ff];
+      if(t>=0.985 && remMeters<=0.02) action.duration=Math.min(action.duration, time);
+    }
     else ref=this.productionControl.reference(action.startSI,action.endSI,time,action.duration);
     const feedback=[this.odom.x*INCH_TO_METER,this.odom.y*INCH_TO_METER,this.odom.theta*DEG_TO_RAD,
       ...this.odomVelocity,...this.wheelOmega.map(w=>w*this.wheelRadiusM)];

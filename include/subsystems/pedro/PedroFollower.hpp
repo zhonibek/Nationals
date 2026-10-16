@@ -74,6 +74,30 @@ public:
                 std::function<void()> brakeFn);
 
     /**
+     * @brief Follow a Bézier curve using the optimal LTV-LQR + PID Cascade.
+     * Combines GVT spatial projection and predictive braking with online DARE Riccati
+     * state-space feedback and 4-wheel PI voltage control.
+     */
+    lemlib::MotionResult followCascade(const BezierCurve& curve,
+                float startHeadingDeg,
+                float endHeadingDeg,
+                int timeoutMs,
+                pros::MotorGroup& leftMotors,
+                pros::MotorGroup& rightMotors,
+                double wheelDiameterMeters,
+                double externalGearRatio);
+
+    /**
+     * @brief Follow a complete PedroPath using the optimal LTV-LQR + PID Cascade.
+     */
+    lemlib::MotionResult followCascade(const PedroPath& path,
+                int timeoutMs,
+                pros::MotorGroup& leftMotors,
+                pros::MotorGroup& rightMotors,
+                double wheelDiameterMeters,
+                double externalGearRatio);
+
+    /**
      * @brief Cancel active motion
      */
     void cancel() { cancelled = true; }

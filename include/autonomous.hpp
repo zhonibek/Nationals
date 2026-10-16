@@ -18,3 +18,8 @@ lemlib::MotionResult autoSpline(float x,float y,float heading);
 lemlib::MotionResult autoSpline(lemlib::Pose start,lemlib::Pose end,double maxVel=.45,double maxAccel=.8,double maxJerk=3.5);
 lemlib::MotionResult autoPath(const std::vector<lemlib::Pose>& waypoints,double maxVel=.45,double maxAccel=.8);
 lemlib::MotionResult splineCurve(float forward,float right,float heading,double maxVel=.45,double maxAccel=.8);
+
+// GVT + LTV-LQR + PID Cascade functions
+namespace pedro { class BezierCurve; class PedroPath; }
+lemlib::MotionResult autoGVTBezier(const pedro::BezierCurve& curve, float startHeadingDeg, float endHeadingDeg, int timeout=0, float maxSpeed=127);
+lemlib::MotionResult autoGVTPath(const pedro::PedroPath& path, int timeout=0, float maxSpeed=127);

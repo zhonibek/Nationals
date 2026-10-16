@@ -1,4 +1,6 @@
 #include "subsystems/pedro/PedroFollower.hpp"
+#include "subsystems/control/HolonomicMotion.hpp"
+#include "subsystems/control/GVTReference.hpp"
 #include "pros/rtos.hpp"
 #include <iostream>
 #include <cmath>
@@ -182,6 +184,37 @@ lemlib::MotionResult PedroFollower::follow(const PedroPath& path,
 
     // Motion complete: apply brakes
     return cancelled ? lemlib::MotionResult::Cancelled : lemlib::MotionResult::TimedOut;
+}
+
+lemlib::MotionResult PedroFollower::followCascade(const BezierCurve& curve,
+                           float startHeadingDeg,
+                           float endHeadingDeg,
+                           int timeoutMs,
+                           pros::MotorGroup& leftMotors,
+                           pros::MotorGroup& rightMotors,
+                           double wheelDiameterMeters,
+                           double externalGearRatio) {
+    PedroPath path(curve, HeadingMode::LINEAR);
+    path.setLinearHeading(startHeadingDeg, endHeadingDeg);
+    return followCascade(path, timeoutMs, leftMotors, rightMotors, wheelDiameterMeters, externalGearRatio);
+}
+
+lemlib::MotionResult PedroFollower::followCascade(const PedroPath& path,
+                           int timeoutMs,
+                           pros::MotorGroup& leftMotors,
+                           pros::MotorGroup& rightMotors,
+                           double wheelDiameterMeters,
+                           double externalGearRatio) {
+    if (running.exchange(true)) return lemlib::MotionResult::Busy;
+    struct Finish { std::atomic<bool>& running; ~Finish(){ running = false; } } finish{running};
+    cancelled = false;
+    const auto cfg = getConfig();
+    double maxSpeedMps = cfg.maxVel * (0.45 / 95.0);
+    nationals::GVTReference gvt(path, maxSpeedMps, 0.80);
+    double timeoutSec = (timeoutMs > 0) ? (timeoutMs * 0.001) : (gvt.estimatedDuration + 3.0);
+    return nationals::followGVT(leftMotors, rightMotors, wheelDiameterMeters, externalGearRatio,
+                                nationals::configuredCascade(), gvt, timeoutSec,
+                                [&] { return cancelled.load(); });
 }
 
 } // namespace pedro

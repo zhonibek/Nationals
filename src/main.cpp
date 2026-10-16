@@ -6,6 +6,7 @@
 #include "subsystems/MotorMonitor.hpp"
 #include "subsystems/control/HolonomicMotion.hpp"
 #include "subsystems/control/BezierReference.hpp"
+#include "subsystems/control/GVTReference.hpp"
 #include "subsystems/trajectory/QuinticSpline.hpp"
 #include "subsystems/ltv/ltv.hpp"
 #include "robot_config.hpp"
@@ -43,7 +44,7 @@ lemlib::LTVPathFollower ltvFollower(chassis,leftMotors,rightMotors,velocityConfi
 std::atomic<int> requestedTest{0};
 std::atomic<bool> diagnosticBusy{false}, abortDiagnostic{false};
 std::atomic<int> selectedRoutine{0};
-const char* routineNames[]={"Cascade demo","Holonomic skills","Pedro Bezier"};
+const char* routineNames[]={"Cascade demo","Holonomic skills","Pedro GVT Cascade"};
 
 void stopEverything() {
     abortDiagnostic=true;
@@ -116,6 +117,21 @@ lemlib::MotionResult splineCurve(float forward,float right,float heading,double 
     const auto p=chassis.getPose();const double h=p.theta*nationals::pi/180;
     return autoSpline(p,{float(p.x+right*std::cos(h)+forward*std::sin(h)),float(p.y-right*std::sin(h)+forward*std::cos(h)),heading},maxVel,maxAccel);
 }
+lemlib::MotionResult autoGVTBezier(const pedro::BezierCurve& curve, float startHeadingDeg, float endHeadingDeg, int timeout, float maxSpeed) {
+    if (abortDiagnostic) return lemlib::MotionResult::Cancelled;
+    double maxSpeedMps = 0.45 * (maxSpeed / 127.0);
+    return nationals::followGVT(leftMotors, rightMotors, wheelDiameterIn * 0.0254,
+        externalGearRatio, nationals::configuredCascade(), curve, startHeadingDeg, endHeadingDeg,
+        maxSpeedMps, 0.80, timeout ? timeout * 0.001 : 0.0, [] { return abortDiagnostic.load(); });
+}
+lemlib::MotionResult autoGVTPath(const pedro::PedroPath& path, int timeout, float maxSpeed) {
+    if (abortDiagnostic) return lemlib::MotionResult::Cancelled;
+    double maxSpeedMps = 0.45 * (maxSpeed / 127.0);
+    nationals::GVTReference gvt(path, maxSpeedMps, 0.80);
+    double timeoutSec = timeout ? timeout * 0.001 : gvt.estimatedDuration + 3.0;
+    return nationals::followGVT(leftMotors, rightMotors, wheelDiameterIn * 0.0254,
+        externalGearRatio, nationals::configuredCascade(), gvt, timeoutSec, [] { return abortDiagnostic.load(); });
+}
 void runDiagnostic(int test) {
     if(abortDiagnostic) return;
     chassis.setPose(0,0,0);
@@ -134,10 +150,7 @@ void runDiagnostic(int test) {
     else if(test==4 || test==6) result=strafeTo(24,test==6?24:0,0);
     else if(test==7) {
         pedro::BezierCurve curve({0,0},{0,16},{24,8},{24,24});
-        nationals::BezierReference path(curve,0,nationals::pi/2);
-        result=nationals::followReference(leftMotors,rightMotors,wheelDiameterIn*0.0254,
-            externalGearRatio,nationals::configuredCascade(),path.seconds,path.seconds+3,
-            [&](double t){return path.at(t);},[]{return abortDiagnostic.load();});
+        result=autoGVTBezier(curve,0,90);
     }
     controller.print(0,0,"Test %d result %d  ",test,static_cast<int>(result));
 }
