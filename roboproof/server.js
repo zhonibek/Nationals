@@ -12,14 +12,15 @@ const {readiness: perceptionReadiness} = require('./perception');
 const {readiness: motionReadiness} = require('./motion-readiness');
 const {createMotionStore} = require('./motion-store');
 const MotionLearner = require('./motion-learner');
-const {readIndependentEvaluation} = require('./independent-learning');
+const {readIndependentEvaluation, currentImprovementVerified} = require('./independent-learning');
 const {createRegistry} = require('./agent-skills');
 const {motionEvidence} = require('./skill-evidence');
 const {chatReply, validateConversation} = require('./nemotron-chat');
 const Tactics = require('./tactics');
+const {readResults: readCosmosResults} = require('./cosmos-results');
 
 function createServer({reportPath = path.join(__dirname, 'runs/latest/report.json'), timeout = 120000,
-  nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, agentTimeout = 300000} = {}) {
+  nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, cosmosDirectory, agentTimeout = 300000} = {}) {
   let report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : null;
   let activeWorker = null;
   let activeAgent = null;
@@ -28,7 +29,8 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
   const motionStore = createMotionStore(motionDirectory);
   const skills = createRegistry();
   const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/learning-summary.js', ['learning-summary.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
-  const simulatorFiles = new Set(['index.html', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'motion-replay.js',
+  assets.set('/cosmos.js', ['cosmos.js', 'text/javascript']);
+  const simulatorFiles = new Set(['index.html', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'motion-replay.js',
     'control-runtime.js', 'control.wasm', 'robot-config.js', 'override.js', 'override-view.js', 'override-ui.js', 'override-geometry.js',
     'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'cad-runtime.js', 'tactics-snapshot.js', 'tactics-ui.js', 'models/robot.stl', 'models/robot.preview.glb', 'models/robot.preview.json']);
   function launchWorker(filename, workerData, response) {
@@ -65,13 +67,13 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
     const pathname = request.url.split('?')[0];
     if (request.method === 'GET' && pathname === '/api/report') { reply(report ? 200 : 404, report || {error: 'No report yet; run scenarios or load report.json'}); return; }
     if (request.method === 'GET' && pathname === '/api/perception/status') { reply(200, perceptionReadiness()); return; }
+    if (request.method === 'GET' && pathname === '/api/cosmos/results') { reply(200, readCosmosResults(cosmosDirectory)); return; }
     if (request.method === 'GET' && pathname === '/api/motion/status') { reply(200, motionReadiness()); return; }
     if (request.method === 'GET' && pathname === '/api/motion/learning') {
       const status = MotionLearner.status(learningDirectory);
       const independentResearch = readIndependentEvaluation(status, learningDirectory);
       reply(200, {...status, independentResearch,
-        learnedImprovementVerified: status.learnedImprovementVerified === true &&
-          !(independentResearch.available && !independentResearch.gateReportedPassed)});
+        learnedImprovementVerified: currentImprovementVerified(status, independentResearch)});
       return;
     }
     if (request.method === 'GET' && ['/api/motion/latest', '/api/motion/session'].includes(pathname)) {
@@ -140,7 +142,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) throw Error('Unsupported motion request fields');
         let workerData = {operation, learningDirectory};
         if (operation === 'run') {
-          if (!['scripted', 'policy-fixture', 'random-fixture', 'learned-experiment'].includes(body.mode) ||
+          if (!['scripted', 'gvf', 'policy-fixture', 'random-fixture', 'learned-experiment'].includes(body.mode) ||
             !Number.isInteger(body.seed) || body.seed < 0 || body.seed > 0xffffffff) throw Error('Supported fixture mode and uint32 seed required');
           workerData = {...workerData, mode: body.mode, seed: body.seed, task: normalizeTask(body.task), configuration: body.configuration ?? {}};
         } else if (operation === 'replay') workerData.report = motionStore.read(body.id).report;

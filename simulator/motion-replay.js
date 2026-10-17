@@ -22,6 +22,10 @@
         !Array.isArray(report.actions) || report.actions.length > 6001 ||
         !Array.isArray(report.transitions) || report.transitions.length !== report.ticks || !report.options?.recordTransitions ||
         !report.identity?.canonicalSimulator) throw Error('A current canonical report with complete transitions is required');
+      const options = Motion.normalizeEpisodeOptions(report.options);
+      const residual = options.controlMode === 'gvf-residual';
+      if (report.policyContractVersion !== (residual ? 2 : 1) ||
+        (residual ? report.policyContractName !== 'gvf-residual' : Object.hasOwn(report, 'policyContractName'))) throw Error('Unsupported replay policy contract');
       let previous = -1;
       for (const entry of report.actions) {
         if (!Number.isInteger(entry.tick) || entry.tick < previous || entry.tick < 0 || entry.tick >= report.ticks) throw Error('Invalid replay action tick');
@@ -86,7 +90,7 @@
       const response = await fetch(`/api/motion/session?id=${encodeURIComponent(id)}`, {cache: 'no-store'});
       if (!response.ok) throw Error('Saved motion evidence is unavailable');
       const record = await response.json();
-      const sources = ['engine.js', 'motion.js', 'policy.js', 'control-runtime.js', 'robot-config.js',
+      const sources = ['engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'control-runtime.js', 'robot-config.js',
         'override.js', 'override-geometry.js', 'override-dynamics.js', 'override-autonomy.js'];
       async function digest(bytes) {
         return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)))

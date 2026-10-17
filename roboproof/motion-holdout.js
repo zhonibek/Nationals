@@ -7,13 +7,14 @@ const {createHash, randomUUID} = require('node:crypto');
 const LOCAL_FILESYSTEM_AUDIT_SCOPE = 'Local filesystem audit guards only, not tamper-proof secrecy. Stored cases are plaintext. Freshness/training exclusion and evaluation are caller responsibilities. The identity reader must return current source hashes and runtime identity on every call. Evaluate returned candidate JSON snapshots, not reloaded mutable files. Consumption burns the holdout before return, even if evaluation fails. Exclusive publication requires local filesystem hard-link support.';
 const AUDIT_LIMITS = Object.freeze({jsonBytes: 4 * 1024 * 1024, identityBytes: 64 * 1024,
   cases: 4096, candidates: 32, depth: 32, nodes: 100000});
+const CANDIDATE_JSON_BYTES = 24 * 1024 * 1024;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const validHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const plainObject = value => value !== null && typeof value === 'object' &&
   [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const validLabel = value => typeof value === 'string' && value.trim().length > 0 && Buffer.byteLength(value) <= 256;
 
-function boundedAuditJson(value, maximumBytes = AUDIT_LIMITS.jsonBytes) {
+function boundedAuditJson(value, maximumBytes = AUDIT_LIMITS.jsonBytes, maximumNodes = AUDIT_LIMITS.nodes) {
   const chunks = [], ancestors = new Set();
   let bytes = 0, nodes = 0;
   function append(chunk) {
@@ -22,7 +23,7 @@ function boundedAuditJson(value, maximumBytes = AUDIT_LIMITS.jsonBytes) {
     chunks.push(chunk);
   }
   function visit(entry, depth) {
-    if (++nodes > AUDIT_LIMITS.nodes || depth > AUDIT_LIMITS.depth) throw Error('Audit JSON exceeds structural limit');
+    if (++nodes > maximumNodes || depth > AUDIT_LIMITS.depth) throw Error('Audit JSON exceeds structural limit');
     if (entry === null || typeof entry === 'boolean') return append(JSON.stringify(entry));
     if (typeof entry === 'string') {
       if (entry.length > maximumBytes) throw Error('Audit JSON exceeds byte limit');
@@ -59,12 +60,12 @@ function boundedAuditJsonSha256(value) {
   return digest(boundedAuditJson(value));
 }
 
-function readBoundedJson(filename) {
+function readBoundedJson(filename, candidate = false) {
   if (!fs.lstatSync(filename).isFile()) throw Error('Audit evidence must be a regular file, not a symlink');
   const descriptor = fs.openSync(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
   try {
     const before = fs.fstatSync(descriptor);
-    if (!before.isFile() || before.size > AUDIT_LIMITS.jsonBytes) throw Error('Audit JSON file exceeds byte limit');
+    if (!before.isFile() || before.size > (candidate ? CANDIDATE_JSON_BYTES : AUDIT_LIMITS.jsonBytes)) throw Error('Audit JSON file exceeds byte limit');
     const buffer = Buffer.alloc(before.size + 1);
     let count = 0, read = 0;
     do {
@@ -75,8 +76,24 @@ function readBoundedJson(filename) {
     if (count !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs) throw Error('Audit evidence changed while reading');
     const bytes = buffer.subarray(0, count), text = bytes.toString('utf8');
     if (!Buffer.from(text, 'utf8').equals(bytes)) throw Error('Audit JSON must be UTF-8');
-    const value = JSON.parse(text);
-    const canonical = boundedAuditJson(value);
+    let value;
+    try { value = JSON.parse(text); }
+    catch (error) {
+      if (before.size > AUDIT_LIMITS.jsonBytes) throw Error('Audit JSON file exceeds byte limit');
+      throw error;
+    }
+    let maximumBytes = AUDIT_LIMITS.jsonBytes, maximumNodes = AUDIT_LIMITS.nodes;
+    const motionCandidate = candidate && plainObject(value) && value.schemaVersion === 1 &&
+      ['ppo-beta-reference-v1', 'td3-beta-mean-reference-v1'].includes(value.algorithm);
+    if (before.size > AUDIT_LIMITS.jsonBytes && !motionCandidate) throw Error('Audit JSON file exceeds byte limit');
+    if (motionCandidate) {
+      const validated = require('./motion-learner').policyFromSnapshot(value, digest(bytes)).data;
+      maximumBytes = (validated.hiddenLayers === 10 ? 24 : 8) * 1024 * 1024;
+      if (before.size > maximumBytes) throw Error('Audit JSON file exceeds byte limit');
+      maximumNodes += validated.layers.reduce((count, layer) => count + layer.bias.length +
+        layer.weight.length + layer.weight.reduce((entries, row) => entries + row.length, 0), 0);
+    }
+    const canonical = boundedAuditJson(value, maximumBytes, maximumNodes);
     return {value, bytes, sha256: digest(bytes), canonical};
   } finally {
     fs.closeSync(descriptor);
@@ -165,7 +182,7 @@ function createLocalFilesystemHoldoutAudit(directory, {readCurrentSourceRuntimeI
       const pathKey = process.platform === 'win32' ? filename.toLowerCase() : filename;
       if (!plainObject(candidate) || !validLabel(candidate.id) || ids.has(candidate.id) || !path.isAbsolute(filename) ||
           Buffer.byteLength(filename) > 4096 || paths.has(pathKey) || !validHash(candidate.sha256) ||
-          !Number.isSafeInteger(candidate.sizeBytes) || candidate.sizeBytes < 1 || candidate.sizeBytes > AUDIT_LIMITS.jsonBytes) throw Error('Invalid frozen candidate identity');
+          !Number.isSafeInteger(candidate.sizeBytes) || candidate.sizeBytes < 1 || candidate.sizeBytes > CANDIDATE_JSON_BYTES) throw Error('Invalid frozen candidate identity');
       ids.add(candidate.id);
       paths.add(pathKey);
     }
@@ -198,7 +215,7 @@ function createLocalFilesystemHoldoutAudit(directory, {readCurrentSourceRuntimeI
       const candidates = candidateFiles.map(candidate => {
         if (!plainObject(candidate) || !validLabel(candidate.id) || typeof candidate.path !== 'string' ||
             !path.isAbsolute(candidate.path) || Buffer.byteLength(candidate.path) > 4096) throw Error('Candidate ID and absolute JSON file path required');
-        const filename = path.resolve(candidate.path), artifact = readBoundedJson(filename);
+        const filename = path.resolve(candidate.path), artifact = readBoundedJson(filename, true);
         return {id: candidate.id, path: filename, sha256: artifact.sha256, sizeBytes: artifact.bytes.length};
       });
       if (new Set(candidates.map(candidate => candidate.id)).size !== candidates.length ||
@@ -214,7 +231,7 @@ function createLocalFilesystemHoldoutAudit(directory, {readCurrentSourceRuntimeI
       if (!exists(filenames.candidates)) throw Error('Candidate files must be frozen before holdout reveal');
       const commitment = readCommitment(), freeze = readCandidateFreeze(commitment);
       const candidates = freeze.value.candidates.map(candidate => {
-        const artifact = readBoundedJson(candidate.path);
+        const artifact = readBoundedJson(candidate.path, true);
         if (artifact.sha256 !== candidate.sha256 || artifact.bytes.length !== candidate.sizeBytes) throw Error('Frozen candidate hash mismatch');
         return {...candidate, json: artifact.value};
       });

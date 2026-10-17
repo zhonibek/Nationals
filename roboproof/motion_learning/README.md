@@ -2,22 +2,41 @@
 
 This is a real, bounded CPU reinforcement learner inside Nationals-work3, not another physics model. Python's PyTorch actor-critic consumes the existing 34-value sensor/reference observation; optional deadline context also uses public planner metadata at reset. It sends four bounded reference actions through `MotionEnvironment` to the original Simulator and source-checked iraLIB C++ controller. The JavaScript plant/controller runs at 100 Hz; decisions normally run at 20 Hz. The separate historical failure predictor is not used.
 
-## Run explicitly
+## Server-only execution
 
-From the repository root, reuse the existing pinned `torch==2.8.0` CPU environment:
+All training, fine-tuning, imitation learning, teacher-data collection and mass simulation/regression campaigns now run only on explicitly approved remote servers or private cloud notebooks. The laptop is for editing, the dashboard and lightweight focused checks, never a training fallback. Historical local runs below remain historical evidence, not instructions to repeat them locally. See the repository [execution policy](../../AGENTS.md).
 
-```powershell
+Before running anything, verify the actual remote allocation, approved price/quota, source-checked original Simulator/iraLIB and pinned runtime. A saved notebook output or selected GPU label is insufficient. The current Lightning CPU study uses remote CPU computation; it is not GPU training. Nemotron has a separate verified-T4-only policy. Do not purchase compute, change auto-top-up or bypass account restrictions.
+
+On the approved remote host, from the repository root and inside its pinned `torch==2.8.0` CPU environment, an explicit bounded PPO pipeline check is:
+
+```bash
 node roboproof/cli.js motion-check
-& 'roboproof/gpu/.venv/Scripts/python.exe' -m roboproof.motion_learning.train --seed 42 --seed-count 3 --updates 8 --max-steps 4096 --max-seconds 180
+python -m roboproof.motion_learning.train --seed 42 --seed-count 3 --updates 8 --max-steps 4096 --max-seconds 180
 node roboproof/cli.js motion-compare-learned
-node roboproof/server.js 8766
 ```
+
+This is a smoke example, not the independent qualification campaign. Use a newly owned run directory, retain every result/failure and inspect an existing process before any resume or retry. Source/runtime/configuration-bound checkpoints must not be silently moved between runtimes or overwritten. Independent studies additionally freeze their protocol, all training seeds, source/data bindings and complete comparison suites before the relevant fits and one-shot final evaluation.
+
+The dashboard can run locally with `node roboproof/server.js 8766`; it reads saved artifacts and does not start training. Import only the approved run/evaluation artifacts while preserving their paths and hashes; never copy cloud credentials or model tokens into Git or dashboard results.
+
+Trained actor weights are run artifacts, not source code. They are intentionally absent from GitHub; use the exact-source experimental inference procedure in [GVF actor deployment](../../docs/GVF_MODEL_DEPLOYMENT.md). The current dashboard does not import or automatically activate a saved GVF actor.
 
 Open the existing dashboard's **Motion lab**, click **Refresh training history**, then inspect the controller/untrained/learned comparison. Select **Learned PPO · explicit experiment** to run a new task and open its recorded actions in the original 2D/3D Simulator. The default is still controller-only. A successful individual experiment does not certify learned improvement.
 
 When a consumed independent final is linked by `independent-final.json` inside the run directory, the same refresh displays its checkpoint-bound counts and regressions. The reader verifies result/audit hashes, all case identities, aggregates and strict acceptance calculations. Changed source/runtime is labeled historical. This is read-only local audit evidence, not external custody, and cannot enable policy promotion; missing or inconsistent evidence fails closed. To transfer this view, copy both the learning run and its referenced consumed `roboproof/runs/motion/holdout/<UUID>/` directory without modifying files. The old `motion-compare-learned` command uses the already-inspected historical v2 corpus, not a new independent final.
 
-Latest completed independent experiment: 58,856 policy steps across seeds 201/202/203, followed by 128 fresh committed reach worlds. Controller success was 87/128; learned success was 75/83/81 with 12/5/8 controller-success regressions. All strict gates failed despite effort-proxy reductions. Training and implementation tests are real, but no accepted movement-improvement or AMD result is claimed. Exact identities and additional negative development ablations are retained in [progress](../../docs/progress.md).
+An earlier independent PPO experiment collected 58,856 policy steps across seeds 201/202/203, followed by 128 fresh committed reach worlds. Controller success was 87/128; learned success was 75/83/81 with 12/5/8 controller-success regressions. All strict gates failed despite effort-proxy reductions. The subsequent robust-stop TD3 study passed both full development suites for every fresh29001/29002/29003 seed, but its new untouched128 final reached65/66/71 successes against controller69 and initial61, with4/5/2 controller-success regressions. It also fails qualification: no favorable seed is selected or policy promoted. Training and implementation tests are real, but no accepted movement-improvement or AMD result is claimed. Exact identities and additional negative development ablations are retained in [progress](../../docs/progress.md).
+
+## Optional future architecture
+
+Two hidden layers remain the default and baseline. Both original PPO and TD3 training entry points accept `--network-depth 10` for a separately initialized future experiment; supported widths remain32/64/128/256 via `--network-width`. Ten means ten hidden Tanh layers plus the existing eight-output Beta head, not ten total layers or a change to Nemotron/Cosmos. Actor inputs remain the public34-value observation and the selected existing history transform; outputs still become the same four bounded reference actions through original Simulator/iraLIB. Nothing enables the deeper model on dashboard load or changes controller-only default execution.
+
+For the existing145-input/256-wide configuration, two hidden layers contain105,224 actor parameters; ten contain631,560. The largest supported565-input/256-wide ten-layer actor has739,080 parameters. Deeper architecture is prepared, not demonstrated to improve movement, and the old trained weights are never padded, overwritten or silently converted. Use a fresh run directory and a new predeclared experiment before future training.
+
+Two-layer exports retain their previous shape, initialization/RNG and8MiB actor limit. Only validated ten-layer actor files get24MiB; ordinary JSON and checkpoint metadata retain4MiB. Checkpoint tensor limits account analytically for every supported layer and optimizer state. Resume rejects a different depth or source/runtime. Historical evidence remains bound to its archived source; new compatibility tests do not turn a failed final into a pass.
+
+A bounded CPU readiness check has verified original Simulator/iraLIB execution and exact full4 versus prefix3/resume4 for the ten-layer/256-wide option, including all checkpoint state and actor bytes. This is only730 measured queries, not a full training campaign or movement-improvement evaluation. The separate remote GVF-TD3 trainer exposes the same bounded architecture choices as `--network-width` and `--hidden-layers`; its defaults remain64×2, while a fresh256×10 run is an architecture ablation only and cannot use the existing64×2 qualification gate. No existing trained model is converted or promoted.
 
 The default budget is three independent seeds, at most eight updates and 4,096 policy steps per seed, with a shared 180-second collection deadline. Environment access has its own timeout; one already-started bounded PPO update/checkpoint/teardown may finish after the collection deadline. There is one bridge worker and one CPU training thread. No cloud call, firmware command, AMD provisioning or model download occurs. The browser never launches a Python process, installs dependencies, or starts training on load. A CLI run is explicit and bounded; refreshing reads disk only.
 
@@ -110,6 +129,24 @@ The paired study completed and exactly reproduced the V4 actor. Both reached 28/
 Fresh V5 replication then passed every seed on both suites: all reached 28/32 and 43/64 without success/contact regressions. Effort reductions were 11.4994%/11.5101%/7.6357% on original 32 and 7.5917%/8.0370%/7.4647% on mixed 64. All three fixed-update candidates were reserved for a new exposure-bound 128-case final with the original family mix and strict gates. Development replication is not an independent final pass; its one-shot result remains separate evidence.
 
 The V5 final subsequently reached controller 69/128, neutral 70/128, untrained 57/128 and learned 67/68/67, with 3/2/2 success regressions. Effort reductions 7.0243%/5.8570%/5.9419% all qualify, but every success/regression gate fails. All results remain retained and the corpus is consumed. Aggregate endpoint categories include position, heading and speed across field/full tasks at both deadlines; coverage alone has not solved reliability.
+
+### Reusable measured expert experience
+
+`python -m roboproof.motion_learning.expert_data --worlds-file <declared-worlds.json> --directory <new-private-directory>` records full public-input/applied-action trajectories from the existing measured teacher in original Simulator/iraLIB. It does not fit a model, change the controller or qualify learned movement. Declare every training world before capture; historical fixture/consumed-final worlds are rejected. The default shared encoder is the original145-input `deadline-context-v1`, with unchanged four reference actions and robust-stop fine teacher selection.
+
+Every world remains represented, including unavailable/contacting teachers, all attempted teacher measurements, failed-query cost and discarded interruptions. Only actually completed selected successes with exactly zero contact supply learning labels. Contacting selected trajectories remain separately saved, not silently used as successful labels. Records, original worlds, source/runtime/engine identities and actual query totals are hash-checked; the complete corpus is preflighted before yielding any training row. Files are bounded4MiB and streamed by world rather than assembling an unbounded tensor archive. This is a local integrity audit, not tamper-proof external custody.
+
+`--worlds-per-call 1` can stop at a clean world boundary; `--resume` requires the exact original source/runtime/world/budget declaration. All elapsed collection time and query cost carry forward. Normal partial teacher collection admits no rows and retains its cost. A lost response or hard interruption leaves an explicit pending/unknown-cost state that cannot silently resume. Neither larger data nor these continuation tests prove generalization; independent complete movement gates remain mandatory before any policy/tactic promotion.
+
+### Explicit training-data runtime transfer
+
+The default corpus reader remains exact-source/runtime-bound. To prepare immutable measured data for another Torch build, first use the original producing runtime to run `python -m roboproof.motion_learning.corpus_portability --directory <original-corpus> --attestation-file <new-receipt.json>`. This performs the unchanged strict admission and records the producing runtime, source/consumer module hashes, original engine identity, complete corpus definition and all rows/weights/anchors/worlds digest. It does not rewrite producer metadata, fit a model or convert a checkpoint.
+
+Pin the actual receipt-file SHA in a separate consumer experiment declaration. The consumer may then explicitly call `load_transfer(directory, attestation_file, expected_attestation_sha256)` from `roboproof.motion_learning.corpus_portability`. It preflights every original record and source, reconciles actual counts/query costs, verifies the full admitted content and original engine, and records the distinct consumer runtime. Local receipts are writable audit evidence, not signed external custody. Strict default admission is unchanged; a different-runtime checkpoint or automatic data migration is not enabled by this API. GPU execution, exact within-runtime continuation and independent movement qualification require their own actual evidence.
+
+For a different host, transfer-v2 additionally requires an explicit previously observed Node/V8/platform/architecture declaration: pass `--consumer-engine-runtime-file <runtime.json>` during original-runtime admission, or `consumer_engine_runtime=<exact-runtime-dict>` to `admit_transfer`. Without it, the complete original engine identity must still match. With it, only those declared host fields may differ; every simulator source, controller-WASM digest and all other engine fields remain exact. Both actual runtime identities are retained. Importing fixed recorded rows across hosts does not prove numerical simulator parity or admit a different-runtime checkpoint, and later native training/evaluation must bind its own actual host.
+
+TD3 explicitly accepts `--expert-dataset <original-corpus> --expert-dataset-attestation <receipt.json> --expert-dataset-attestation-sha256 <exact-sha256>`. Both receipt arguments and the actual original dataset are required together. It validates all data before device setup/publication and revalidates the active native engine before creating the actor. Complete actual transfer provenance enters configuration/checkpoints, and the optional consumer module enters training source identity. Native rollout/exposure/query accounting and full-corpus sampling remain unchanged. Omission still takes the original strict reader and adds no transfer configuration fields. Resume requires the same receipt digest, data, consumer sources, actual engine/Torch/device and full configuration; this is not permission to resume or convert an older/different-runtime checkpoint. Existing offline-imitation GPU evidence alone does not prove native TD3 GPU continuation or improved movement.
 
 ### Optional periodic measured retention
 
@@ -245,6 +282,12 @@ After inspecting this frozen benchmark, never tune against its individual cases 
 
 [TD3 experiment contract](TD3.md) describes a separately labeled deterministic Beta-mean actor/twin-Q learner through the same original Simulator/iraLIB interface. It preserves the sensor/reference/action boundaries and every independent-improvement gate; learned Q functions estimate return, never simulate physics. Replay/targets/optimizers/RNG/accounting are source-bound and resumable. PPO remains the default, and no policy is accepted merely because this alternate algorithm trains or its unit tests pass.
 
+### Experimental measured return differences
+
+`return_pairs.MeasuredReturnPairs` is a pure, currently unconnected critic-loss helper for explicitly measured same-state baseline/alternative actions and original-engine complete tail-return differences. It accepts only the existing145 public input features and bounded single-head actions, retains absolute source row weights, and uniformly samples at most32 rows for both critics' return-difference MSE. It does not collect data, certify its provenance, update an actor, change inference or automatically enter TD3. A caller must separately admit immutable source data and freeze its independent feedback-validation split; a local file is not signed external measurement custody.
+
+The first source-bound probe uses separate32-world training and32-world feedback-validation cohorts, not the earlier32-world critic diagnostic. All1,152 actual rollouts and128,709 native queries are retained; zero new native queries occur during the fixed critic fit. The paired+TD candidate does not pass its predeclared feedback gate against both the original and TD-only critics, despite exact full/prefix/resume state. It is not enabled in the native trainer or any policy. Better component loss, one critic or one action head cannot replace every independent movement-success/contact/efficiency gate and a newly untouched final.
+
 ## Tests
 
 ```powershell
@@ -254,3 +297,19 @@ node --test tests/motion-learner.test.js tests/motion-policy.test.js tests/motio
 ```
 
 Tests exercise actual simulator gradients, byte-identical interrupted/resumed exported policies, Python/JavaScript deterministic action parity, terminal/truncation handling, budget exhaustion, source mismatch, malformed artifacts, replay, provenance and loopback API protection.
+# Separate GVF neural preparation
+
+The optional `gvf_contract.py`, `gvf_model.py` and `gvf_td3.py` define a distinct
+three-action tanh actor/twin-critic interface and remote-only gradient core.
+They do not convert the existing four-action
+PPO/TD3 checkpoints or teacher corpus. Model definitions and synthetic JavaScript
+checks are not a trained or qualified GVF policy. Actual PyTorch/parity/gradient
+checks must run only on an explicitly approved free remote host; the local tests
+skip those checks before importing Torch. See `docs/GVF_RESIDUAL_CONTRACT.md` and
+the guarded `tools/verify-gvf-learning.py`. Existing controllers/defaults and all
+independent movement gates remain unchanged.
+
+There is no new GVF collection/full-fit CLI or remotely verified trained actor.
+The gradient core checkpoint alone does not preserve native environment/replay,
+all RNG sources or complete source/exposure custody. Its remote-only tests are
+not movement qualification. Preserve and verify those dependencies before fits.

@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {createHash, randomUUID} = require('node:crypto');
 const {createLocalFilesystemHoldoutAudit} = require('../roboproof/motion-holdout');
-const {readIndependentEvaluation} = require('../roboproof/independent-learning');
+const {readIndependentEvaluation, currentImprovementVerified} = require('../roboproof/independent-learning');
 const {aggregate, suite} = require('../roboproof/motion-evaluation');
 const Learner = require('../roboproof/motion-learner');
 const {assertFreshCases} = require('../roboproof/motion-exposures');
@@ -88,6 +88,23 @@ test('a reported positive research gate never grants policy promotion', context 
   const saved = fixture(context, true);
   assert.equal(saved.read().gateReportedPassed, true);
   assert.equal(saved.read().policyPromotionAllowed, false);
+});
+
+test('current verification requires positive bound evidence and matching source/runtime', context => {
+  const saved = fixture(context, true);
+  const status = {...saved.status, learnedImprovementVerified: true};
+  const research = saved.read();
+  assert.equal(currentImprovementVerified(status, research), true);
+  for (const changed of [undefined, {...research, available: false}, {...research, sourceRuntimeMatches: false},
+    {...research, gateReportedPassed: false}, {...research, sourceRuntimeMatches: undefined}]) {
+    assert.equal(currentImprovementVerified(status, changed), false);
+  }
+  assert.equal(currentImprovementVerified({...status, learnedImprovementVerified: false}, research), false);
+  saved.options.readCurrentIdentity = () => ({...saved.status.identity, runtime: {node: 'changed'}});
+  const historical = saved.read();
+  assert.equal(historical.available, true);
+  assert.equal(historical.gateReportedPassed, true);
+  assert.equal(currentImprovementVerified(status, historical), false);
 });
 
 test('new final evidence verifies the bound exclusion snapshot and fails closed when it changes', context => {

@@ -115,8 +115,8 @@ class Cascade {
 public:
     Config config;WheelVelocity wheels;
     void reset(){gainValid=false;wheels.reset();}
-    Output update(const Reference& r,const Feedback& fb,double dt){
-        if(!fb.valid||!validPose(fb.pose)||!validPose(r.pose)||!isfinite(dt)||dt<=0||dt>0.1||!validConfig(config)){reset();return {};}
+    Output update(const Reference& r,const Feedback& fb,double dt,double maxAngularSpeed=INFINITY){
+        if(!fb.valid||!validPose(fb.pose)||!validPose(r.pose)||!isfinite(dt)||dt<=0||dt>0.1||!validConfig(config)||isnan(maxAngularSpeed)||maxAngularSpeed<=0){reset();return {};}
         const double signals[]={r.vx,r.vy,r.w,fb.vx,fb.vy,fb.w};for(double v:signals)if(!isfinite(v)){reset();return {};}
         double error[3]={r.pose.x-fb.pose.x,r.pose.y-fb.pose.y,wrap(r.pose.h-fb.pose.h)};
         double s=0,f=0,w=r.w;
@@ -125,7 +125,7 @@ public:
         double u[3]={};for(int i=0;i<3;++i)for(int j=0;j<3;++j)u[i]+=gain.a[i][j]*error[j];
         s=r.vx*cos(r.pose.h)-r.vy*sin(r.pose.h)+u[0];
         f=r.vx*sin(r.pose.h)+r.vy*cos(r.pose.h)+u[1];w+=u[2];
-        return wheels.update(s,f,w,fb,dt,config);
+        return wheels.update(s,f,limit(w,-maxAngularSpeed,maxAngularSpeed),fb,dt,config);
     }
 };
 // Smooth holonomic point/heading reference: heading is independent of translation.

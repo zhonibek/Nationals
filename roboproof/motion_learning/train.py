@@ -11,7 +11,8 @@ import torch
 
 from roboproof.motion_env import MotionEnvironment
 from .checkpoint_limits import checkpoint_size_limit
-from .model import MotionActorCritic, export, update, public_deadline_floor, FEATURE_TRANSFORMS, TEMPORAL_FEATURES, DEADLINE_FEATURES, HISTORY_FRAMES, DEADLINE_CONTEXT, NETWORK_WIDTHS, validate_network_width, normalization_definition, exploration_factor, validate_policy_kl_limit
+from .evaluation_exclusion import reject_consumed_final
+from .model import MotionActorCritic, export, update, public_deadline_floor, FEATURE_TRANSFORMS, TEMPORAL_FEATURES, DEADLINE_FEATURES, HISTORY_FRAMES, DEADLINE_CONTEXT, NETWORK_WIDTHS, NETWORK_DEPTHS, validate_network_width, validate_network_depth, normalization_definition, exploration_factor, validate_policy_kl_limit
 from .objective import LearningObjective, OBJECTIVE, PROFILES, SETTLING_MARGIN_OBJECTIVE, objective_definition, discount_parameters, return_estimator
 from .imitation import collect_demonstration, imitation_update, TEACHER_PACES, TEACHER_SELECTIONS, MeasuredAnchor, demonstration_samples, ANCHOR_CAPACITY, ANCHOR_ROWS_PER_WORLD, ANCHOR_LOSS_PROFILES, POSE_BUDGET_SCALES
 
@@ -109,7 +110,7 @@ def exclude_frozen_world(world):
         for frozen in json.loads((ROOT / "tests/fixtures" / filename).read_text(encoding="utf-8"))["cases"]:
             if world["seed"] == frozen["seed"] or world["task"] == frozen["task"]:
                 raise RuntimeError("Frozen evaluation world is excluded from training")
-    return world
+    return reject_consumed_final(world, ROOT)
 
 
 def atomic_json(filename, value, *, actor=False):
@@ -123,7 +124,8 @@ def atomic_json(filename, value, *, actor=False):
         raise ValueError("Motion actor contract required for actor publication")
     if actor:
         validate_network_width(value.get("width"))
-    maximum_bytes = (8 if actor else 4) * 1024 * 1024
+        validate_network_depth(value.get("hiddenLayers", 2))
+    maximum_bytes = (24 if actor and value.get("hiddenLayers", 2) == 10 else 8 if actor else 4) * 1024 * 1024
     if len(encoded.encode("utf-8")) > maximum_bytes:
         raise ValueError("Learning artifact exceeds bounded reader size")
     temporary.write_text(encoded, encoding="utf-8")
@@ -138,6 +140,10 @@ def source_identity():
     names = ["roboproof/motion_learning/model.py", "roboproof/motion_learning/train.py", "roboproof/motion_learning/objective.py", "roboproof/motion_learning/imitation.py",
              "roboproof/motion_learning/checkpoint_limits.py",
              "roboproof/motion_learning/teacher_profiles.py",
+             "roboproof/motion_learning/rollout_retention.py",
+             "roboproof/motion_learning/evaluation_exclusion.py",
+             "roboproof/motion_learning/expert_data.py",
+             "roboproof/motion-holdout.js",
              "roboproof/motion_env.py", "roboproof/motion-bridge.js",
              "tests/fixtures/motion-evaluation-worlds.json", "tests/fixtures/motion-evaluation-worlds-v2.json"]
     return {name: hashlib.sha256((ROOT / name).read_text(encoding="utf-8-sig").replace("\r\n", "\n").encode()).hexdigest()
@@ -151,6 +157,7 @@ def compatible_config(previous, current):
             previous.get("policyRegularization", "none") == current.get("policyRegularization", "none") and
             previous.get("featureTransform", "identity-v1") == current.get("featureTransform", "identity-v1") and
             previous.get("networkWidth", 32) == current.get("networkWidth", 32) and
+            previous.get("networkDepth", 2) == current.get("networkDepth", 2) and
             previous.get("warmStartUpdates", 0) == current.get("warmStartUpdates", 0) and
             previous.get("demonstrationAnchorWeight", 0) == current.get("demonstrationAnchorWeight", 0) and
             previous.get("teacherSelection", "minimum-effort-v1") == current.get("teacherSelection", "minimum-effort-v1") and
@@ -238,7 +245,7 @@ def train_seed(environment, directory, seed, config, sources, deadline, resume=F
     torch.manual_seed(seed)
     generator = random.Random(seed)
     model = MotionActorCritic(config.get("initialization", "conservative-v1"), config.get("featureTransform", "identity-v1"),
-                             network_width=config.get("networkWidth", 32))
+                             network_width=config.get("networkWidth", 32), network_depth=config.get("networkDepth", 2))
     anchor_weight = config.get("demonstrationAnchorWeight", 0)
     measured_anchor = MeasuredAnchor(len(model.scales)) if anchor_weight else None
     optimizer = torch.optim.Adam([
@@ -437,8 +444,9 @@ def run(directory=DEFAULT_DIRECTORY, seed=42, seed_count=3, updates=8, max_steps
         policy_regularization="none", feature_transform="identity-v1", warm_start_updates=0, demonstration_anchor_weight=0,
         teacher_selection="minimum-effort-v1", deadline_pace_loss_weight=1, demonstration_anchor_loss_profile="uniform-action-v1",
         exploration_concentration=1, online_anchor_interval=0, ppo_actor_learning_rate=0.001, target_policy_kl=None,
-        network_width=32):
+        network_width=32, network_depth=2):
     network_width = validate_network_width(network_width)
+    network_depth = validate_network_depth(network_depth)
     exploration_concentration = exploration_factor(exploration_concentration)
     target_policy_kl = validate_policy_kl_limit(target_policy_kl)
     ppo_actor_learning_rate = validate_ppo_actor_learning_rate(ppo_actor_learning_rate)
@@ -494,6 +502,7 @@ def run(directory=DEFAULT_DIRECTORY, seed=42, seed_count=3, updates=8, max_steps
                   "inference": "Unchanged deterministic Beta mean; no action projection or frozen head"},
               "featureTransform": feature_transform,
               "networkWidth": network_width,
+              **({"networkDepth": network_depth} if network_depth != 2 else {}),
               "normalizationDefinition": normalization_definition(feature_transform),
               "warmStartUpdates": warm_start_updates,
               "teacherSelection": teacher_selection,
@@ -594,6 +603,7 @@ def main():
     parser.add_argument("--demonstration-anchor-loss-profile", choices=ANCHOR_LOSS_PROFILES, default="uniform-action-v1")
     parser.add_argument("--teacher-selection", choices=TEACHER_SELECTIONS, default="minimum-effort-v1")
     parser.add_argument("--network-width", type=int, choices=NETWORK_WIDTHS, default=32)
+    parser.add_argument("--network-depth", type=int, choices=NETWORK_DEPTHS, default=2)
     arguments = parser.parse_args()
     run(**vars(arguments))
 

@@ -5,7 +5,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
 const Experiment = require('../roboproof/motion-experiment');
+
+test('movement commitments bind the optional episode replay implementation', () => {
+  const filename = 'roboproof/motion_learning/episode_replay.py';
+  const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8').replace(/\r\n/g, '\n');
+  assert.equal(Experiment.identity().sources[filename], createHash('sha256').update(source).digest('hex'));
+});
 
 test('fresh mixed-domain commitment reports only metadata before candidates are frozen', context => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'robotai-final-'));

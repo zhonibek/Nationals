@@ -33,6 +33,7 @@ def fixture_torch(available=True, hip=None, cuda="fixture-cuda", bf16=True, free
             is_available=Mock(return_value=available), device_count=Mock(return_value=1),
             device=Mock(side_effect=lambda index: nullcontext()), is_bf16_supported=Mock(return_value=bf16),
             mem_get_info=Mock(return_value=(free_gib * 1024 ** 3, total_gib * 1024 ** 3)),
+            get_device_name=Mock(return_value="Synthetic CUDA contract fixture"),
         ),
     )
 
@@ -271,6 +272,7 @@ class CosmosContractTests(unittest.TestCase):
             with self.subTest(code=code):
                 self.assert_code(code, runtime.check_gpu, torch_module, self.config)
         self.assertEqual(runtime.check_gpu(fixture_torch(), self.config)["device"], "cuda:0")
+        self.assertEqual(runtime.check_gpu(fixture_torch(), self.config)["gpu_name"], "Synthetic CUDA contract fixture")
         self.assertEqual(runtime.check_gpu(fixture_torch(bf16=False), replace(self.config, dtype="float16"))["dtype"], "float16")
 
     def test_lazy_real_loader_interfaces_and_environment_token_only(self):
@@ -339,6 +341,7 @@ class CosmosContractTests(unittest.TestCase):
         self.assertFalse(model.generate.call_args.kwargs["do_sample"])
         self.assertEqual(result["commentary"], "Synthetic contract fixture only")
         self.assertEqual(result["evidence_kind"], "unverified_model_commentary")
+        self.assertEqual(result["hardware"]["gpu_name"], "Synthetic CUDA contract fixture")
         self.assertTrue(result["possibly_truncated"])
         self.assertTrue(result["human_approval_required"])
         for key in ("robot_actions_executed", "training_performed", "simulator_measurements_modified"):
@@ -355,6 +358,15 @@ class CosmosContractTests(unittest.TestCase):
         self.assertFalse(options["do_resize"])
         self.assertEqual(options["video_metadata"][0]["frames_indices"], [0, 45])
         self.assertEqual(processor.call_args.kwargs["videos"], [["frame-a", "frame-b"]])
+
+    def test_missing_or_invalid_gpu_identity_cannot_generate_commentary(self):
+        for name in (None, "", " " * 3, "x" * 129):
+            torch_module = fixture_torch()
+            torch_module.cuda.get_device_name.return_value = name
+            _, model, processor, *_ = fixture_model_stack()
+            self.assert_code("device", runtime.generate_commentary, torch_module, model, processor,
+                             media.PreparedMedia("image", ("fixture",)), "Describe", 8, self.config)
+            model.generate.assert_not_called()
 
     def test_context_and_empty_outputs_do_not_fabricate_answers(self):
         _, model, processor, *_ = fixture_model_stack(input_tokens=8193)

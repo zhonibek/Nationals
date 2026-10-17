@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "specification": "unavailable-motion-exposure-registry-v1",
+  "scope": "Versioned metadata only, so a new checkout cannot mistake missing ignored remote runs for unused training seeds or an untouched final. This is a filesystem safety guard, not tamper-proof custody.",
+  "losses": [
+    {
+      "schemaVersion": 1,
+      "specification": "unavailable-motion-exposure-v1",
+      "state": "unresolved",
+      "trainingSeeds": [
+        136001,
+        136002,
+        136003
+      ],
+      "observedRunIds": [
+        "95663b0d-135b-4bc0-b36d-57d1699296f7",
+        "cb350f34-c592-4703-a2b9-73ec08a0b8c1"
+      ],
+      "lastVerifiedObservation": "2026-10-16T10:17:44.382861+00:00",
+      "lossObservedAt": "2026-10-16T16:35:58.364892+00:00",
+      "study": "episode-balanced-remote-study-20261016",
+      "reason": "The private Colab runtime expired. Its reconnected replacement has no original project, worker handles, independent model/exposure files or final comparison. Only the prior proof/control/pilot and launch records were preserved locally.",
+      "lastKnownState": "Seed136001 completed fixed64; seed136002 was at update2. Later status/results and any seed136003 work are unobserved. Do not treat missing artifacts as a pass, a measured gate failure or never-used seeds.",
+      "requiredRecovery": "Recover original exposure evidence or establish and independently verify a source-bound conservative superset of every possibly queried world before a new independent final. Preserve the unresolved loss and all original study records; never silently relaunch this trial.",
+      "recovery": {
+        "schemaVersion": 1,
+        "specification": "audited-td3-prefix-exclusion-v1",
+        "envelopeDirectory": "roboproof/runs/motion/recovery/colab-expiry-20261016/envelope",
+        "sourceArchive": "roboproof/runs/motion/recovery/colab-expiry-20261016/source.zip",
+        "auditorSource": "roboproof/runs/motion/recovery/colab-expiry-20261016/auditor.py",
+        "historicalInspectionFile": "roboproof/runs/motion/recovery/colab-expiry-20261016/retained-history-inspection.json",
+        "auditFile": "roboproof/runs/motion/recovery/continuation-audit-20261017/exposure-audit.json",
+        "auditSha256": "4513a338848ad79cbef65744053833ad69abcc25793ed7ed287edea95189413c",
+        "envelopeManifestSha256": "9e600ecea59aa2b9e42e0cf3ad9d0e65f038bb35ff52d9e219b016fc9e33b3a6",
+        "sourceArchiveSha256": "c437521e2b95934baf6b2d8cf36f6089685428904844ef1f123e59b4e67949f4",
+        "auditorSha256": "a86608be23a3f999e50bbc0f14321b6030c35b28f7ded7ed0dc2cc5b3804159b",
+        "historicalInspectionSha256": "40427436d6912e09ae8c81d25a87e2074f2eaa8daed46ba5b3df17c39edda603"
+      }
+    }
+  ]
+}

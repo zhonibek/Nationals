@@ -35,7 +35,11 @@ def check_gpu(torch_module, config: RuntimeConfig) -> dict:
             free_bytes, total_bytes = torch_module.cuda.mem_get_info(device_index)
         if total_bytes < config.min_total_gpu_gib * 1024 ** 3 or free_bytes < config.min_free_gpu_gib * 1024 ** 3:
             raise CosmosError("memory")
-        return {"device": config.device, "dtype": config.dtype, "free_gpu_bytes_at_admission": int(free_bytes), "total_gpu_bytes": int(total_bytes)}
+        gpu_name = torch_module.cuda.get_device_name(device_index)
+        if not isinstance(gpu_name, str) or not gpu_name.strip() or len(gpu_name) > 128:
+            raise CosmosError("device")
+        return {"device": config.device, "dtype": config.dtype, "gpu_name": gpu_name,
+                "free_gpu_bytes_at_admission": int(free_bytes), "total_gpu_bytes": int(total_bytes)}
     except Exception as error:
         raise sanitized_error(error, "device") from None
 
@@ -75,6 +79,7 @@ def prepare_inputs(processor, prepared: PreparedMedia, instruction: str, config:
 def generate_commentary(torch_module, model, processor, prepared: PreparedMedia, instruction: str, max_new_tokens: int, config: RuntimeConfig) -> dict:
     instruction = validate_instruction(instruction, config.limits)
     max_new_tokens = validate_output_tokens(max_new_tokens, config.limits)
+    hardware = check_gpu(torch_module, config)
     started = time.monotonic()
     with torch_module.inference_mode():
         inputs = prepare_inputs(processor, prepared, instruction, config)
@@ -95,6 +100,7 @@ def generate_commentary(torch_module, model, processor, prepared: PreparedMedia,
         "resolved_revision": _resolved_revision(model),
         "device": config.device,
         "dtype": config.dtype,
+        "hardware": hardware,
         "input_tokens": input_tokens,
         "generated_tokens": generated_tokens,
         "output_token_limit": max_new_tokens,

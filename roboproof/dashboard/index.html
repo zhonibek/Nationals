@@ -12,12 +12,13 @@
   <script src="motion.js" defer></script>
   <script src="nemotron.js" defer></script>
   <script src="perception.js" defer></script>
+  <script src="cosmos.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to results</a>
   <header class="masthead">
     <a class="brand" href="#main"><span class="brand-mark" aria-hidden="true">R/</span> RoboProof <span class="brand-detail">IRALIB VEX V5 CONTROL VERIFICATION</span></a>
-    <nav aria-label="Sections"><a href="#motion">Motion lab</a><a href="#nemotron">Nemotron</a><a href="#perception">Vision</a><a href="#explorer">Legacy explorer</a><a href="#evidence">Evidence</a></nav>
+    <nav aria-label="Sections"><a href="#motion">Motion lab</a><a href="#nemotron">Nemotron</a><a href="#cosmos">Cosmos</a><a href="#perception">Vision</a><a href="#explorer">Legacy explorer</a><a href="#evidence">Evidence</a></nav>
   </header>
   <main id="main">
     <section class="intro" aria-labelledby="page-title">
@@ -45,7 +46,7 @@
           <div><label for="motion-goal-heading">Goal heading · degrees</label><input id="motion-goal-heading" type="number" min="-180" max="180" step="any" value="0" required></div>
           <div><label for="motion-deadline">Deadline · seconds</label><input id="motion-deadline" type="number" min="0.01" max="60" step="0.01" value="10" required></div>
           <div><label for="motion-seed">World seed</label><input id="motion-seed" type="number" min="0" max="4294967295" step="1" value="42" required></div>
-          <div><label for="motion-mode">Agent · experimental policy requires saved training</label><select id="motion-mode"><option value="scripted">Controller-only baseline</option><option value="policy-fixture">Nominal policy-interface fixture</option><option value="random-fixture">Bounded random-action fixture</option><option value="learned-experiment">Learned PPO · explicit experiment, not automatic deployment</option></select></div>
+          <div><label for="motion-mode">Agent · experimental policy requires saved training</label><select id="motion-mode"><option value="scripted">Controller-only baseline</option><option value="gvf">GVF + existing LQR · experimental, not learned</option><option value="policy-fixture">Nominal policy-interface fixture</option><option value="random-fixture">Bounded random-action fixture</option><option value="learned-experiment">Learned PPO · explicit experiment, not automatic deployment</option></select></div>
         </div>
         <div class="nemotron-actions"><button id="motion-run" type="submit">Run &amp; save original-Simulator experiment</button></div>
       </form>
@@ -70,7 +71,7 @@
     </section>
 
     <section id="nemotron" class="panel" aria-labelledby="nemotron-title">
-      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / LOCAL AI</p><h2 id="nemotron-title">Chat with Nemotron</h2></div><span id="nemotron-connection" class="badge">MODEL NOT CHECKED</span></div>
+      <div class="section-heading"><div><p class="eyebrow">ROBOTAI / T4-ONLY AI RUNTIME</p><h2 id="nemotron-title">Chat with Nemotron</h2></div><span id="nemotron-connection" class="badge">MODEL NOT CHECKED</span></div>
       <p class="muted">Ask a question, read the answer, keep talking. Your conversation stays on this computer.</p>
       <div class="nemotron-actions"><button id="nemotron-new-chat" class="secondary" type="button">New chat</button><button id="nemotron-restore-chat" class="secondary" type="button">Restore chat</button><button id="nemotron-check" class="secondary" type="button">Check connection</button></div>
       <div class="nemotron-chat-window" tabindex="0" aria-label="Conversation">
@@ -83,7 +84,7 @@
         <textarea id="nemotron-prompt" rows="3" maxlength="2000" required placeholder="Ask anything…"></textarea>
         <div class="nemotron-actions"><button id="nemotron-plan" type="submit">Send</button><button id="nemotron-cancel" class="secondary" type="button" disabled>Stop</button><span class="hint">Enter to send · Shift+Enter for a new line</span></div>
       </form>
-      <p id="nemotron-status" class="status" role="status" aria-live="polite">Ready to chat. The local CPU model can take a minute or more to answer.</p>
+      <p id="nemotron-status" class="status" role="status" aria-live="polite">Nemotron requires a verified NVIDIA T4 runtime. No GPU connection has been checked; CPU startup is disabled.</p>
       <p class="hint">Chatting never moves the robot. For a movement task, use Robot tools below and approve the proposed simulation separately.</p>
       <div id="nemotron-session" class="nemotron-tool-reply" hidden>
         <h3>Robot tool reply</h3><p id="nemotron-message"></p>
@@ -105,8 +106,17 @@
       <details class="nemotron-tools"><summary>Connection, privacy &amp; limitations</summary>
         <p id="nemotron-provider" class="hint"></p><button id="nemotron-chat-download" class="secondary" type="button" disabled>Export chat</button>
         <p class="hint">Replies appear after completion, not token by token. Recent messages provide model context; longer conversations remain saved but may not fit entirely into its small context window. New chat does not delete older files. Chat is not training or measured robot evidence.</p>
-        <p class="caveat">Nemotron is a small local model, not ChatGPT or Claude. Agent Skills do not retrain it. The separate PPO learner is experimental and has not passed the improvement gate. Approved tasks use the existing Simulator and iraLIB controller. No camera, obstacle avoidance, game-score optimization, shell or physical robot access; no cloud calls or paid APIs.</p>
+        <p class="caveat">Nemotron uses an operator-approved T4 runtime, not CPU fallback. A loopback connection may forward to that remote server; it does not prove local-only processing. Agent Skills do not retrain weights. The separate movement learner has not passed its independent improvement gate. Approved tasks use the original Simulator and iraLIB controller. No camera, obstacle avoidance, game-score optimization, shell or physical robot access; no automatic paid API.</p>
       </details>
+    </section>
+
+    <section id="cosmos" class="panel" aria-labelledby="cosmos-title">
+      <div class="section-heading"><div><p class="eyebrow">BUILT ON NVIDIA COSMOS</p><h2 id="cosmos-title">Robot motion · model commentary</h2></div><button id="cosmos-refresh" class="secondary" type="button">Refresh saved answers</button></div>
+      <p>Cosmos-Reason2-2B analyzes images and videos. Saved answers appear here only after a model response with matching input, checkpoint and CUDA provenance has been recorded.</p>
+      <p id="cosmos-hardware-policy" class="muted">Cosmos uses a separately approved NVIDIA GPU. Nemotron is T4-only; CPU fallback is disabled. Refreshing this panel never starts inference, training or a paid service.</p>
+      <p id="cosmos-status" class="status" role="status" aria-live="polite">No real Cosmos answers have been loaded.</p>
+      <div id="cosmos-results"></div>
+      <p class="caveat">Model commentary is not verified physics, a controller command or a training improvement result. Pose visualizations are reconstructed from original Simulator/iraLIB telemetry, not camera recordings. Human approval and the original motion gates remain separate.</p>
     </section>
 
     <section id="perception" class="panel" aria-labelledby="perception-title">

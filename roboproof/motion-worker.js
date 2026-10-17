@@ -1,7 +1,7 @@
 'use strict';
 
 const {parentPort, workerData} = require('node:worker_threads');
-const {baseline, runPolicy, replay} = require('./motion');
+const {baseline, runPolicy, runGvf, replay} = require('./motion');
 const {normalizeTask} = require('../simulator/motion');
 const {verify} = require('./motion-readiness');
 const {evaluate} = require('./motion-evaluation');
@@ -29,6 +29,7 @@ try {
     } else {
       let state = workerData.seed;
       const report = workerData.mode === 'scripted' ? baseline(workerData.seed, task, workerData.configuration, {recordTransitions: true})
+        : workerData.mode === 'gvf' ? runGvf(workerData.seed, task, workerData.configuration, {recordTransitions: true})
         : runPolicy({seed: workerData.seed, task, configuration: workerData.configuration,
           options: {policyIdentity: {kind: 'scripted', id: workerData.mode}},
           ...(workerData.mode === 'random-fixture' ? {act: () => Array.from({length: 4}, () => {

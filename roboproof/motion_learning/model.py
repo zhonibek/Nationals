@@ -24,12 +24,28 @@ DEADLINE_CONTEXT = {"schemaVersion": 1, "settlingReserveSeconds": 2, "input": "p
 
 
 NETWORK_WIDTHS = (32, 64, 128, 256)
+NETWORK_DEPTHS = (2, 10)
 
 
 def validate_network_width(value):
     if isinstance(value, bool) or not isinstance(value, int) or value not in NETWORK_WIDTHS:
         raise ValueError("Network width must be an integer in32,64,128,256")
     return value
+
+
+def validate_network_depth(value):
+    if isinstance(value, bool) or not isinstance(value, int) or value not in NETWORK_DEPTHS:
+        raise ValueError("Hidden layer count must be an integer in2,10")
+    return value
+
+
+def hidden_body(inputs, width, depth):
+    validate_network_width(width)
+    validate_network_depth(depth)
+    layers = []
+    for index in range(depth):
+        layers.extend((nn.Linear(inputs if index == 0 else width, width), nn.Tanh()))
+    return nn.Sequential(*layers)
 
 
 def normalization_definition(feature_transform):
@@ -99,9 +115,10 @@ def reference_frame_features(observations):
 
 
 class MotionActorCritic(nn.Module):
-    def __init__(self, initialization="conservative-v1", feature_transform="identity-v1", value_critic=True, network_width=32):
+    def __init__(self, initialization="conservative-v1", feature_transform="identity-v1", value_critic=True, network_width=32, network_depth=2):
         super().__init__()
         self.network_width = validate_network_width(network_width)
+        self.network_depth = validate_network_depth(network_depth)
         if feature_transform not in FEATURE_TRANSFORMS:
             raise ValueError("Unsupported motion feature transform")
         self.feature_transform = feature_transform
@@ -120,11 +137,11 @@ class MotionActorCritic(nn.Module):
         if feature_transform in DEADLINE_FEATURES:
             scales.append(1)
         self.register_buffer("scales", torch.tensor(scales, dtype=torch.float32))
-        self.body = nn.Sequential(nn.Linear(len(scales), network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh())
+        self.body = hidden_body(len(scales), network_width, network_depth)
         self.actor = nn.Linear(network_width, 8)
         if not isinstance(value_critic, bool):
             raise ValueError("Explicit value critic flag required")
-        self.critic_body = nn.Sequential(nn.Linear(len(scales), network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh()) if value_critic else None
+        self.critic_body = hidden_body(len(scales), network_width, network_depth) if value_critic else None
         self.critic = nn.Linear(network_width, 1) if value_critic else None
         nn.init.zeros_(self.actor.weight)
         with torch.no_grad():
@@ -452,13 +469,14 @@ def export(model, identity, seed, steps, updates, algorithm="ppo-beta-reference-
         return {"weight": module.weight.detach().tolist(), "bias": module.bias.detach().tolist()}
     return {"schemaVersion": 1, "algorithm": algorithm, "policyContractVersion": 1,
             "observationSize": 34, "actionSize": 4, "width": model.network_width, "scales": model.scales.detach().tolist(),
+            **({"hiddenLayers": model.network_depth} if model.network_depth != 2 else {}),
             "featureTransform": model.feature_transform, "featureInputSize": len(model.scales),
             **({"historyFrames": model.history_frames, "initialContextSize": 4} if model.feature_transform in TEMPORAL_FEATURES else {}),
             **({"deadlineContext": dict(DEADLINE_CONTEXT)} if model.feature_transform in DEADLINE_FEATURES else {}),
             **({"normalizationDefinition": normalization_definition(model.feature_transform)}
                if normalization_definition(model.feature_transform) is not None else {}),
             **({"frameInputSize": 41} if model.feature_transform in AUGMENTED_FEATURES else {}),
-            "layers": [layer(model.body[0]), layer(model.body[2]), layer(model.actor)],
+            "layers": [layer(model.body[index]) for index in range(0, 2 * model.network_depth, 2)] + [layer(model.actor)],
             "identity": identity, "trainingSeed": seed, "steps": steps, "updates": updates,
             "trained": updates > 0, "initialization": model.initialization, "inference": "deterministic Beta mean; bounded reference actions",
             "normalization": "fixed engineering-unit scales; no evaluation-fitted statistics"}

@@ -15,8 +15,10 @@ DEFAULT_TEACHER_PROFILE = "three-pace-v1"
 MEASURED_LATE_POSE_PROFILE = "measured-late-pose-v1"
 FAILURE_GATED_LATE_POSE_PROFILE = "failure-gated-late-pose-v1"
 FINE_POSE_HEADING_PROFILE = "failure-gated-fine-pose-heading-v1"
+ADAPTIVE_FINE_POSE_HEADING_PROFILE = "robust-stop-fine-pose-heading-v1"
 TEACHER_PROFILES = (DEFAULT_TEACHER_PROFILE, MEASURED_LATE_POSE_PROFILE,
-                    FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE)
+                    FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE,
+                    ADAPTIVE_FINE_POSE_HEADING_PROFILE)
 TEACHER_PACES = (0.85, 0.95, 1.0)
 MAX_TEACHER_EPISODES = 8
 MAX_FINE_TEACHER_EPISODES = 10
@@ -103,6 +105,21 @@ def _base_candidates(candidates):
     return measured
 
 
+def robust_teacher_success(candidate, deadline_seconds):
+    measured = _measurement(candidate)
+    plan = validate_plan(candidate.get("plan"))
+    if plan["pace"] != measured["pace"]:
+        raise ValueError("Matching actually measured teacher plan required")
+    deadline = _number(deadline_seconds, "task deadline", 0.0)
+    if deadline <= 0:
+        raise ValueError("Positive task deadline required")
+    metrics = measured["metrics"]
+    return (measured["reason"] == "success" and metrics["contactSeconds"] == 0.0 and
+            metrics["positionErrorMeters"] <= 0.8 * POSITION_ERROR_SCALE and
+            metrics["headingErrorRadians"] <= 0.8 * HEADING_ERROR_SCALE and
+            metrics["elapsedSeconds"] <= deadline - 1.0)
+
+
 def _plan(kind, pace, right=0.0, forward=0.0, heading=0.0):
     return {"kind": kind, "pace": pace, "right": right, "forward": forward,
             "heading": heading, "phaseStartFraction": 0.0 if kind == "base" else LATE_PHASE_FRACTION}
@@ -182,7 +199,7 @@ def probe_plans(candidates, profile=DEFAULT_TEACHER_PROFILE, *, allow_fallback=F
     """Opt-in probes; failure gating requires all three measured base attempts."""
     _profile(profile)
     pace = select_probe_pace(candidates, allow_fallback=allow_fallback)
-    if profile in (FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE):
+    if profile in (FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE, ADAPTIVE_FINE_POSE_HEADING_PROFILE):
         measured = _base_candidates(candidates)
         if len(measured) != len(TEACHER_PACES):
             raise ValueError("Failure gating requires all three measured base paces")
@@ -191,7 +208,7 @@ def probe_plans(candidates, profile=DEFAULT_TEACHER_PROFILE, *, allow_fallback=F
             return []
     if profile == DEFAULT_TEACHER_PROFILE or pace is None:
         return []
-    if profile == FINE_POSE_HEADING_PROFILE:
+    if profile in (FINE_POSE_HEADING_PROFILE, ADAPTIVE_FINE_POSE_HEADING_PROFILE):
         return [_plan(kind, pace, right, forward, heading) for kind, right, forward, heading in FINE_PROBE_OFFSETS]
     return [_plan(kind, pace, right, forward) for kind, right, forward in PROBE_OFFSETS]
 
@@ -204,7 +221,7 @@ def combined_plan(baseline, probes, profile=DEFAULT_TEACHER_PROFILE):
     errors. The returned plan makes no claim about its unmeasured outcome.
     """
     _profile(profile)
-    if profile == FINE_POSE_HEADING_PROFILE:
+    if profile in (FINE_POSE_HEADING_PROFILE, ADAPTIVE_FINE_POSE_HEADING_PROFILE):
         return fine_combined_plan(baseline, probes)
     measured_baseline = _base_candidates([baseline])[0]
     if not isinstance(probes, (list, tuple)) or len(probes) != len(PROBE_OFFSETS):
@@ -303,7 +320,7 @@ def validate_episode_count(attempted_episodes, profile=DEFAULT_TEACHER_PROFILE):
     """Check a caller-maintained attempt count; never infer or refund actual cost."""
     _profile(profile)
     maximum = len(TEACHER_PACES) if profile == DEFAULT_TEACHER_PROFILE else MAX_TEACHER_EPISODES
-    if profile == FINE_POSE_HEADING_PROFILE:
+    if profile in (FINE_POSE_HEADING_PROFILE, ADAPTIVE_FINE_POSE_HEADING_PROFILE):
         maximum = MAX_FINE_TEACHER_EPISODES
     if isinstance(attempted_episodes, bool) or not isinstance(attempted_episodes, int) or not 0 <= attempted_episodes <= maximum:
         raise ValueError("Bounded actual teacher episode count required")
@@ -335,11 +352,11 @@ def teacher_profile_definition(profile=DEFAULT_TEACHER_PROFILE):
                 "combinedTieRule": "Baseline zero, then negative, then positive"},
             "costAccounting": "Caller charges every actual episode and step, including failures and interruptions; no refunds",
             "scope": "Training-only measured labels; original physics, filter, actor features, reward and success gates unchanged"}
-    if profile in (FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE):
+    if profile in (FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE, ADAPTIVE_FINE_POSE_HEADING_PROFILE):
         definition["latePose"]["probeGate"] = "All three measured base paces required; probe only if none succeeds with exactly zero contact"
         definition["latePose"]["fallbackRule"] = "No empty or partial base measurements; all three actual attempts required"
         definition["latePose"]["combinedGate"] = "No successful zero-contact base teacher; combined labels still require their own actual episode"
-    if profile == FINE_POSE_HEADING_PROFILE:
+    if profile in (FINE_POSE_HEADING_PROFILE, ADAPTIVE_FINE_POSE_HEADING_PROFILE):
         definition["maximumEpisodesPerWorld"] = MAX_FINE_TEACHER_EPISODES
         definition["maximumProbeEpisodes"] = len(FINE_PROBE_OFFSETS)
         late = definition["latePose"]
@@ -349,4 +366,13 @@ def teacher_profile_definition(profile=DEFAULT_TEACHER_PROFILE):
         late["probeOffsets"] = [{"kind": kind, "right": right, "forward": forward, "heading": heading}
                                 for kind, right, forward, heading in FINE_PROBE_OFFSETS]
         late["combinedRule"] = "Each axis: baseline zero or measured signed probe, same contact and strictly lower normalized squared position/heading error; measure combination separately"
+    if profile == ADAPTIVE_FINE_POSE_HEADING_PROFILE:
+        definition["earlyStop"] = {
+            "order": "Original base pace order, then original six fine-position/angular probes",
+            "requiredReason": "success", "contactSeconds": 0.0,
+            "maximumPositionErrorMeters": 0.8 * POSITION_ERROR_SCALE,
+            "maximumHeadingErrorRadians": 0.8 * HEADING_ERROR_SCALE,
+            "minimumDeadlineReserveSeconds": 1.0,
+            "rule": "Stop only after an actual complete robust success; remaining attempts are not measured or inferred",
+            "fallback": "Without robust success measure all bases and, if failure-gated, all six probes before combining"}
     return definition

@@ -4,6 +4,14 @@
 
 Given a reviewed game rulebook, robot capabilities and observed match state, propose a strategy, assign bounded subtasks to specialist modules, measure their outcome and replan. Rules explain what earns points and what is prohibited; they do not teach grasping, calibrated motion, opponent prediction or winning play by themselves. Existing Simulator/iraLIB remain the execution and evaluation foundation.
 
+### Current training scope — 2026-10-16
+
+The intended game benchmark is to earn more actual simulator points, not merely reach more poses. This is **not yet the implemented learning task**. Current PPO/TD3 experiments train bounded reach-pose movement: position, heading, settling, time, contact and an electrical-effort proxy. Game points, possession, pickup and placement are absent from that learning contract. The game has its own scoring engine and scripted manipulation; neither becomes a learned scoring policy by displaying a motion replay. Nemotron tactics remain read-only advice.
+
+The prior critic-burn-in method fails all-seed replication: only one of its three independent runs passes both unchanged suites. A separate episode-balanced replay pilot passes both development suites, but its later independent evidence chain is incomplete after Colab runtime loss. The prior pilot is preserved locally and in the approved private Drive folder; unavailable independent exposures now block new final preparation instead of disappearing from the ledger. No new final is prepared and no policy is independently qualified or promoted. See [the current movement validation record](MOTION_LEARNING_VALIDATION_20261016.md). More neurons, GPUs or repetitions cannot by themselves connect the missing game task.
+
+Before score-oriented training, the original Simulator must provide a reproducible full-game reset/step/report contract, bounded real mechanism actions and observed object/possession state. Verify acquisition, transport, placement, failed attempts, timing, legality and score conservation against the existing engine. Freeze a game-specific reward based on actual engine score changes and separately report terminal score/differential, penalties and task outcomes; do not count predicted points, repeated pickup credit or an isolated movement reward as scored points. Start with a measured scripted scoring baseline, then compare the learned game policy on unseen layouts/physics/opponents under a separate predeclared game gate. Keep the movement gate unchanged and report movement and scoring qualification separately. These are dependencies, not claims that a game-training adapter or trained scoring policy exists.
+
 ```text
 Versioned, reviewed rules + game observation + robot capabilities
   -> Tactical coordinator: choose conditional priorities / team roles
@@ -14,7 +22,7 @@ Versioned, reviewed rules + game observation + robot capabilities
   -> Original Simulator / scoring engine -> measured result -> replan
 ```
 
-These are specialist roles, not a claim that every component is already a trained sub-AI. PID/LQR are controllers. Nemotron is pretrained; procedural skills do not train its weights. Manipulation is currently scripted. Vision inference is disabled. The PPO movement gate remains negative.
+These are specialist roles, not a claim that every component is already a trained sub-AI. PID/LQR are controllers. Nemotron is pretrained; procedural skills do not train its weights. Manipulation is currently scripted. Vision inference is disabled. Independent movement qualification remains unpassed; a development pilot is not a qualified policy.
 
 ## Implemented first slice
 

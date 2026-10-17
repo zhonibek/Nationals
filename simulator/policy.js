@@ -28,7 +28,7 @@
     if (!requested || typeof requested !== 'object' || Array.isArray(requested) ||
       Object.keys(requested).some(key => !allowed.includes(key))) throw Error('Unsupported episode options');
     const controlMode = requested.controlMode ?? 'scripted';
-    if (!['scripted', 'policy'].includes(controlMode)) throw Error('Unknown controlMode');
+    if (!['scripted', 'policy', 'gvf'].includes(controlMode)) throw Error('Unknown controlMode');
     const policyIntervalTicks = requested.policyIntervalTicks ?? 5;
     const actionTimeoutTicks = requested.actionTimeoutTicks ?? policyIntervalTicks * 2;
     if (!Number.isInteger(policyIntervalTicks) || policyIntervalTicks < 1 || policyIntervalTicks > 20) throw Error('policyIntervalTicks must be 1..20');
@@ -42,6 +42,7 @@
       typeof policyIdentity.id !== 'string' || !/^[a-zA-Z0-9_.-]{1,96}$/.test(policyIdentity.id) ||
       (policyIdentity.sha256 !== undefined && !/^[a-f0-9]{64}$/.test(policyIdentity.sha256)) ||
       (policyIdentity.kind === 'learned' && !policyIdentity.sha256)) throw Error('Invalid policyIdentity; learned policies require a checkpoint hash');
+    if (controlMode === 'gvf' && policyIdentity.kind === 'learned') throw Error('Existing learned actions are not a GVF policy contract');
     return {controlMode, policyIntervalTicks, actionTimeoutTicks, recordTransitions, policyIdentity: copy(policyIdentity)};
   }
 

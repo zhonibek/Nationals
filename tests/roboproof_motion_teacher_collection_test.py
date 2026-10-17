@@ -9,7 +9,8 @@ from roboproof.motion_learning.imitation import collect_demonstration
 from roboproof.motion_learning.model import MotionActorCritic
 from roboproof.motion_learning.td3_train import compatible_config, configuration
 from roboproof.motion_learning.teacher_profiles import (DEFAULT_TEACHER_PROFILE, MEASURED_LATE_POSE_PROFILE,
-                                                       FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE)
+                                                       FAILURE_GATED_LATE_POSE_PROFILE, FINE_POSE_HEADING_PROFILE,
+                                                       ADAPTIVE_FINE_POSE_HEADING_PROFILE)
 
 
 WORLD = {"seed": 1123, "task": {"start": {"xIn": 0, "yIn": 0, "headingDeg": 0},
@@ -115,6 +116,78 @@ class FineMeasuredFixtureEnvironment(MeasuredFixtureEnvironment):
 class MotionTeacherCollectionTests(unittest.TestCase):
     def setUp(self):
         torch.set_num_threads(1)
+
+    def test_adaptive_stops_after_first_robust_base_without_inventing_remaining_attempts(self):
+        environment = SuccessfulBaseFixtureEnvironment()
+        model = PublicModel()
+        result = collect_demonstration(environment, model, WORLD, time.monotonic() + 10, 1000,
+            "pose-deadline-margin-v2", ADAPTIVE_FINE_POSE_HEADING_PROFILE)
+        self.assertTrue(result["searchStoppedOnRobustSuccess"])
+        self.assertFalse(result["interrupted"])
+        self.assertEqual(len(result["attempts"]), 1)
+        self.assertEqual(result["observedSteps"], 3)
+        self.assertEqual(environment.calls, 3)
+        self.assertEqual(result["selectedPlan"]["kind"], "base")
+        self.assertEqual(len(model.seen), 3)
+
+    def test_adaptive_nonrobust_contact_and_failed_search_keep_actual_fallback(self):
+        class ContactBaseEnvironment(FineMeasuredFixtureEnvironment):
+            def report(self):
+                measured = super().report()
+                if self.current[-1][1:] == [0.0, 0.0, 0.0]:
+                    measured["reason"] = "success"
+                    measured["metrics"].update(positionErrorMeters=0.005, headingErrorRadians=0.005,
+                                               contactSeconds=1e-12)
+                return measured
+
+        for environment in (ContactBaseEnvironment(), FineMeasuredFixtureEnvironment()):
+            result = collect_demonstration(environment, PublicModel(), WORLD, time.monotonic() + 10, 1000,
+                "pose-deadline-margin-v2", ADAPTIVE_FINE_POSE_HEADING_PROFILE)
+            self.assertFalse(result["searchStoppedOnRobustSuccess"])
+            self.assertEqual(result["observedSteps"], environment.calls)
+            self.assertEqual(len(result["attempts"]), 9 if isinstance(environment, ContactBaseEnvironment) else 10)
+
+    def test_adaptive_native_queries_use_original_engine_and_public_features(self):
+        outputs = []
+        for profile in (FINE_POSE_HEADING_PROFILE, ADAPTIVE_FINE_POSE_HEADING_PROFILE):
+            model = MotionActorCritic("broad-pace-v1", "deadline-context-v1", network_width=256)
+            with MotionEnvironment() as underlying:
+                environment = CountedEnvironment(underlying)
+                result = collect_demonstration(environment, model, WORLD, time.monotonic() + 30, 2000,
+                    "pose-deadline-margin-v2", profile)
+                self.assertFalse(result["interrupted"])
+                self.assertEqual(result["observedSteps"], environment.calls)
+                self.assertEqual(len(result["attempts"]), environment.resets)
+                self.assertEqual(result["reason"], "success")
+                self.assertTrue(all(len(row["modelInput"]) == len(model.scales) for row in result["rows"]))
+                outputs.append(result)
+        self.assertLessEqual(outputs[1]["observedSteps"], outputs[0]["observedSteps"])
+
+    def test_adaptive_stops_on_measured_probe_and_charges_partial_attempts(self):
+        class RobustProbeEnvironment(FineMeasuredFixtureEnvironment):
+            def report(self):
+                measured = super().report()
+                if self.current[-1][1:] == [-0.125, 0.0, 0.0]:
+                    measured["reason"] = "success"
+                    measured["metrics"].update(positionErrorMeters=0.008, headingErrorRadians=0.008)
+                return measured
+
+        environment = RobustProbeEnvironment()
+        result = collect_demonstration(environment, PublicModel(), WORLD, time.monotonic() + 10, 1000,
+            "pose-deadline-margin-v2", ADAPTIVE_FINE_POSE_HEADING_PROFILE)
+        self.assertTrue(result["searchStoppedOnRobustSuccess"])
+        self.assertEqual(result["selectedPlan"]["kind"], "fine-right-negative")
+        self.assertEqual(len(result["attempts"]), 4)
+        self.assertEqual(result["observedSteps"], environment.calls)
+        self.assertEqual(environment.calls, 12)
+        for budget in (0, 1, 8, 9, 10, 11):
+            environment = RobustProbeEnvironment()
+            result = collect_demonstration(environment, PublicModel(), WORLD, time.monotonic() + 10, budget,
+                "pose-deadline-margin-v2", ADAPTIVE_FINE_POSE_HEADING_PROFILE)
+            self.assertTrue(result["interrupted"])
+            self.assertEqual(result["observedSteps"], environment.calls)
+            self.assertEqual(environment.calls, budget)
+            self.assertNotIn("rows", result)
 
     def test_measured_combination_has_its_own_episode_and_only_public_actor_inputs(self):
         environment = MeasuredFixtureEnvironment()

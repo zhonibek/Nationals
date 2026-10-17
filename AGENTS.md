@@ -1,0 +1,9 @@
+# Execution policy
+
+- Run all model training, fine-tuning, imitation learning, PPO/TD3 optimization, large teacher-data collection and mass simulation/regression campaigns only on explicitly approved remote servers or private cloud notebooks. Never use this laptop's CPU or GPU for these workloads.
+- Local work is limited to code editing, the dashboard/client, small packaging/provenance checks and lightweight focused tests. Do not load large models or silently fall back to local training when a remote connection fails.
+- Verify the actual remote allocation, GPU identity, runtime and approved cost/quota before starting work. A selected GPU label, saved notebook output or RUNNING status is not evidence of successful model execution. Do not purchase compute, enable automatic top-ups or bypass account restrictions.
+- Nemotron inference must use a verified NVIDIA T4 with GPU offload. Do not start the retired local CPU launcher or silently select another device.
+- Preserve checkpoints, logs, failed runs and result hashes. Verify remote work is terminal or its exact process is missing before restarting; an observation timeout alone is not a failed job.
+- Keep the original Simulator/iraLIB physics and independent movement qualification gates. Model commentary is advisory and must never replace measured motion evidence or human approval.
+- Do not leave fresh training on an ephemeral Colab runtime as an unattended background job across turns. Use one bounded foreground fit at a time, inspect its actual terminal state, and save its checkpoints, logs and complete exposure/results to the computer and the user-approved private RoboProof Drive folder before starting the next fit or ending the turn. If a runtime disappears before preservation, retain an unresolved exposure-loss marker and do not omit that work from independent-final exclusion or silently reuse its seeds. Never use browser keep-alive tricks or bypass free-service limits.

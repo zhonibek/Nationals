@@ -32,14 +32,23 @@ const settlingNormalizationDefinition = {schemaVersion: 1, method: 'sensor-settl
   initialContext: 'Unchanged field-scale initial sensor goal context', clip: [-10, 10],
   scope: 'Fixed public sensor/reference units only; no evaluator truth, fitted statistics or new input capacity'};
 
-function readJson(filename, maximum = 1024 * 1024) {
+function readJson(filename, maximum = 1024 * 1024, maximumForValue) {
   if (fs.statSync(filename).size > maximum) throw Error('Learning artifact exceeds size budget');
   const bytes = fs.readFileSync(filename);
-  return {value: JSON.parse(bytes.toString('utf8')), sha256: hash(bytes)};
+  if (bytes.length > maximum) throw Error('Learning artifact exceeds size budget');
+  let value;
+  try { value = JSON.parse(bytes.toString('utf8')); }
+  catch (error) {
+    if (maximumForValue && bytes.length > maximumForValue(undefined)) throw Error('Learning artifact exceeds size budget');
+    throw error;
+  }
+  if (maximumForValue && bytes.length > maximumForValue(value)) throw Error('Learning artifact exceeds size budget');
+  return {value, sha256: hash(bytes)};
 }
 
 function policy(filename, expectedHash) {
-  const {value: data, sha256} = readJson(filename, 8 * 1024 * 1024);
+  const {value: data, sha256} = readJson(filename, 24 * 1024 * 1024,
+    value => (value?.hiddenLayers === 10 ? 24 : 8) * 1024 * 1024);
   if (expectedHash && sha256 !== expectedHash) throw Error('Policy checkpoint hash mismatch');
   return policyFromSnapshot(data, sha256);
 }
@@ -47,6 +56,8 @@ function policy(filename, expectedHash) {
 function policyFromSnapshot(value, sha256) {
   if (!/^[a-f0-9]{64}$/.test(sha256)) throw Error('Frozen policy artifact hash required');
   const data = structuredClone(value);
+  const hiddenLayers = data.hiddenLayers === undefined ? 2 : data.hiddenLayers;
+  if (!Number.isInteger(hiddenLayers) || ![2, 10].includes(hiddenLayers)) throw Error('Unsupported hidden layer count');
   const featureTransform = data.featureTransform === undefined ? 'identity-v1' : data.featureTransform;
   if (!['identity-v1', 'reference-frame-v1', 'history-context-v1', 'deadline-context-v1', 'long-history-deadline-v1', settlingNormalization, coarseAugmentation, multiscaleFeatures].includes(featureTransform)) throw Error('Unsupported motion feature transform');
   const augmented = featureTransform === coarseAugmentation || featureTransform === multiscaleFeatures;
@@ -64,7 +75,7 @@ function policyFromSnapshot(value, sha256) {
       !validInteger(data.trainingSeed) || !validInteger(data.steps) || !validInteger(data.updates) ||
       data.trained !== (data.updates > 0) || !Array.isArray(data.scales) || data.scales.length !== featureCount ||
       !Array.from(data.scales).every(value => Number.isFinite(value) && value > 0 && value <= 100) ||
-      !Array.isArray(data.layers) || data.layers.length !== 3) throw Error('Unsupported bounded motion model');
+      !Array.isArray(data.layers) || data.layers.length !== hiddenLayers + 1) throw Error('Unsupported bounded motion model');
   if (deadline && data.scales[featureCount - 1] !== 1) throw Error('Deadline feature scale mismatch');
   if (featureTransform === settlingNormalization) {
     if (!isDeepStrictEqual(data.normalizationDefinition, settlingNormalizationDefinition)) throw Error('Sensor normalization definition mismatch');
@@ -84,7 +95,7 @@ function policyFromSnapshot(value, sha256) {
     if (!isDeepStrictEqual(data.scales, expected)) throw Error('Sensor augmentation scale mismatch');
   }
   if (!isDeepStrictEqual(data.identity, loadHeadless().identity)) throw Error('Motion model engine/controller identity mismatch');
-  const dimensions = [[featureCount, data.width], [data.width, data.width], [data.width, 8]];
+  const dimensions = [[featureCount, data.width], ...Array.from({length: hiddenLayers - 1}, () => [data.width, data.width]), [data.width, 8]];
   for (let index = 0; index < dimensions.length; index++) {
     const [inputs, outputs] = dimensions[index];
     const layer = data.layers[index];
@@ -129,7 +140,7 @@ function policyFromSnapshot(value, sha256) {
     for (let index = 0; index < data.layers.length; index++) {
       const layer = data.layers[index];
       const output = layer.weight.map((row, neuron) => row.reduce((sum, weight, column) => sum + weight * hidden[column], layer.bias[neuron]));
-      hidden = index < 2 ? output.map(Math.tanh) : output.map(value => Math.max(value, 0) + Math.log1p(Math.exp(-Math.abs(value))) + 1);
+      hidden = index < hiddenLayers ? output.map(Math.tanh) : output.map(value => Math.max(value, 0) + Math.log1p(Math.exp(-Math.abs(value))) + 1);
     }
     return hidden.slice(0, 4).map((alpha, index) => 2 * alpha / (alpha + hidden[index + 4]) - 1);
   };

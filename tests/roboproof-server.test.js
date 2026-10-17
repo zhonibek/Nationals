@@ -7,6 +7,21 @@ const {createServer} = require('../roboproof/server');
 const {makeScenario} = require('../roboproof/core');
 const {runScenario} = require('../roboproof/sim');
 const {investigate, invoke} = require('../roboproof/agent');
+const MotionLearner = require('../roboproof/motion-learner');
+
+test('learning API cannot report current verification without independent evidence', async context => {
+  const original = MotionLearner.status;
+  MotionLearner.status = () => ({available: true, learnedImprovementVerified: true});
+  context.after(() => { MotionLearner.status = original; });
+  const server = createServer({reportPath: 'does-not-exist.json'});
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  context.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/motion/learning`);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.independentResearch.available, false);
+  assert.equal(result.learnedImprovementVerified, false);
+});
 
 test('loopback API runs actual production controller and rejects unsafe requests', async context => {
   const server = createServer({reportPath: 'does-not-exist.json'});

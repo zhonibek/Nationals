@@ -104,4 +104,9 @@ function readIndependentEvaluation(status, learningDirectory = path.join(__dirna
   } catch { return unavailable('Independent evidence is missing, stale or inconsistent; no policy promotion'); }
 }
 
-module.exports = {readIndependentEvaluation};
+function currentImprovementVerified(status, independentResearch) {
+  return status?.learnedImprovementVerified === true && independentResearch?.available === true &&
+    independentResearch.sourceRuntimeMatches === true && independentResearch.gateReportedPassed === true;
+}
+
+module.exports = {readIndependentEvaluation, currentImprovementVerified};

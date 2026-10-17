@@ -4,10 +4,16 @@ import math
 import torch
 from torch import nn
 
-from .model import control_prior_loss, validate_network_width
+from .model import control_prior_loss, validate_network_width, validate_network_depth, hidden_body
 
 
 ALGORITHM = "td3-beta-mean-reference-v1"
+
+
+def validate_critic_warmup_steps(value):
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 512:
+        raise ValueError("Bounded initial critic-only gradient steps from0 to512 required")
+    return value
 
 
 class TrainingExploration:
@@ -215,13 +221,14 @@ class ReservoirReplayBuffer(ReplayBuffer):
 
 
 class TwinQ(nn.Module):
-    def __init__(self, scales, network_width=32):
+    def __init__(self, scales, network_width=32, network_depth=2):
         super().__init__()
         self.network_width = validate_network_width(network_width)
+        self.network_depth = validate_network_depth(network_depth)
         self.register_buffer("scales", scales.detach().clone())
         inputs = len(scales) + 4
-        self.first = nn.Sequential(nn.Linear(inputs, network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh(), nn.Linear(network_width, 1))
-        self.second = nn.Sequential(nn.Linear(inputs, network_width), nn.Tanh(), nn.Linear(network_width, network_width), nn.Tanh(), nn.Linear(network_width, 1))
+        self.first = nn.Sequential(*hidden_body(inputs, network_width, network_depth), nn.Linear(network_width, 1))
+        self.second = nn.Sequential(*hidden_body(inputs, network_width, network_depth), nn.Linear(network_width, 1))
 
     def forward(self, observations, actions):
         inputs = torch.cat((torch.clamp(observations / self.scales, -10, 10), actions), dim=-1)
@@ -242,7 +249,8 @@ def clipped_target(target_actor, target_critics, batch, gamma, noise_std, noise_
 
 class TD3Learner:
     def __init__(self, actor, actor_rate=0.0003, critic_rate=0.0003, gamma=1.0, target_tau=0.005,
-                 policy_delay=2, target_noise_std=0.05, target_noise_clip=0.1):
+                 policy_delay=2, target_noise_std=0.05, target_noise_clip=0.1, critic_warmup_steps=0):
+        critic_warmup_steps = validate_critic_warmup_steps(critic_warmup_steps)
         values = (actor_rate, critic_rate, gamma, target_tau, target_noise_std, target_noise_clip)
         if (any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values) or
                 not 0 < actor_rate <= 0.001 or not 0 < critic_rate <= 0.001 or not 0 < gamma <= 1 or
@@ -251,29 +259,38 @@ class TD3Learner:
             raise ValueError("Bounded deterministic actor/twin-Q configuration required")
         self.actor = actor
         self.target_actor = copy.deepcopy(actor).requires_grad_(False)
-        self.critics = TwinQ(actor.scales, actor.network_width).to(actor.scales.device)
+        depth = getattr(actor, "network_depth", 2)
+        self.critics = (TwinQ(actor.scales, actor.network_width) if depth == 2 else
+                        TwinQ(actor.scales, actor.network_width, depth)).to(actor.scales.device)
         self.target_critics = copy.deepcopy(self.critics).requires_grad_(False)
         self.actor_optimizer = torch.optim.Adam(actor.parameters(), lr=actor_rate)
         self.critic_optimizer = torch.optim.Adam(self.critics.parameters(), lr=critic_rate)
         self.gamma, self.target_tau, self.policy_delay = gamma, target_tau, policy_delay
         self.target_noise_std, self.target_noise_clip = target_noise_std, target_noise_clip
+        self.critic_warmup_steps = critic_warmup_steps
         self.gradient_updates = self.actor_updates = 0
 
     def sync_actor_target(self):
         self.target_actor.load_state_dict(self.actor.state_dict())
 
     def state(self):
-        return {"schemaVersion": 1, "targetActor": self.target_actor.state_dict(), "critics": self.critics.state_dict(),
+        return {"schemaVersion": 2 if self.critic_warmup_steps else 1,
+                **({"criticWarmupSteps": self.critic_warmup_steps} if self.critic_warmup_steps else {}),
+                "targetActor": self.target_actor.state_dict(), "critics": self.critics.state_dict(),
                 "targetCritics": self.target_critics.state_dict(), "actorOptimizer": self.actor_optimizer.state_dict(),
                 "criticOptimizer": self.critic_optimizer.state_dict(), "gradientUpdates": self.gradient_updates,
                 "actorUpdates": self.actor_updates}
 
     def restore(self, state):
-        if (not isinstance(state, dict) or state.get("schemaVersion") != 1 or
+        if (not isinstance(state, dict) or state.get("schemaVersion") != (2 if self.critic_warmup_steps else 1) or
+                (self.critic_warmup_steps and (type(state.get("criticWarmupSteps")) is not int or
+                                             state["criticWarmupSteps"] != self.critic_warmup_steps)) or
+                (not self.critic_warmup_steps and "criticWarmupSteps" in state) or
                 isinstance(state.get("gradientUpdates"), bool) or not isinstance(state.get("gradientUpdates"), int) or
                 not 0 <= state["gradientUpdates"] <= 3200 or
                 isinstance(state.get("actorUpdates"), bool) or not isinstance(state.get("actorUpdates"), int) or
-                state.get("actorUpdates") != state["gradientUpdates"] // self.policy_delay):
+                state.get("actorUpdates") != (state["gradientUpdates"] // self.policy_delay -
+                    min(state["gradientUpdates"], self.critic_warmup_steps) // self.policy_delay)):
             raise ValueError("Bounded TD3 update counters required")
         for name in ("targetActor", "critics", "targetCritics"):
             values = state.get(name)
@@ -291,11 +308,13 @@ class TD3Learner:
         self.gradient_updates, self.actor_updates = state["gradientUpdates"], state["actorUpdates"]
 
     def update(self, batch, measured_anchor=None, anchor_weight=0, anchor_profile="uniform-action-v1",
-               policy_regularization="none", pace_weight=1, actor_batch=None):
+               policy_regularization="none", pace_weight=1, actor_batch=None,
+               successful_anchor=None, self_retention_weight=0):
         if policy_regularization not in ("none", "public-deadline-residual-v1"):
             raise ValueError("Declared TD3 control prior required")
         if (any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100
-                for value in (anchor_weight, pace_weight)) or (anchor_weight and measured_anchor is None) or
+                for value in (anchor_weight, pace_weight, self_retention_weight)) or (anchor_weight and measured_anchor is None) or
+                (self_retention_weight and (successful_anchor is None or not len(successful_anchor.features))) or
                 (policy_regularization == "none" and pace_weight != 1)):
             raise ValueError("Finite active TD3 anchor/prior weights required")
         weights = batch.get("importance_weights")
@@ -324,7 +343,7 @@ class TD3Learner:
         critic_norm = nn.utils.clip_grad_norm_(self.critics.parameters(), 0.5, error_if_nonfinite=True)
         self.critic_optimizer.step()
         self.gradient_updates += 1
-        actor_updated = self.gradient_updates % self.policy_delay == 0
+        actor_updated = self.gradient_updates > self.critic_warmup_steps and self.gradient_updates % self.policy_delay == 0
         result = {"criticLoss": float(critic_loss.detach()), "criticGradientNorm": float(critic_norm),
                   "gradientUpdates": self.gradient_updates, "actorUpdated": actor_updated,
                   "meanTarget": float(targets.mean()), "maximumAbsoluteTargetAction": float(target_actions.abs().max())}
@@ -339,6 +358,9 @@ class TD3Learner:
                     actor_loss = actor_loss + pace_weight * pace_loss + 0.02 * residual_kl
                 anchor_loss = measured_anchor.loss(self.actor, anchor_profile) if anchor_weight else actor_loss.new_zeros(())
                 actor_loss = actor_loss + anchor_weight * anchor_loss
+                if self_retention_weight:
+                    self_loss = successful_anchor.loss(self.actor, anchor_profile)
+                    actor_loss = actor_loss + self_retention_weight * self_loss
                 if not torch.isfinite(actor_loss):
                     raise RuntimeError("Nonfinite mean actor loss; no checkpoint published")
                 self.actor_optimizer.zero_grad()
@@ -355,4 +377,6 @@ class TD3Learner:
                     target.mul_(1 - self.target_tau).add_(current, alpha=self.target_tau)
             result.update({"actorLoss": float(actor_loss.detach()), "actorGradientNorm": float(actor_norm),
                            "anchorLoss": float(anchor_loss.detach()), "paceLoss": float(pace_loss.detach())})
+            if self_retention_weight:
+                result["successfulRolloutAnchorLoss"] = float(self_loss.detach())
         return result

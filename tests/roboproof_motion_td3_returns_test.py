@@ -23,6 +23,46 @@ def measured_rows():
 
 
 class TD3ReturnTests(unittest.TestCase):
+    def test_full_thirty_two_step_returns_match_independent_episode_bounded_formula(self):
+        boundaries = (131, 224, 449)
+        rows = [{"modelInput": [index] * 34, "nextModelInput": [index + 1] * 34,
+                 "action": [0.1, 0, 0, 0], "reward": (index % 7 - 3) * 0.125,
+                 "requiredPace": 0.85, "terminal": index in boundaries} for index in range(450)]
+        unchanged = copy.deepcopy(rows)
+        for gamma in (1.0, 0.95):
+            packed = complete_episode_returns(rows, 32, gamma)
+            for index, result in enumerate(packed):
+                terminal_index = next(boundary for boundary in boundaries if boundary >= index)
+                final = min(index + 31, terminal_index)
+                expected = sum(gamma ** (following - index) * rows[following]["reward"]
+                               for following in range(index, final + 1))
+                self.assertAlmostEqual(result["reward"], expected, places=12)
+                self.assertEqual(result["horizon"], final - index + 1)
+                self.assertEqual(result["terminal"], final == terminal_index)
+                self.assertEqual(result["modelInput"], rows[index]["modelInput"])
+                self.assertEqual(result["nextModelInput"], rows[final]["nextModelInput"])
+                self.assertEqual(result["action"], rows[index]["action"])
+            replay = ReplayBuffer(34, 64)
+            replay.append(packed)
+            self.assertEqual(replay.count, 64)
+            self.assertEqual(int(replay.horizons.max()), 32)
+            self.assertEqual(int(replay.horizons.min()), 1)
+        self.assertEqual(rows, unchanged)
+
+    def test_return_metadata_names_actual_horizon_and_preserves_eight_step_control(self):
+        arguments = (103007, 1, 4, 3000, 16, 1, "deadline-context-v1",
+                     "finite-total-return-settle-margin-v4", "mixed-full-reach-v5", 4, 1024, 0.05,
+                     10, "public-deadline-residual-v1", 40)
+        baseline = configuration(*arguments, n_steps=8)
+        self.assertEqual(baseline["td3Definition"]["replayRetention"]["offPolicy"],
+                         "Reservoir retains older behavior; eight-step return approximation unchanged, no deterministic-policy truth claim")
+        for horizon in (1, 16, 32):
+            declared = configuration(*arguments, n_steps=horizon)
+            self.assertEqual(declared["td3Definition"]["returns"]["steps"], horizon)
+            self.assertIn(f"{horizon}-step", declared["td3Definition"]["replayRetention"]["offPolicy"])
+            self.assertIn("off-policy approximation", declared["td3Definition"]["replayRetention"]["offPolicy"])
+            self.assertEqual({name for name in declared if declared[name] != baseline[name]}, {"nStepReturns", "td3Definition"})
+
     def test_multi_step_rewards_keep_start_action_end_state_and_never_cross_resets(self):
         rows = measured_rows()
         untouched = copy.deepcopy(rows)

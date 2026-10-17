@@ -99,7 +99,9 @@ Evidence: `motion-check` passes and retains source/runtime-bound readiness plus 
 
 **Gate:** reach-task mechanics are testable; game-score learning stays disabled until the necessary game/scoring rules pass their own audit. A perfect digital twin is not required for a software demo, but its approximations must be visible.
 
-### 5. Train the first genuine movement policy locally
+### 5. Train the first genuine movement policy on an approved server
+
+Current execution policy, updated2026-10-16: all training, imitation learning, large teacher collection and mass simulation/regression run remotely only. Historical local milestones below retain their original provenance and are not authorization for new laptop workloads. Validate actual allocation, runtime and free/approved quota before execution; if remote access fails, stop rather than fall back locally. Lightweight editing, dashboard use and focused checks may stay local.
 
 - [x] Implement a compact PPO Beta actor-critic using the existing pinned PyTorch 2.8 CPU runtime, with two 32-neuron hidden layers. Test bounded actions, reset behavior and terminal/truncation bootstrap; reuse the existing environment rather than new physics.
 - [x] Execute real CPU gradients with logged rewards and changed actor weights. Three seeds completed eight updates each; this is a pipeline smoke, not evidence of better movement.
@@ -125,7 +127,7 @@ Phase 5 smoke delivered 2026-10-05: run `d2f440b7-5b37-4f65-bc15-304d203527a0`, 
 
 **Not passed:** the historical short smoke experiment remains 6/24 for controller, untrained and learned actors. A longer 64-update three-seed experiment subsequently failed a separately committed 128-world final: controller 87/128, neutral 88/128, untrained 80/128, learned seeds 201/202/203 at 75/83/81 with 12/5/8 controller-success regressions. Effort-proxy savings do not satisfy the success gate. Both negative results remain retained; neither consumed corpus may be reused as fresh evidence. Baseline remains the default and verified-policy selection stays disabled. See [progress](progress.md) for exact run identities, development experiments and limitations.
 
-### 7. Scale with AMD only after local correctness
+### 7. Scale with AMD only after controller and learner correctness
 
 - [ ] Await the supplied API/provider documentation, authorized access, GPU models/count/VRAM, OS/HIP runtime, CPU allocation, storage and explicit cost/time limits. No secret in source/chat, guessed endpoint or unapproved paid compute.
 - [ ] Probe capabilities read-only, then run a small actual policy training job with strict ROCm selection and retained metadata. A fake provider or CPU fallback is not AMD execution.
@@ -149,7 +151,7 @@ Phase 5 smoke delivered 2026-10-05: run `d2f440b7-5b37-4f65-bc15-304d203527a0`, 
 ## Operating rules for the agent
 
 1. Work in `Nationals-work3`. Extend existing Simulator and iraLIB/control interfaces; keep a single authoritative robot/physics/game model.
-2. Follow phases 1 -> 2 -> 3 -> 4 (reach-task gate) -> 5 -> 6 -> 7 -> 8. Game-rule work can proceed independently, but no game-score claim precedes its gate. AMD access research can proceed early; expensive training cannot bypass local correctness.
+2. Follow phases 1 -> 2 -> 3 -> 4 (reach-task gate) -> 5 -> 6 -> 7 -> 8. Game-rule work can proceed independently, but no game-score claim precedes its gate. AMD access research can proceed early; expensive training cannot bypass controller and learner correctness. Current server-only policy applies to every new training or mass validation workload.
 3. For each phase, record exact changes, focused tests, evidence and remaining limitations in progress documentation. Mark a gate complete only with actual retained evidence.
 4. Preserve established behavior and user changes. Do not reorganize unrelated source, restore/delete the reference tree, switch production controllers or alter physical firmware gains to manufacture improvement.
 5. Reuse useful verification infrastructure, but do not treat historical failure-prediction results as motion-policy evidence. Existing completed tests remain historical evidence for their own scope.
@@ -345,3 +347,20 @@ Voice/text input
 **Voice-control gate:** the same typed intent produces the same validated action plan whether entered by keyboard or voice; ambiguous or unsafe speech never becomes an automatic movement command.
 
 **Product gate:** a short end-to-end demo shows `speak -> understand -> plan -> approve -> move -> report` in the original Simulator, with the baseline and learned-policy result clearly distinguished. This is separate from, and cannot replace, the independent movement-improvement gate.
+## GVF integration research note — 2026-10-16
+
+The user proposes grouping GVF, LQR, wheel control and residual learning. This is a movement research direction, not a request to silently replace the current training contract or claim a winning controller. Existing `src/subsystems/pedro/PedroFollower.cpp` computes curve projection, tangential demand and cross-track correction, but writes empirical motor-power commands. `include/subsystems/pedro/PedroFollower.hpp` explicitly labels maxVel as0–127 motor power and maxAccel as empirical power-squared/inch, not SI speed/acceleration. Its kD_lqr subtraction is velocity damping, not by itself an LQR design. The actual shared Riccati-based controller is `include/subsystems/control/Cascade.hpp`.
+
+`src/main.cpp` currently sends both point references and Pedro Bezier geometry through the shared time-parameterized LTV-LQR/wheel-PI+feedforward cascade; the legacy GVF follower is not the active motion-learning path. The Simulator uses the original shared C++ controller through `simulator/native/control.cpp` and a bounded public reference adapter. Replacing one reference call only in main would not connect the learner/Simulator or produce comparable training evidence.
+
+A possible later integration keeps the original physics and single motor writer: Bezier geometry -> odometry-based local progress/reference generation -> the shared cascade, with RL providing bounded adjustments on the side. Define SI units, phase/progress, endpoint braking/heading/settling, deadline, speed/acceleration limits, cancellation and faults explicitly. Do not apply the same lateral correction independently in both GVF velocity demand and the outer pose controller without a coherent closed-loop design. Keep projection continuous across segment boundaries/self-intersections, and handle degenerate tangents, standstill and resumed progress. GVF is not an obstacle planner and does not remove friction/traction limits, localization errors or the task deadline.
+
+Before learning with that interface, compare the original controller, GVF-only and GVF+RL separately in the same original Simulator, including disturbance recovery, curved/multisegment paths and exact replay. Report cross-track error, success, completion/settling time, contact and effort; preserve the current independent movement gate and original baseline. A benefit from GVF alone is controller improvement, not learned improvement. Any changed action/observation/reference contract needs separately versioned artifacts and fresh training, never relabelled existing checkpoints. The current episode-balanced reach experiment remains unchanged; no GVF or physical-robot code is enabled by this note.
+
+Primary background reviewed2026-10-16: [Pedro documentation](https://pedropathing.com/docs/pathing) describes time-independent GVF-based path following. [Yao et al.](https://arxiv.org/abs/2003.10012) discuss singularities and self-intersection limitations of conventional vector-field following and a specific higher-dimensional remedy. Neither source guarantees the performance of this repository's legacy follower or a combined learned controller.
+
+### Claims requiring measurement, not assumptions
+
+The proposed2–4x sample-efficiency improvement,15,000–20,000-step convergence, higher holdout pass probability and perfect expert behavior are not measured project results or guaranteed properties of GVF. The current reward terminates at the task's actual simulated deadline, not simply because reference tracking is0.1 seconds late. Existing control includes bounded voltage, wheel-speed/acceleration constraints and anti-windup; a disturbance does not establish uncontrolled motor behavior. Centripetal feedforward describes a desired curvature-related acceleration; it does not cancel arbitrary slip or create unlimited traction. Projection, switching, saturation, partial observations and the terminal event can still produce difficult learning dynamics.
+
+ Keep the existing four-action contract and reward while the current movement study is pending. Removing pace or replacing reward with only cross-track/progress/slip terms would define a separately versioned research task; it must not evade heading/settling/deadline/contact success checks or be called the same PPO/TD3 checkpoint. State-based path following still needs a speed/braking policy. Prove GVF-only behavior first, then test bounded learned adaptation against it and the retained original controller/untrained actor under unchanged success gates. To measure sample efficiency, predeclare a common performance threshold and all seeds, count actual original-engine queries including failed/teacher work, and report offline row presentations/gradient steps/wall time separately. Do not compare an offline repeated-row counter with a native-query counter or choose only the fastest successful seed. No claimed multiplicative speedup precedes that evidence.

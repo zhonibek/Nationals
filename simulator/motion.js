@@ -1,7 +1,7 @@
 (function(root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine'), require('./policy'));
-  else root.NationalsMotion = factory(root.NationalsEngine, root.NationalsPolicy);
-})(globalThis, function(Engine, Policy) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine'), require('./policy'), require('./gvf-policy'));
+  else root.NationalsMotion = factory(root.NationalsEngine, root.NationalsPolicy, root.NationalsGvfPolicy);
+})(globalThis, function(Engine, Policy, GvfPolicy) {
   'use strict';
 
   const SCHEMA_VERSION = 2;
@@ -63,6 +63,12 @@
     return resolved;
   }
 
+  function normalizeEpisodeOptions(requested = {}) {
+    if (requested?.controlMode !== 'gvf-residual') return Policy.options(requested);
+    if (!GvfPolicy) throw Error('GVF residual contract module is not loaded');
+    return GvfPolicy.options(requested);
+  }
+
   class MotionEpisode {
     constructor(controlFactory) {
       if (typeof controlFactory !== 'function') throw Error('An isolated production-controller factory is required');
@@ -74,7 +80,8 @@
       const normalized = normalizeTask(task);
       const deadlineTicks = Math.round(normalized.deadlineSeconds / FIXED_DT);
       const resolved = configuration(seed, requested);
-      const episodeOptions = Policy.options(requestedOptions);
+      const episodeOptions = normalizeEpisodeOptions(requestedOptions);
+      const residualMode = episodeOptions.controlMode === 'gvf-residual';
       const sim = new Engine.VexRobotSimulator(this.controlFactory());
       if (!sim.productionControl || !sim.override) throw Error('Original Simulator and production controller are required');
       Object.assign(sim, resolved);
@@ -103,6 +110,18 @@
       this.referenceAdapter = episodeOptions.controlMode === 'policy' ? new Policy.ReferenceAdapter(sim.productionControl,
         [normalized.start.xIn * METERS_PER_INCH, normalized.start.yIn * METERS_PER_INCH, normalized.start.headingDeg * RADIANS_PER_DEGREE],
         [normalized.goal.xIn * METERS_PER_INCH, normalized.goal.yIn * METERS_PER_INCH, normalized.goal.headingDeg * RADIANS_PER_DEGREE]) : null;
+      this.gvfResidualAdapter = null;
+      if (residualMode) {
+        try {
+          this.gvfResidualAdapter = new GvfPolicy.GvfResidualAdapter(sim.productionControl, this.sensorFeedback(),
+            [normalized.goal.xIn * METERS_PER_INCH, normalized.goal.yIn * METERS_PER_INCH, normalized.goal.headingDeg * RADIANS_PER_DEGREE]);
+        } catch (error) {
+          this.neutral();
+          this.terminated = true;
+          this.reason = 'controller_or_sensor_fault';
+          throw error;
+        }
+      }
       const observation = this.observe();
       this.lastValidObservation = copy(observation);
       return observation;
@@ -133,6 +152,11 @@
         if (action?.type === 'stop') {
           keys(action, ['type'], 'action');
           normalized = {type: 'stop'};
+        } else if (this.options.controlMode === 'gvf-residual') {
+          keys(action, ['type', 'values'], 'action');
+          if (action.type !== GvfPolicy.CONTRACT_NAME) throw Error('GVF residual mode requires its distinct three-value action');
+          if (this.ticks % this.options.policyIntervalTicks !== 0 || this.lastPolicyTick === this.ticks) throw Error('Policy action must occur once at a policy cadence boundary');
+          normalized = {type: GvfPolicy.CONTRACT_NAME, values: GvfPolicy.normalizeAction(action.values)};
         } else if (this.options.controlMode === 'policy') {
           keys(action, ['type', 'values'], 'action');
           if (action.type !== 'policy') throw Error('Policy mode requires a bounded policy action or stop');
@@ -145,7 +169,7 @@
         }
       } catch (error) {
         this.neutral();
-        if (this.options.controlMode === 'policy') {
+        if (this.options.controlMode === 'policy' || this.options.controlMode === 'gvf-residual') {
           this.pendingObservation ??= actionObservation;
           this.previousAction = {type: 'stop'};
           this.actions.push({tick: this.ticks, action: {type: 'stop'}});
@@ -153,9 +177,11 @@
         throw error;
       }
       if (normalized.type === 'stop') this.neutral();
-      else if (normalized.type === 'policy') {
+      else if (normalized.type === 'policy' || normalized.type === 'gvf-residual') {
         if (!this.policyCommand) {
-          this.policyCommand = {type: 'policyReference', referenceSI: [...this.referenceAdapter.reference],
+          const residual = normalized.type === 'gvf-residual';
+          const adapter = residual ? this.gvfResidualAdapter : this.referenceAdapter;
+          this.policyCommand = {type: residual ? 'gvfResidualReference' : 'policyReference', referenceSI: [...adapter.reference],
             timeout: this.task.deadlineSeconds * 1000};
           this.sim.queueAction(this.policyCommand);
           this.sim.isRunning = true;
@@ -164,7 +190,9 @@
       }
       else {
         if (this.sim.isRunning) throw Error('A scripted motion is already active; do not reset the controller on policy ticks');
-        this.sim.queueAction({type: 'pose', targetX: normalized.xIn, targetY: normalized.yIn, targetTheta: normalized.headingDeg});
+        this.sim.queueAction({type: this.options.controlMode === 'gvf' ? 'gvf' : 'pose',
+          targetX: normalized.xIn, targetY: normalized.yIn, targetTheta: normalized.headingDeg,
+          ...(this.options.controlMode === 'gvf' ? {timeout: this.task.deadlineSeconds * 1000} : {})});
         this.sim.isRunning = true;
       }
       this.previousAction = normalized;
@@ -174,6 +202,8 @@
 
     observe() {
       if (!this.sim) throw Error('Reset the episode first');
+      if (this.gvfResidualAdapter) return this.gvfResidualAdapter.observe((this.deadlineTicks - this.ticks) * FIXED_DT,
+        this.lastPolicyTick === null ? 0 : this.ticks - this.lastPolicyTick);
       const sim = this.sim;
       const heading = sim.odom.theta * RADIANS_PER_DEGREE;
       const deltaX = (this.task.goal.xIn - sim.odom.x) * METERS_PER_INCH;
@@ -191,6 +221,12 @@
       return observation;
     }
 
+    sensorFeedback() {
+      const sim = this.sim;
+      return [sim.odom.x * METERS_PER_INCH, sim.odom.y * METERS_PER_INCH, sim.odom.theta * RADIANS_PER_DEGREE,
+        ...sim.odomVelocity, ...sim.wheelOmega.map(speed => speed * sim.wheelRadiusM)];
+    }
+
     metrics() {
       const sim = this.sim;
       return {
@@ -206,15 +242,34 @@
       const before = this.options.recordTransitions ? this.pendingObservation ?? this.observe() : null;
       this.pendingObservation = null;
       let policyFault = null;
-      if (this.options.controlMode === 'policy') {
+      let residualObservationFault = false;
+      if (this.options.controlMode === 'policy' || this.options.controlMode === 'gvf-residual') {
         if (this.previousAction?.type === 'stop') { policyFault = 'stopped'; this.neutral(); }
         else if (this.lastPolicyTick === null || this.ticks - this.lastPolicyTick >= this.options.actionTimeoutTicks) {
           policyFault = 'stale_policy_action';
           this.neutral();
-        } else if (this.policyCommand) this.policyCommand.referenceSI = this.referenceAdapter.advance(this.previousAction.values, FIXED_DT);
+        } else if (this.policyCommand) {
+          if (this.gvfResidualAdapter) {
+            try {
+              this.policyCommand.referenceSI = this.gvfResidualAdapter.advance(this.previousAction.values, this.sensorFeedback(), FIXED_DT, this.ticks + 1);
+            } catch (error) {
+              policyFault = 'controller_or_sensor_fault';
+              residualObservationFault = true;
+              this.neutral();
+            }
+          } else this.policyCommand.referenceSI = this.referenceAdapter.advance(this.previousAction.values, FIXED_DT);
+        }
       }
       this.sim.update(FIXED_DT);
       this.ticks++;
+      if (this.gvfResidualAdapter) {
+        try { this.gvfResidualAdapter.refreshSensors(this.sensorFeedback()); }
+        catch (error) {
+          policyFault = 'controller_or_sensor_fault';
+          residualObservationFault = true;
+          this.neutral();
+        }
+      }
       const measured = this.metrics();
       const finite = Object.values(measured).every(Number.isFinite) &&
         [...this.sim.motorVolts, ...this.sim.motorCurrents, ...this.observe().pose, ...this.sim.odomVelocity, ...this.sim.wheelOmega].every(Number.isFinite);
@@ -253,9 +308,10 @@
       if (this.terminated || this.truncated) this.neutral();
       const result = {observation: this.observe(), reward, rewardComponents, terminated: this.terminated,
         truncated: this.truncated, info: {reason: this.reason, ...measured}};
-      if (this.referenceAdapter) {
+      if (this.referenceAdapter || this.gvfResidualAdapter) {
         try {
-          Policy.vector(result.observation);
+          if (residualObservationFault) throw Error('Current native GVF sensor observation unavailable');
+          (this.gvfResidualAdapter ? GvfPolicy : Policy).vector(result.observation);
           this.lastValidObservation = copy(result.observation);
           result.info.observationValid = true;
         } catch (error) {
@@ -290,11 +346,29 @@
         elapsedSeconds: ticks * FIXED_DT}, vector: Policy.vector(result.observation)};
     }
 
+    gvfResidualStep(values) {
+      if (this.options?.controlMode !== 'gvf-residual') throw Error('Reset in explicit GVF residual mode before gvfResidualStep');
+      this.applyAction({type: GvfPolicy.CONTRACT_NAME, values});
+      let result;
+      let reward = 0;
+      const rewardComponents = {};
+      let ticks = 0;
+      for (; ticks < this.options.policyIntervalTicks; ticks++) {
+        result = this.step();
+        reward += result.reward;
+        for (const [name, value] of Object.entries(result.rewardComponents)) rewardComponents[name] = (rewardComponents[name] || 0) + value;
+        if (result.terminated || result.truncated) { ticks++; break; }
+      }
+      return {...result, reward, rewardComponents, info: {...result.info, physicsTicks: ticks,
+        elapsedSeconds: ticks * FIXED_DT}, vector: GvfPolicy.vector(result.observation)};
+    }
+
     report() {
       if (!this.sim) throw Error('Reset the episode first');
       return {schemaVersion: SCHEMA_VERSION, taskType: 'reach-pose-benchmark', seed: this.seed, fixedDt: FIXED_DT,
         task: copy(this.task), configuration: {...this.configuration}, actions: copy(this.actions), ticks: this.ticks,
-        options: copy(this.options), policyContractVersion: Policy.CONTRACT_VERSION, transitions: copy(this.transitions),
+        options: copy(this.options), policyContractVersion: this.gvfResidualAdapter ? GvfPolicy.CONTRACT_VERSION : Policy.CONTRACT_VERSION,
+        ...(this.gvfResidualAdapter ? {policyContractName: GvfPolicy.CONTRACT_NAME} : {}), transitions: copy(this.transitions),
         terminated: this.terminated, truncated: this.truncated, reason: this.reason, totalReward: this.totalReward,
         metrics: {...this.metrics(), elapsedSeconds: this.ticks * FIXED_DT, effortProxyVAs: this.effortProxyVAs,
           contactSeconds: this.sim.contactSeconds, pathLengthMeters: this.pathLengthMeters},
@@ -304,5 +378,5 @@
     }
   }
 
-  return {MotionEpisode, SCHEMA_VERSION, FIXED_DT, DEFAULT_TASK, PARAMETERS, normalizeTask};
+  return {MotionEpisode, SCHEMA_VERSION, FIXED_DT, DEFAULT_TASK, PARAMETERS, normalizeTask, normalizeEpisodeOptions};
 });

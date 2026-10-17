@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "torch": "2.8.0+cpu",
+  "seed": 731,
+  "cases": [
+    {
+      "width": 32,
+      "featureTransform": "identity-v1",
+      "valueCritic": true,
+      "stateSha256": "c87e05bd7ada377a6ef139704c06e0b53d43c4224ccad2127bf3b5eca3bf56cd",
+      "rngSha256": "0e03a07ce4f7d1321d49a36070073b983d53c282b097557ebe11b84b09a418f4",
+      "exportSha256": "5173ffe9ccff81f1be311fc013ee35e402bad370235464fbd39361b1f981cbcf"
+    },
+    {
+      "width": 128,
+      "featureTransform": "settling-normalized-deadline-v1",
+      "valueCritic": true,
+      "stateSha256": "aa685ea1c48311e7ab64b90530368f1da2c435bee7d03acf990796d92de4bc1d",
+      "rngSha256": "5310e8fa2d11547b569f3c81260937108d99230e93bbbb901e5dac566e1e5096",
+      "exportSha256": "7e27bd5570da53828c832f8ae748c0b478d970d3b1b724ae731209291fde6008"
+    },
+    {
+      "width": 256,
+      "featureTransform": "deadline-context-v1",
+      "valueCritic": false,
+      "stateSha256": "d29e01637330f9add6631a94ba382c6fe6a180c22835d1c14d976ac4bd9284fa",
+      "rngSha256": "9a0f8d895f00b1402d0f4a24d611c16c52d5e2512299951180c3a8f858f6f80a",
+      "exportSha256": "5046b90db0acea244b645344cb63679ae7c64d00ad36267f2110790f2c92fea1"
+    },
+    {
+      "width": 256,
+      "featureTransform": "long-history-deadline-v1",
+      "valueCritic": false,
+      "stateSha256": "63d079f4b920d251ea2189ee6ac97b1a8f501dd175cfdc5418f8fa84ee2007bf",
+      "rngSha256": "270893b1c2f2a115733ffdaa326d91bc7c9b480c7de90b7257ff594f55b6cc04",
+      "exportSha256": "ee364b11df1229d1487a9844a0d13a54a68ec6f5f25be8968d9e5bdacf0bda6e"
+    }
+  ],
+  "scope": "Pre-depth-change CPU initialization/export/RNG references; synthetic identity, not motion performance"
+}

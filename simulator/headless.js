@@ -17,7 +17,7 @@ function loadHeadless() {
   const bytes = fs.readFileSync(path.join(__dirname, 'control.wasm'));
   if (hash(bytes) !== manifest.wasm) throw Error('Stale production control.wasm');
   const compiled = new WebAssembly.Module(bytes);
-  const filenames = ['engine.js', 'motion.js', 'policy.js', 'headless.js', 'control-runtime.js', 'robot-config.js', 'override.js', 'override-geometry.js', 'override-dynamics.js', 'override-autonomy.js'];
+  const filenames = ['engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'headless.js', 'control-runtime.js', 'robot-config.js', 'override.js', 'override-geometry.js', 'override-dynamics.js', 'override-autonomy.js'];
   const sources = Object.fromEntries(filenames.map(filename => [filename,
     hash(fs.readFileSync(path.join(__dirname, filename), 'utf8').replace(/\r\n/g, '\n'))]));
   sources['config/robot.json'] = hash(fs.readFileSync(path.join(root, 'config/robot.json'), 'utf8').replace(/\r\n/g, '\n'));

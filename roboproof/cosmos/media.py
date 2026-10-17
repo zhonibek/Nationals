@@ -1,6 +1,7 @@
 """Local-only admission and bounded decoding before any model load."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import hashlib
 import importlib
 import io
 import math
@@ -27,10 +28,12 @@ class PreparedMedia:
     duration_seconds: float | None = None
     source_fps: float | None = None
     source_frame_count: int | None = None
+    input_sha256: str | None = None
 
     def provenance(self) -> dict:
         return {
             "kind": self.kind,
+            "input_sha256": self.input_sha256,
             "sampled_frames": len(self.frames),
             "sampled_timestamps_seconds": list(self.timestamps_seconds),
             "duration_seconds": self.duration_seconds,
@@ -209,7 +212,9 @@ def prepare_media(value: str | Path, config: RuntimeConfig) -> PreparedMedia:
     path, content = read_media_bytes(value, config)
     try:
         if path.suffix.lower() in IMAGE_EXTENSIONS:
-            return _prepare_image(content, config.limits)
-        return _prepare_video(content, config.limits)
+            prepared = _prepare_image(content, config.limits)
+        else:
+            prepared = _prepare_video(content, config.limits)
+        return replace(prepared, input_sha256=hashlib.sha256(content).hexdigest())
     except Exception as error:
         raise sanitized_error(error, "media") from None

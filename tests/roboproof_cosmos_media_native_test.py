@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -10,8 +11,8 @@ from roboproof.cosmos.media import prepare_media
 HAS_MEDIA = all(importlib.util.find_spec(name) for name in ("av", "PIL", "numpy"))
 
 
-@unittest.skipUnless(HAS_MEDIA, "Pinned optional media dependencies not installed; no native decode claimed")
 class CosmosNativeMediaTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "Pillow not installed; no native image decode claimed")
     def test_actual_png_decode_preserves_bounded_image(self):
         from PIL import Image
 
@@ -21,12 +22,14 @@ class CosmosNativeMediaTests(unittest.TestCase):
             Image.new("RGB", (640, 480), (30, 60, 120)).save(filename)
             prepared = prepare_media(filename, RuntimeConfig(media_roots=(root,)))
             self.assertEqual(prepared.kind, "image")
+            self.assertEqual(prepared.provenance()["input_sha256"], hashlib.sha256(filename.read_bytes()).hexdigest())
             self.assertEqual(len(prepared.frames), 1)
             self.assertEqual(prepared.frames[0].mode, "RGB")
             self.assertEqual(prepared.frames[0].size, (576, 416))
             self.assertLessEqual(576 * 416, 262144)
             self.assertEqual(prepared.frames[0].getpixel((20, 20)), (30, 60, 120))
 
+    @unittest.skipUnless(HAS_MEDIA, "Pinned optional media dependencies not installed; no native video decode claimed")
     def test_actual_mp4_decode_covers_motion_with_real_times(self):
         import av
         import numpy as np

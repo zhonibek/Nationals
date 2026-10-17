@@ -1,12 +1,39 @@
 #include "subsystems/control/Cascade.hpp"
 #include "subsystems/trajectory/QuinticSpline.hpp"
 #include "subsystems/control/BezierReference.hpp"
+#include "subsystems/control/GuidingVectorField.hpp"
 #include <memory>
 static std::vector<lemlib::State> trajectory;
 static std::unique_ptr<nationals::BezierReference> bezier;
+static std::unique_ptr<nationals::GuidingVectorField> field;
 static nationals::Cascade controller;
 static double buffer[64];
+static int controlUpdate(double maxAngularSpeed){
+    nationals::Reference reference{{buffer[0],buffer[1],buffer[2]},buffer[3],buffer[4],buffer[5]};
+    nationals::Feedback feedback{{buffer[6],buffer[7],buffer[8]},buffer[9],buffer[10],buffer[11],{buffer[12],buffer[13],buffer[14],buffer[15]},buffer[17]>0};
+    auto output=controller.update(reference,feedback,buffer[16],maxAngularSpeed);
+    for(int index=0;index<4;++index){buffer[32+index]=output.volts[index];buffer[36+index]=output.target[index];}
+    return output.valid;
+}
 extern "C" {
+int control_gvf(double x0,double y0,double x1,double y1,double x2,double y2,double x3,double y3,double h0,double h1){
+    field.reset();
+    pedro::BezierCurve curve({float(x0),float(y0)},{float(x1),float(y1)},{float(x2),float(y2)},{float(x3),float(y3)});
+    auto candidate=std::make_unique<nationals::GuidingVectorField>(curve,h0,h1);
+    if(!candidate->valid())return 0;
+    field=std::move(candidate);return 1;
+}
+int control_gvf_reference(){
+    if(!field)return 0;
+    const nationals::Feedback feedback{{buffer[6],buffer[7],buffer[8]},buffer[9],buffer[10],buffer[11],{},buffer[17]>0};
+    const auto sample=field->at(feedback);
+    if(!sample.valid)return 0;
+    const auto& reference=sample.reference;
+    buffer[0]=reference.pose.x;buffer[1]=reference.pose.y;buffer[2]=reference.pose.h;
+    buffer[3]=reference.vx;buffer[4]=reference.vy;buffer[5]=reference.w;
+    buffer[18]=sample.parameter;buffer[19]=sample.remaining;buffer[20]=sample.crossTrack;
+    buffer[21]=field->complete(feedback);return 1;
+}
 void control_curve_eval(double t){
     pedro::BezierCurve c({float(buffer[0]),float(buffer[1])},{float(buffer[2]),float(buffer[3])},{float(buffer[4]),float(buffer[5])},{float(buffer[6]),float(buffer[7])});
     const auto p=c.getPoint(t),d=c.getDerivative(t),dd=c.getSecondDerivative(t);
@@ -35,12 +62,9 @@ double* control_buffer(){return buffer;}
 void control_reset(){controller.reset();}
 void control_config(double radius,double maxSpeed,double kV){controller.config.radius=radius;controller.config.maxWheelSpeed=maxSpeed;controller.config.kV=kV;controller.reset();}
 int control_step(){
-    nationals::Reference r{{buffer[0],buffer[1],buffer[2]},buffer[3],buffer[4],buffer[5]};
-    nationals::Feedback f{{buffer[6],buffer[7],buffer[8]},buffer[9],buffer[10],buffer[11],{buffer[12],buffer[13],buffer[14],buffer[15]},buffer[17]>0};
-    auto o=controller.update(r,f,buffer[16]);
-    for(int i=0;i<4;++i){buffer[32+i]=o.volts[i];buffer[36+i]=o.target[i];}
-    return o.valid;
+    return controlUpdate(INFINITY);
 }
+int control_step_gvf(){return controlUpdate(field?nationals::GuidingVectorField::maxAngularSpeed:NAN);}
 double control_duration(double ax,double ay,double ah,double bx,double by,double bh,double speed,double accel,double jerk){return nationals::duration({ax,ay,ah},{bx,by,bh},speed,accel,jerk);}
 void control_reference(double ax,double ay,double ah,double bx,double by,double bh,double time,double duration){
     auto r=nationals::pointReference({ax,ay,ah},{bx,by,bh},time,duration);

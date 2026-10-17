@@ -57,7 +57,9 @@
         goal: {xIn: number('goal-x'), yIn: number('goal-y'), headingDeg: number('goal-heading')}, deadlineSeconds: number('deadline')};
       const record = await request('run', {mode: element('mode').value, seed: number('seed'), task});
       render(record);
-      text('status', record.motionPolicyTrained
+      text('status', record.report.options.controlMode === 'gvf'
+        ? 'GVF + existing LQR experiment saved and exact-replay verified. This is an analytic controller, not a trained neural policy or proof of improvement.'
+        : record.motionPolicyTrained
         ? 'Learned-policy experiment saved and exact-replay verified. One run does not prove improvement. Open the original Simulator replay.'
         : 'Fixture experiment saved. Open the original Simulator replay. This run is not training or learned improvement.');
     });

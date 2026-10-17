@@ -1394,7 +1394,7 @@ class VexRobotSimulator {
   }
 
   initAction(action) {
-    if (action.type === "policyReference") {
+    if (action.type === "policyReference" || action.type === "gvfResidualReference") {
       action.duration = 0;
       this.productionControl?.reset();
       this.lastMotionResult = "Running";
@@ -1402,6 +1402,18 @@ class VexRobotSimulator {
     }
     if (action.desc) {
       this.controllerLcdLines[0] = action.desc.substring(0, 18);
+    }
+
+    if(action.type === "gvf"){
+      const start=[this.odom.x,this.odom.y],end=[action.targetX??this.odom.x,action.targetY??this.odom.y];
+      const points=action.points??Array.from({length:4},(_,index)=>start.map((value,axis)=>value+(end[axis]-value)*index/3));
+      action.duration=this.productionControl?.gvf(points,this.odom.theta*DEG_TO_RAD,
+        (action.targetTheta??action.endHeading??this.odom.theta)*DEG_TO_RAD)?0:-1;
+      action.settledSeconds=0;
+      if(action.timeout==null||action.timeout===0)action.timeout=30000;
+      this.productionControl?.reset();
+      this.lastMotionResult="Running";
+      return;
     }
 
     if (action.type === "spline") {
@@ -1474,10 +1486,17 @@ class VexRobotSimulator {
     const time=elapsedMs/1000;
     if(!Number.isFinite(action.timeout)||action.timeout<=0||action.timeout>120000)return fail("InvalidInput");
     if(elapsedMs>=action.timeout) return fail("TimedOut");
-    let ref;
-    if(action.type==="policyReference"){
+    const feedback=[this.odom.x*INCH_TO_METER,this.odom.y*INCH_TO_METER,this.odom.theta*DEG_TO_RAD,
+      ...this.odomVelocity,...this.wheelOmega.map(w=>w*this.wheelRadiusM)];
+    let ref,fieldSample;
+    if(action.type==="gvf"){
+      fieldSample=this.productionControl.gvfReference(feedback);
+      if(!fieldSample)return fail("SensorFault");
+      ref=fieldSample.reference;
+    }else if(action.type==="policyReference"||action.type==="gvfResidualReference"){
       if(!Array.isArray(action.referenceSI)||action.referenceSI.length!==6||!action.referenceSI.every(Number.isFinite))return fail("InvalidInput");
       ref=action.referenceSI;
+      if(action.type==="gvfResidualReference"&&(!Array.from(ref).every(Number.isFinite)||Math.abs(ref[0])>1.524||Math.abs(ref[1])>1.524||Math.hypot(ref[3],ref[4])>0.35+1e-12||Math.abs(ref[5])>1.5+1e-12))return fail("InvalidInput");
     }else if(action.type==="spline"){
       while(this.trajectoryIndex+1<this.activeTrajectory.length&&this.activeTrajectory[this.trajectoryIndex+1].time<=time)this.trajectoryIndex++;
       const a=this.activeTrajectory[this.trajectoryIndex],b=this.activeTrajectory[this.trajectoryIndex+1];
@@ -1487,14 +1506,12 @@ class VexRobotSimulator {
       ref=[x,y,Math.PI/2-h,v*Math.cos(h),v*Math.sin(h),-w];
     }else if(action.type==="bezier")ref=this.productionControl.bezierReference(time);
     else ref=this.productionControl.reference(action.startSI,action.endSI,time,action.duration);
-    const feedback=[this.odom.x*INCH_TO_METER,this.odom.y*INCH_TO_METER,this.odom.theta*DEG_TO_RAD,
-      ...this.odomVelocity,...this.wheelOmega.map(w=>w*this.wheelRadiusM)];
-    const output=this.productionControl.step(ref,feedback,dt);
+    const output=this.productionControl.step(ref,feedback,dt,fieldSample||action.type==="gvfResidualReference"?'gvf':'scripted');
     if(!output.valid) return fail("SensorFault");
     this.commandedWheelVoltages=output.volts;
-    if(action.type==="policyReference")return false;
+    if(action.type==="policyReference"||action.type==="gvfResidualReference")return false;
     const close=Math.hypot(ref[0]-feedback[0],ref[1]-feedback[1])<0.02032&&Math.abs(normalizeAngle(ref[2]-feedback[2]))<0.035&&Math.hypot(feedback[3],feedback[4])<0.0254&&Math.abs(feedback[5])<0.0873;
-    action.settledSeconds=time>=action.duration&&close?action.settledSeconds+dt:0;
+    action.settledSeconds=(fieldSample?fieldSample.complete:time>=action.duration&&close)?action.settledSeconds+dt:0;
     if(action.settledSeconds>=0.15){this.lastMotionResult="Settled";return true;}
     return false;
   }

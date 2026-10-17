@@ -5,6 +5,7 @@ import torch
 from torch import nn
 
 from .teacher_profiles import (DEFAULT_TEACHER_PROFILE, MEASURED_LATE_POSE_PROFILE, TEACHER_PROFILES,
+                              ADAPTIVE_FINE_POSE_HEADING_PROFILE, robust_teacher_success,
                               base_plans, probe_plans, combined_plan, teacher_action, validate_episode_count)
 
 
@@ -194,15 +195,24 @@ def collect_late_pose_demonstration(environment, model, world, deadline, step_bu
         return {"interrupted": True, "observedSteps": observed_steps,
             "attempts": [{key: value for key, value in candidate.items() if key != "rows"} for candidate in candidates]}
 
+    search_stopped = False
     for plan in base_plans(teacher_profile):
         if not attempt(plan):
             return interrupted()
+        if (teacher_profile == ADAPTIVE_FINE_POSE_HEADING_PROFILE and
+                robust_teacher_success(candidates[-1], world["task"]["deadlineSeconds"])):
+            search_stopped = True
+            break
     base_candidates = list(candidates)
-    plans = probe_plans(base_candidates, teacher_profile)
+    plans = [] if search_stopped else probe_plans(base_candidates, teacher_profile)
     for plan in plans:
         if not attempt(plan):
             return interrupted()
-    if plans:
+        if (teacher_profile == ADAPTIVE_FINE_POSE_HEADING_PROFILE and
+                robust_teacher_success(candidates[-1], world["task"]["deadlineSeconds"])):
+            search_stopped = True
+            break
+    if plans and not search_stopped:
         baseline = next(candidate for candidate in base_candidates if candidate["pace"] == plans[0]["pace"])
         plan = combined_plan(baseline, candidates[3:], teacher_profile)
         if plan is not None and sum(plan[axis] != 0 for axis in ("right", "forward", "heading")) >= 2:
@@ -215,7 +225,8 @@ def collect_late_pose_demonstration(environment, model, world, deadline, step_bu
         "teacherSelection": teacher_selection, "selectedMarginScore": selected["marginScore"] if selected else None,
         "canonicalReward": selected["canonicalReward"] if selected else candidates[-1]["canonicalReward"],
         "reason": "success" if selected else candidates[-1]["reason"],
-        "attempts": [{key: value for key, value in candidate.items() if key != "rows"} for candidate in candidates]}
+        "attempts": [{key: value for key, value in candidate.items() if key != "rows"} for candidate in candidates],
+        **({"searchStoppedOnRobustSuccess": search_stopped} if teacher_profile == ADAPTIVE_FINE_POSE_HEADING_PROFILE else {})}
 
 
 def imitation_update(model, optimizer, rows, epochs=32):

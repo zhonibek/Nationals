@@ -17,11 +17,13 @@ Feedback readFeedback(pros::MotorGroup& left,pros::MotorGroup& right,double diam
     for(int i=0;i<4;++i){double rpm=i<2?l[i]:r[i-2];f.wheel[i]=rpm*pi*diameter*ratio/60;if(!std::isfinite(rpm))f.valid=false;}
     return f;
 }
-lemlib::MotionResult followReference(pros::MotorGroup& left,pros::MotorGroup& right,
-    double diameter,double ratio,const Config& config,double duration,double timeout,
-    const std::function<Reference(double)>& reference,const std::function<bool()>& cancelled){
+static lemlib::MotionResult followFeedbackReference(pros::MotorGroup& left,pros::MotorGroup& right,
+    double diameter,double ratio,const Config& config,double timeout,
+    const std::function<Reference(double,const Feedback&)>& reference,
+    const std::function<bool(double,const Reference&,const Feedback&)>& ready,
+    const std::function<bool()>& cancelled,double maxAngularSpeed=INFINITY){
     using lemlib::MotionResult;
-    if(!validConfig(config)||!std::isfinite(diameter)||diameter<=0||!std::isfinite(ratio)||ratio<=0||!std::isfinite(duration)||duration<0||!std::isfinite(timeout)||timeout<=0||timeout>120||!reference||!cancelled)return MotionResult::InvalidInput;
+    if(!validConfig(config)||!std::isfinite(diameter)||diameter<=0||!std::isfinite(ratio)||ratio<=0||!std::isfinite(timeout)||timeout<=0||timeout>120||!reference||!ready||!cancelled)return MotionResult::InvalidInput;
     if(cancelled())return MotionResult::Cancelled;
     auto& output=lemlib::driveOutput();auto token=output.acquire();
     if(!token)return lemlib::getOdomStatus().valid?MotionResult::Busy:MotionResult::SensorFault;
@@ -35,14 +37,30 @@ lemlib::MotionResult followReference(pros::MotorGroup& left,pros::MotorGroup& ri
         uint32_t now=pros::millis();double t=(now-start)*0.001,dt=(now-last)*0.001;last=now;
         if(t>=timeout)return MotionResult::TimedOut;
         if(dt==0)dt=0.01;
-        auto feedback=readFeedback(left,right,diameter,ratio,epoch);auto target=reference(t);
-        auto command=control.update(target,feedback,dt);
+        auto feedback=readFeedback(left,right,diameter,ratio,epoch);auto target=reference(t,feedback);
+        auto command=control.update(target,feedback,dt,maxAngularSpeed);
         if(!command.valid||!output.wheelVoltages(token,command.volts))return MotionResult::SensorFault;
-        if(t>=duration&&settled(target,feedback)){
+        if(ready(t,target,feedback)){
             if(!settling){settling=true;settleStart=now;}
             if(now-settleStart>=150)return MotionResult::Settled;
         }else settling=false;
         pros::Task::delay_until(&next,10);
     }
+}
+lemlib::MotionResult followReference(pros::MotorGroup& left,pros::MotorGroup& right,
+    double diameter,double ratio,const Config& config,double duration,double timeout,
+    const std::function<Reference(double)>& reference,const std::function<bool()>& cancelled){
+    if(!std::isfinite(duration)||duration<0||!reference)return lemlib::MotionResult::InvalidInput;
+    return followFeedbackReference(left,right,diameter,ratio,config,timeout,
+        [&](double time,const Feedback&){return reference(time);},
+        [&](double time,const Reference& target,const Feedback& feedback){return time>=duration&&settled(target,feedback);},cancelled);
+}
+lemlib::MotionResult followGuidingField(pros::MotorGroup& left,pros::MotorGroup& right,
+    double diameter,double ratio,const Config& config,const GuidingVectorField& field,
+    double timeout,const std::function<bool()>& cancelled){
+    if(!field.valid())return lemlib::MotionResult::InvalidInput;
+    return followFeedbackReference(left,right,diameter,ratio,config,timeout,
+        [&](double,const Feedback& feedback){return field.at(feedback).reference;},
+        [&](double,const Reference&,const Feedback& feedback){return field.complete(feedback);},cancelled,GuidingVectorField::maxAngularSpeed);
 }
 }

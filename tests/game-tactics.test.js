@@ -8,6 +8,7 @@ const path = require('node:path');
 const Game = require('../simulator/override');
 const Snapshot = require('../simulator/tactics-snapshot');
 const Tactics = require('../roboproof/tactics');
+const {createRegistry} = require('../roboproof/agent-skills');
 const {planTask} = require('../roboproof/nemotron');
 const {createServer} = require('../roboproof/server');
 
@@ -20,7 +21,8 @@ function fixture(responses) {
   const calls = [];
   return {calls, metadata: {provider: 'tactics-fixture-not-real-inference', cloudEnabled: false}, check: async () => ({}),
     complete: async (messages, signal, tools) => {
-      calls.push({messages: structuredClone(messages), tools: tools.map(tool => tool.function.name)});
+      calls.push({messages: structuredClone(messages), tools: tools.map(tool => tool.function.name),
+        skillNames: tools.find(tool => tool.function.name === 'load_skill').function.parameters.properties.name.enum.slice()});
       assert(responses.length, 'Fixture exhausted');
       return responses.shift();
     }};
@@ -81,6 +83,8 @@ test('tactical analysis reads both rules and selected state, retains provenance 
   assert.match(result.analysisEvidence.game.snapshotSha256, /^[a-f0-9]{64}$/);
   assert.equal(result.skills.loaded[0].name, 'plan-game-tactics');
   assert(client.calls.every(call => !call.tools.includes('prepare_reach_pose')));
+  assert(client.calls.every(call => !call.tools.includes('get_motion_contract')));
+  assert(client.calls.every(call => JSON.stringify(call.skillNames) === JSON.stringify(['plan-game-tactics'])));
   await assert.rejects(planTask('x', fixture([tool('load_skill', {name: 'prepare-motion-experiment'})]),
     {gameSnapshot: selected}), /read-only tactics/);
   await assert.rejects(planTask('x', fixture([tool('load_skill', {name: 'plan-game-tactics'}), tool('get_game_rules'),
@@ -88,11 +92,89 @@ test('tactical analysis reads both rules and selected state, retains provenance 
 });
 
 test('without game state the adviser must read its absence and cannot fabricate a selected snapshot', async () => {
-  const result = await planTask('Explain game rules', tacticalFixture());
+  const client = tacticalFixture();
+  const result = await planTask('Explain game rules', client);
   assert.equal(result.status, 'analyzed');
   assert.equal(result.analysisEvidence.game, undefined);
   assert.equal(result.toolLog.find(entry => entry.name === 'get_game_snapshot').result.available, false);
   assert.equal(result.task, undefined);
+  for (const call of client.calls.slice(1)) {
+    assert(!call.skillNames.includes('prepare-motion-experiment'));
+    assert(!call.tools.includes('get_motion_contract'));
+    assert(!call.tools.includes('prepare_reach_pose'));
+    assert(call.skillNames.includes('inspect-robot'));
+    assert(!call.messages[0].content.includes('prepare-motion-experiment'));
+  }
+});
+
+test('tactical sessions reject forced motion skill activation without a snapshot', async () => {
+  const client = fixture([tool('load_skill', {name: 'plan-game-tactics'}, 'load-tactics'), tool('get_game_rules'),
+    tool('get_game_snapshot'), tool('load_skill', {name: 'prepare-motion-experiment'}, 'load-motion')]);
+  await assert.rejects(planTask('Explain game rules', client), /Read-only tactics and motion preparation cannot be combined/);
+  assert.equal(client.calls.length, 4);
+  assert(client.calls[0].skillNames.includes('prepare-motion-experiment'));
+  assert(client.calls[0].skillNames.includes('plan-game-tactics'));
+  for (const call of client.calls.slice(1)) {
+    assert(!call.skillNames.includes('prepare-motion-experiment'));
+    assert(call.skillNames.includes('plan-game-tactics'));
+    assert(!call.tools.includes('get_motion_contract'));
+    assert(!call.tools.includes('prepare_reach_pose'));
+  }
+});
+
+test('motion sessions reject forced tactical skill activation without a snapshot', async () => {
+  const client = fixture([tool('load_skill', {name: 'prepare-motion-experiment'}, 'load-motion'),
+    tool('get_motion_contract'), tool('load_skill', {name: 'plan-game-tactics'}, 'load-tactics')]);
+  await assert.rejects(planTask('Prepare one motion proposal', client), /Read-only tactics and motion preparation cannot be combined/);
+  assert.equal(client.calls.length, 3);
+  for (const call of client.calls.slice(1)) {
+    assert(!call.skillNames.includes('plan-game-tactics'));
+    assert(call.skillNames.includes('prepare-motion-experiment'));
+    assert(!call.tools.includes('get_game_rules'));
+    assert(!call.tools.includes('get_game_snapshot'));
+    assert(!call.messages[0].content.includes('plan-game-tactics'));
+  }
+  assert(!client.calls[1].tools.includes('prepare_reach_pose'));
+  assert(client.calls[2].tools.includes('prepare_reach_pose'));
+});
+
+test('tactical sessions reject forced motion tools without a snapshot', async () => {
+  for (const name of ['get_motion_contract', 'prepare_reach_pose']) {
+    const client = fixture([tool('load_skill', {name: 'plan-game-tactics'}, 'load-tactics'), tool(name, {}, 'forced-motion')]);
+    await assert.rejects(planTask('Explain game rules', client), /Load the reviewed agent skill/);
+    assert(!client.calls[1].tools.includes(name));
+  }
+});
+
+test('tactical preparation guard fails closed even with overbroad registry permissions', async () => {
+  for (const gameSnapshot of [null, snapshot()]) {
+    const registry = {session: () => {
+      const session = createRegistry().session();
+      return {...session, permits: name => ['get_motion_contract', 'prepare_reach_pose'].includes(name) || session.permits(name)};
+    }};
+    const responses = gameSnapshot ? [] : [tool('get_motion_contract')];
+    const client = fixture([...responses, tool('load_skill', {name: 'plan-game-tactics'}, 'load-tactics'),
+      tool('prepare_reach_pose', {}, 'forced-motion')]);
+    await assert.rejects(planTask('Explain game rules', client, {registry, gameSnapshot}), /Read-only tactics cannot prepare motion/);
+    assert(!client.calls.at(-1).tools.includes('get_motion_contract'));
+    assert(!client.calls.at(-1).tools.includes('prepare_reach_pose'));
+  }
+});
+
+test('ordinary standalone motion proposals retain their contract gate and approval requirement', async () => {
+  const task = {start: {xIn: 0, yIn: 0, headingDeg: 0}, goal: {xIn: 0, yIn: 24, headingDeg: 0}, deadlineSeconds: 10};
+  const client = fixture([tool('load_skill', {name: 'prepare-motion-experiment'}, 'load-motion'), tool('get_motion_contract'),
+    tool('prepare_reach_pose', {task, summary: 'Fixture proposal only; separate approval required.'})]);
+  const result = await planTask('Move forward 24 inches', client);
+  assert.equal(result.status, 'prepared');
+  assert.deepEqual(result.task, task);
+  assert.deepEqual(result.skills.loaded.map(skill => skill.name), ['prepare-motion-experiment']);
+  assert.equal(result.execution, 'not run; a separate user approval is required');
+  assert.equal(result.run, undefined);
+  assert.deepEqual(result.analysisEvidence, {});
+  assert(!client.calls[1].tools.includes('prepare_reach_pose'));
+  assert(client.calls[2].tools.includes('prepare_reach_pose'));
+  assert(client.calls[2].skillNames.includes('inspect-robot'));
 });
 
 test('game API accepts explicit compact snapshot only and cannot approve tactical commentary', async context => {

@@ -27,6 +27,23 @@ extern "C" int motion_test(){
  pros::delayHook=[]{pros::testTime+=200;};CHECK(run(forward)==MotionResult::SensorFault);pros::delayHook=nullptr;
  pros::delayHook=[]{pros::competition::testMode=1;};CHECK(run(forward)==MotionResult::Cancelled);pros::delayHook=nullptr;pros::competition::testMode=0;
  CHECK(pros::c::voltages[11]==0&&pros::c::voltages[1]==0);
+ const pedro::BezierCurve path({0,0},{0,8},{0,16},{0,24});
+ const nationals::GuidingVectorField field(path,0,0);
+ auto runField=[&](const nationals::GuidingVectorField& candidate,double timeout=.05){
+   return nationals::followGuidingField(left,right,.08255,1,config,candidate,timeout,never);
+ };
+ CHECK(runField(field)==MotionResult::TimedOut);
+ CHECK(pros::c::voltages[11]==0&&pros::c::voltages[1]==0);
+ const nationals::GuidingVectorField stationary(pedro::BezierCurve({0,0},{0,0},{0,0},{0,0}),0,0);
+ CHECK(runField(stationary,.5)==MotionResult::Settled);
+ const nationals::GuidingVectorField invalid(pedro::BezierCurve({0,0},{0,8},{0,16},{61,24}),0,0);
+ CHECK(runField(invalid)==MotionResult::InvalidInput);
+ CHECK(nationals::followGuidingField(left,right,.08255,1,config,field,.5,[]{return true;})==MotionResult::Cancelled);
+ token=out.acquire();CHECK(token);CHECK(runField(field)==MotionResult::Busy);out.release(token);
+ left.testRpm=NAN;CHECK(runField(field)==MotionResult::SensorFault);left.testRpm=0;
+ pros::delayHook=[]{++lemlib::testEpoch;};CHECK(runField(field)==MotionResult::SensorFault);pros::delayHook=nullptr;
+ pros::delayHook=[]{pros::competition::testMode=1;};CHECK(runField(field)==MotionResult::Cancelled);pros::delayHook=nullptr;pros::competition::testMode=0;
+ CHECK(pros::c::voltages[11]==0&&pros::c::voltages[1]==0);
  CHECK(out.configure(nullptr,nullptr)==false);
  return 0;
 }

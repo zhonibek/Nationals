@@ -32,6 +32,14 @@ Torch and preloads the pinned model at startup; the decorated analysis handler
 requests a GPU only for real generation. Hardware and inference must be
 validated through successful image/video requests, not the RUNNING label alone.
 
+ZeroGPU's default large slice is currently48GB. Actual hosting eligibility is
+account-dependent: this project's account currently shows compute-backed Gradio
+creation as paid-plan-only. Do not purchase an upgrade or silently select paid
+GPU hardware. No successful deployment or generated answer is claimed by this
+package. GPU names and the SHA-256 of the exact decoded input-byte snapshot are
+included in generated response provenance; these are not signed hardware
+attestations or proof that the commentary is correct.
+
 The operator must obtain NVIDIA model access and supply a model-read credential
 as the private `HF_TOKEN` Space secret. Set `COSMOS_ALLOW_MODEL_DOWNLOAD=1`
 to authorize downloading that model at startup. Credentials never belong in

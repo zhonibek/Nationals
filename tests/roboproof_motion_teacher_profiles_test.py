@@ -52,7 +52,8 @@ class MotionTeacherProfilesTests(unittest.TestCase):
         default = teachers.teacher_profile_definition()
         optional = teachers.teacher_profile_definition(teachers.MEASURED_LATE_POSE_PROFILE)
         self.assertEqual(teachers.TEACHER_PROFILES, ("three-pace-v1", "measured-late-pose-v1",
-                         "failure-gated-late-pose-v1", "failure-gated-fine-pose-heading-v1"))
+                         "failure-gated-late-pose-v1", "failure-gated-fine-pose-heading-v1",
+                         "robust-stop-fine-pose-heading-v1"))
         self.assertEqual(default["id"], "three-pace-v1")
         self.assertTrue(default["default"])
         self.assertIsNone(default["latePose"])
@@ -78,10 +79,47 @@ class MotionTeacherProfilesTests(unittest.TestCase):
     def test_existing_profile_definitions_remain_exactly_unchanged(self):
         expected = {"three-pace-v1": "6737106297e74efa58cc843bd6cac322f6bc929851f7d2cd01d4d88427799ced",
                     "measured-late-pose-v1": "12c6fd11c4fe42d47bd12841c53b3faf6aff763806389254da28ab54f6408da8",
-                    "failure-gated-late-pose-v1": "debbb09bc4ebd8f22546ee6f5aed4c1538fccceaa9dc7af2f549dadad6a1c8f1"}
+                    "failure-gated-late-pose-v1": "debbb09bc4ebd8f22546ee6f5aed4c1538fccceaa9dc7af2f549dadad6a1c8f1",
+                    "failure-gated-fine-pose-heading-v1": "d5b77e8c9066f6e50bcce61af1018e239caf50ffdfba2db5aafc5aa73f99c1a0"}
         for profile, checksum in expected.items():
             serialized = json.dumps(teachers.teacher_profile_definition(profile), sort_keys=True, separators=(",", ":"))
             self.assertEqual(hashlib.sha256(serialized.encode()).hexdigest(), checksum)
+
+    def test_adaptive_stop_requires_measured_contact_free_pose_and_time_margins(self):
+        candidate = measurement(position=0.005, heading=0.005, elapsed=2, reason="success")
+        candidate["plan"] = teachers.base_plans()[1]
+        self.assertTrue(teachers.robust_teacher_success(candidate, 4))
+        for changes in ({"contactSeconds": 1e-12}, {"positionErrorMeters": 0.8 * 0.02032 + 1e-12},
+                        {"headingErrorRadians": 0.8 * 0.035 + 1e-12}, {"elapsedSeconds": 3 + 1e-12}):
+            changed = copy.deepcopy(candidate)
+            changed["metrics"].update(changes)
+            self.assertFalse(teachers.robust_teacher_success(changed, 4))
+        for reason in ("time_limit", "controller_or_sensor_fault", "stale_policy_action", "stopped"):
+            self.assertFalse(teachers.robust_teacher_success({**candidate, "reason": reason}, 4))
+        for invalid in INVALID_NUMBERS + (0, -1):
+            with self.assertRaises(ValueError):
+                teachers.robust_teacher_success(candidate, invalid)
+        for missing in ("plan", "metrics", "reason", "pace"):
+            changed = copy.deepcopy(candidate)
+            del changed[missing]
+            with self.assertRaises(ValueError):
+                teachers.robust_teacher_success(changed, 4)
+
+    def test_adaptive_profile_keeps_fine_probe_order_and_bounded_fallback(self):
+        profile = teachers.ADAPTIVE_FINE_POSE_HEADING_PROFILE
+        definition = teachers.teacher_profile_definition(profile)
+        previous = teachers.teacher_profile_definition(teachers.FINE_POSE_HEADING_PROFILE)
+        self.assertEqual(definition["basePlans"], previous["basePlans"])
+        self.assertEqual(definition["latePose"], previous["latePose"])
+        self.assertEqual(definition["maximumEpisodesPerWorld"], 10)
+        self.assertEqual(definition["earlyStop"]["requiredReason"], "success")
+        self.assertEqual(definition["earlyStop"]["contactSeconds"], 0)
+        self.assertEqual(json.loads(json.dumps(definition, allow_nan=False)), definition)
+        candidates = [measurement(pace) for pace in teachers.TEACHER_PACES]
+        self.assertEqual(teachers.probe_plans(candidates, profile),
+                         teachers.probe_plans(candidates, teachers.FINE_POSE_HEADING_PROFILE))
+        with self.assertRaises(ValueError):
+            teachers.probe_plans(candidates[:1], profile)
 
     def test_failure_gated_profile_is_opt_in_bounded_and_source_described(self):
         profile = teachers.FAILURE_GATED_LATE_POSE_PROFILE

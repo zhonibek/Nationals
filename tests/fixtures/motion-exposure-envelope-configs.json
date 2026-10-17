@@ -1,0 +1,1140 @@
+{
+  "config": {
+    "seed": 201,
+    "seedCount": 1,
+    "updates": 64,
+    "maxSteps": 50000,
+    "rolloutSteps": 256,
+    "algorithm": "td3-beta-mean-reference-v1",
+    "initialization": "broad-pace-v1",
+    "featureTransform": "deadline-context-v1",
+    "networkWidth": 256,
+    "trainingDevice": "cpu",
+    "expertDatasetDefinition": {
+      "schemaVersion": 1,
+      "method": "full-measured-corpus-warm-start-v1",
+      "manifestSha256": "a93483585c4c6c8cf384ab24fd026840395025913947c57a29298aa10e2f042e",
+      "worldsSha256": "e353cbc86f660fe1b8d0e250ce6bb0733317452f315108b4ef4dff42aabf3c5b",
+      "recordsSha256": "cbef943d4c295e9d6ca6e9536a2519398d2583679a8fc49c6531d16ed7bbf806",
+      "producerSourcesSha256": "ccc0e4c06ec7cea1ac32825b0794b9efc916b458a41744f72811298f3a8a16f2",
+      "featureTransform": "deadline-context-v1",
+      "featureSize": 145,
+      "worldCount": 128,
+      "labelWorldCount": 91,
+      "rowCount": 7856,
+      "sourceActualQueries": 108212,
+      "nativeCurriculumOffset": 128,
+      "warmLearning": "Every full admitted trajectory row, uniform original32-epoch imitation at each declared warm update",
+      "anchorSelection": "Existing512-row bank; equal chronological quota per admitted world, earliest declared worlds receive remainder, at most16 rows/world",
+      "accounting": "Source collection cost retained separately; rereading data adds no physical queries. Native collectionSteps and episodes exclude offline repetitions; accepted learning steps include them.",
+      "scope": "Measured training data only; no inference teacher, private actor input, changed physics/gate or learned-improvement claim"
+    },
+    "expertDatasetTransfer": {
+      "method": "explicit-measured-corpus-runtime-transfer-v2",
+      "attestationSha256": "78fc8ed763e14b1d76862fea74831b048c85cd04856be656fa2dfc96fd29d69b",
+      "producerTorchVersion": "2.8.0+cpu",
+      "consumerTorchVersion": "2.8.0+cpu",
+      "consumerPlatform": "Linux",
+      "producerEngineRuntime": {
+        "node": "v24.19.0",
+        "v8": "13.6.233.17-node.51",
+        "platform": "win32",
+        "arch": "x64"
+      },
+      "consumerEngineRuntime": {
+        "node": "v22.14.0",
+        "v8": "12.4.254.21-node.22",
+        "platform": "linux",
+        "arch": "x64"
+      },
+      "engineSourceIdentityPreserved": true,
+      "engineRuntimeParityVerified": false,
+      "newNativeQueries": 0,
+      "scope": "Explicit locally verified data transfer, not external custody, interchangeable checkpoints or learned/physical qualification. Original producer runtime and every recorded byte remain unchanged."
+    },
+    "corpusAnchorSource": "full-corpus-equal-world-v1",
+    "corpusAnchorDefinition": {
+      "method": "full-corpus-equal-world-v1",
+      "manifestSha256": "a93483585c4c6c8cf384ab24fd026840395025913947c57a29298aa10e2f042e",
+      "rows": 7856,
+      "labelWorlds": 91,
+      "batchRows": 32,
+      "sampling": "Uniform full-corpus row draw without replacement per actor step",
+      "rowWeight": "N/(W*L), equal expected contribution per admitted world; no minibatch renormalization",
+      "lossProfile": "pose-budget-v2",
+      "data": "All original measured public inputs/actions; no new or invented labels",
+      "resume": "Rebuild immutable pool only from the exact source-bound corpus; checkpoint config and global Torch RNG bind continuation",
+      "legacyBank": "Existing512-row bank remains saved for original provenance; full pool supplies native retention only",
+      "scope": "Soft training loss on every action head, no inference projection, evaluator data, new input or changed physics"
+    },
+    "corpusWarmLossProfile": "pose-budget-v2",
+    "corpusWarmLossDefinition": {
+      "method": "pose-budget-v2",
+      "scales": [
+        1.0,
+        19.685039370078737,
+        19.685039370078737,
+        14.285714285714285
+      ],
+      "reduction": "Mean over all four squared signed Beta-mean action errors after multiplying each axis scale",
+      "scope": "Training-only action units relative to unchanged20% pose budgets; no new tolerance, inference projection or private input"
+    },
+    "normalizationDefinition": null,
+    "deadlineContextDefinition": {
+      "schemaVersion": 1,
+      "settlingReserveSeconds": 2,
+      "input": "public-reference-duration-at-reset"
+    },
+    "objective": "finite-total-return-settle-margin-v4",
+    "objectiveDefinition": {
+      "method": "finite-total-return-settle-margin-v4",
+      "baseReward": "finite-total-return-pose-effort-v3",
+      "terminalReasons": [
+        "success",
+        "time_limit"
+      ],
+      "successTolerances": {
+        "positionErrorMeters": 0.02032,
+        "headingErrorRadians": 0.035,
+        "speedMetersPerSecond": 0.0254,
+        "yawRateRadiansPerSecond": 0.0873
+      },
+      "bonus": "2*min(tolerance/(tolerance+nonnegativeMeasuredError)) across all four criteria",
+      "range": [
+        0,
+        2
+      ],
+      "timing": "One bonus at intrinsic episode end; none for running or fault states",
+      "scope": "Privileged training-only terminal feedback; canonical reward, actor inputs and pass gates unchanged"
+    },
+    "curriculum": "mixed-full-reach-v5",
+    "curriculumDefinition": {
+      "method": "mixed-full-reach-v5",
+      "initialEasyEpisodes": 4,
+      "familyCycle": [
+        "field",
+        "full",
+        "short",
+        "field"
+      ],
+      "short": {
+        "startLimitInches": 12,
+        "distanceInches": [
+          12,
+          40
+        ],
+        "goalHeadingDegrees": [
+          -135,
+          135
+        ]
+      },
+      "field": {
+        "startLimitInches": 40,
+        "goalLimitInches": 45,
+        "goalHeadingDegrees": [
+          -175,
+          175
+        ]
+      },
+      "full": {
+        "startLimitInches": 50,
+        "goalLimitInches": 60,
+        "goalHeadingDegrees": [
+          -180,
+          180
+        ],
+        "boundaryProbability": 0.5
+      },
+      "startHeadingDegrees": [
+        -45,
+        45
+      ],
+      "deadlineChoicesSeconds": [
+        6,
+        10,
+        10,
+        10
+      ],
+      "physicalVariation": "Uniform nominal/heavy/battery/wide categories within the public original-engine ranges",
+      "scope": "Training distribution only; original reward, observations, actions, controller and pass gates unchanged"
+    },
+    "warmStartUpdates": 8,
+    "teacherSelection": "pose-deadline-margin-v2",
+    "teacherProfile": "robust-stop-fine-pose-heading-v1",
+    "teacherProfileDefinition": {
+      "schemaVersion": 1,
+      "id": "robust-stop-fine-pose-heading-v1",
+      "default": false,
+      "basePaces": [
+        0.85,
+        0.95,
+        1.0
+      ],
+      "basePlans": [
+        {
+          "kind": "base",
+          "pace": 0.85,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        },
+        {
+          "kind": "base",
+          "pace": 0.95,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        },
+        {
+          "kind": "base",
+          "pace": 1.0,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        }
+      ],
+      "maximumEpisodesPerWorld": 10,
+      "maximumProbeEpisodes": 6,
+      "maximumCombinedEpisodes": 1,
+      "actionOrder": [
+        "paceUnit",
+        "right",
+        "forward",
+        "heading"
+      ],
+      "actionBounds": [
+        -1.0,
+        1.0
+      ],
+      "paceMapping": "pace = 0.25 + (paceUnit + 1) * 0.75 / 2",
+      "offsetFrame": "Current reference heading; not start, goal or true heading",
+      "offsetScales": {
+        "rightMeters": 0.08,
+        "forwardMeters": 0.08,
+        "headingRadians": 0.1
+      },
+      "latePose": {
+        "observationSize": 34,
+        "referenceSecondsIndex": 25,
+        "resetDurationKey": "referenceDurationSeconds",
+        "phaseStartFraction": 0.8,
+        "probeOffsets": [
+          {
+            "kind": "fine-right-negative",
+            "right": -0.125,
+            "forward": 0.0,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-right-positive",
+            "right": 0.125,
+            "forward": 0.0,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-forward-negative",
+            "right": 0.0,
+            "forward": -0.125,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-forward-positive",
+            "right": 0.0,
+            "forward": 0.125,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-heading-negative",
+            "right": 0.0,
+            "forward": 0.0,
+            "heading": -0.1
+          },
+          {
+            "kind": "fine-heading-positive",
+            "right": 0.0,
+            "forward": 0.0,
+            "heading": 0.1
+          }
+        ],
+        "paceRanking": [
+          "contactSeconds",
+          "normalizedTerminalPoseErrorSquared",
+          "effortProxyVAs",
+          "elapsedSeconds",
+          "pace"
+        ],
+        "poseScales": {
+          "positionErrorMeters": 0.02032,
+          "headingErrorRadians": 0.035
+        },
+        "nonfaultReasons": [
+          "success",
+          "time_limit"
+        ],
+        "fallbackPace": 0.95,
+        "fallbackRule": "No empty or partial base measurements; all three actual attempts required",
+        "combinedRule": "Each axis: baseline zero or measured signed probe, same contact and strictly lower normalized squared position/heading error; measure combination separately",
+        "combinedTieRule": "Baseline zero, then negative, then positive",
+        "probeGate": "All three measured base paces required; probe only if none succeeds with exactly zero contact",
+        "combinedGate": "No successful zero-contact base teacher; combined labels still require their own actual episode",
+        "probeMagnitudes": {
+          "positionUnits": 0.125,
+          "headingUnits": 0.1,
+          "positionMeters": 0.01,
+          "headingRadians": 0.01
+        }
+      },
+      "costAccounting": "Caller charges every actual episode and step, including failures and interruptions; no refunds",
+      "scope": "Training-only measured labels; original physics, filter, actor features, reward and success gates unchanged",
+      "earlyStop": {
+        "order": "Original base pace order, then original six fine-position/angular probes",
+        "requiredReason": "success",
+        "contactSeconds": 0.0,
+        "maximumPositionErrorMeters": 0.016256000000000003,
+        "maximumHeadingErrorRadians": 0.028000000000000004,
+        "minimumDeadlineReserveSeconds": 1.0,
+        "rule": "Stop only after an actual complete robust success; remaining attempts are not measured or inferred",
+        "fallback": "Without robust success measure all bases and, if failure-gated, all six probes before combining"
+      }
+    },
+    "demonstrationAnchorWeight": 4,
+    "demonstrationAnchorLossProfile": "pose-budget-v2",
+    "gradientSteps": 32,
+    "replayCapacity": 1024,
+    "batchSize": 64,
+    "explorationStd": 0.05,
+    "policyRegularization": "public-deadline-residual-v1",
+    "nStepReturns": 32,
+    "deadlinePaceLossWeight": 4,
+    "criticTerminalFraction": 0,
+    "replayStrategy": "episode-balanced-reservoir-v1",
+    "episodeReplayDefinition": {
+      "method": "episode-balanced-reservoir-v1",
+      "retention": "Unchanged uniform accepted-row reservoir and actual row accounting",
+      "length": "Actual complete raw episode row count, attached before n-step horizon packing; all outcomes retained",
+      "probability": "Normalize1/episodeLength over occupied reservoir slots; draw with replacement",
+      "objective": "Both critics, actor Q and its public priors use the same episode-length-balanced row distribution",
+      "weight": "No inverse-probability correction: intentionally different training objective, not uniform-row equivalence",
+      "limitation": "Equal mass per episode only when every episode row is retained; a finite row reservoir approximates that balance",
+      "terminalMixture": "Must be zero; no compounded terminal selection",
+      "scope": "Training-only sampling metadata; no actor input, outcome filtering, new query, physics, reward or gate change"
+    },
+    "explorationProfile": "ou-pose-v1",
+    "poseExplorationStd": 0.2,
+    "explorationCorrelationSeconds": 1,
+    "td3Definition": {
+      "actor": "Deterministic Beta mean, every reference axis learned; no value-only critic branch",
+      "critics": "Independent twin-Q256x256 value estimators; original Simulator remains the environment",
+      "discountFactor": 1.0,
+      "targetTau": 0.005,
+      "policyDelay": 2,
+      "targetNoiseStd": 0.05,
+      "targetNoiseClip": 0.1,
+      "actorLearningRate": 0.0003,
+      "criticLearningRate": 0.0003,
+      "imitationLearningRate": 0.001,
+      "terminal": "Success, fault and original task deadline all stop bootstrap; never cross resets",
+      "returns": {
+        "method": "complete-intrinsic-episode-n-step-v1",
+        "steps": 32,
+        "discountFactor": 1.0,
+        "scope": "Recorded behavior rewards/actions until terminal; no reset crossing, evaluator actor input or substitute physics",
+        "offPolicy": "Later behavior actions introduce multi-step off-policy bias; this is an explicit TD3 variant, not canonical one-step equivalence"
+      },
+      "replay": "Only complete original-engine collections; every actual query/exposure charged",
+      "replayRetention": {
+        "method": "episode-balanced-reservoir-v1",
+        "capacity": 1024,
+        "scope": "Uniform accepted-row reservoir with episode-length-balanced training draws, no reward/outcome filtering or new query",
+        "replacement": "At rowN draw integer0..N-1; replace that slot only if below capacity. Every row counted; Torch RNG/checkpoint exact.",
+        "offPolicy": "Reservoir retains older behavior;32-step returns remain an off-policy approximation, no deterministic-policy truth claim"
+      },
+      "criticSampling": {
+        "method": "episode-balanced-reservoir-v1",
+        "retention": "Unchanged uniform accepted-row reservoir and actual row accounting",
+        "length": "Actual complete raw episode row count, attached before n-step horizon packing; all outcomes retained",
+        "probability": "Normalize1/episodeLength over occupied reservoir slots; draw with replacement",
+        "objective": "Both critics, actor Q and its public priors use the same episode-length-balanced row distribution",
+        "weight": "No inverse-probability correction: intentionally different training objective, not uniform-row equivalence",
+        "limitation": "Equal mass per episode only when every episode row is retained; a finite row reservoir approximates that balance",
+        "terminalMixture": "Must be zero; no compounded terminal selection",
+        "scope": "Training-only sampling metadata; no actor input, outcome filtering, new query, physics, reward or gate change"
+      },
+      "exploration": "IID pace and correlated OU pose noise, reset every real world; training only, clip to existing contract bounds",
+      "explorationDefinition": {
+        "method": "ou-pose-v1",
+        "policyDtSeconds": 0.05,
+        "paceStd": 0.05,
+        "poseStd": 0.2,
+        "correlationSeconds": 1,
+        "reset": "Zero pose state at every real episode; no mid-episode checkpoint promise",
+        "scope": "Same four bounded reference actions; no inference noise, actor truth, wider action range or changed reference filter"
+      },
+      "inference": "Unchanged deterministic mean; no inference projection or frozen head"
+    }
+  },
+  "controlConfig": {
+    "seed": 201,
+    "seedCount": 1,
+    "updates": 64,
+    "maxSteps": 50000,
+    "rolloutSteps": 256,
+    "algorithm": "td3-beta-mean-reference-v1",
+    "initialization": "broad-pace-v1",
+    "featureTransform": "deadline-context-v1",
+    "networkWidth": 256,
+    "trainingDevice": "cpu",
+    "expertDatasetDefinition": {
+      "schemaVersion": 1,
+      "method": "full-measured-corpus-warm-start-v1",
+      "manifestSha256": "a93483585c4c6c8cf384ab24fd026840395025913947c57a29298aa10e2f042e",
+      "worldsSha256": "e353cbc86f660fe1b8d0e250ce6bb0733317452f315108b4ef4dff42aabf3c5b",
+      "recordsSha256": "cbef943d4c295e9d6ca6e9536a2519398d2583679a8fc49c6531d16ed7bbf806",
+      "producerSourcesSha256": "ccc0e4c06ec7cea1ac32825b0794b9efc916b458a41744f72811298f3a8a16f2",
+      "featureTransform": "deadline-context-v1",
+      "featureSize": 145,
+      "worldCount": 128,
+      "labelWorldCount": 91,
+      "rowCount": 7856,
+      "sourceActualQueries": 108212,
+      "nativeCurriculumOffset": 128,
+      "warmLearning": "Every full admitted trajectory row, uniform original32-epoch imitation at each declared warm update",
+      "anchorSelection": "Existing512-row bank; equal chronological quota per admitted world, earliest declared worlds receive remainder, at most16 rows/world",
+      "accounting": "Source collection cost retained separately; rereading data adds no physical queries. Native collectionSteps and episodes exclude offline repetitions; accepted learning steps include them.",
+      "scope": "Measured training data only; no inference teacher, private actor input, changed physics/gate or learned-improvement claim"
+    },
+    "expertDatasetTransfer": {
+      "method": "explicit-measured-corpus-runtime-transfer-v2",
+      "attestationSha256": "78fc8ed763e14b1d76862fea74831b048c85cd04856be656fa2dfc96fd29d69b",
+      "producerTorchVersion": "2.8.0+cpu",
+      "consumerTorchVersion": "2.8.0+cpu",
+      "consumerPlatform": "Linux",
+      "producerEngineRuntime": {
+        "node": "v24.19.0",
+        "v8": "13.6.233.17-node.51",
+        "platform": "win32",
+        "arch": "x64"
+      },
+      "consumerEngineRuntime": {
+        "node": "v22.14.0",
+        "v8": "12.4.254.21-node.22",
+        "platform": "linux",
+        "arch": "x64"
+      },
+      "engineSourceIdentityPreserved": true,
+      "engineRuntimeParityVerified": false,
+      "newNativeQueries": 0,
+      "scope": "Explicit locally verified data transfer, not external custody, interchangeable checkpoints or learned/physical qualification. Original producer runtime and every recorded byte remain unchanged."
+    },
+    "corpusAnchorSource": "full-corpus-equal-world-v1",
+    "corpusAnchorDefinition": {
+      "method": "full-corpus-equal-world-v1",
+      "manifestSha256": "a93483585c4c6c8cf384ab24fd026840395025913947c57a29298aa10e2f042e",
+      "rows": 7856,
+      "labelWorlds": 91,
+      "batchRows": 32,
+      "sampling": "Uniform full-corpus row draw without replacement per actor step",
+      "rowWeight": "N/(W*L), equal expected contribution per admitted world; no minibatch renormalization",
+      "lossProfile": "pose-budget-v2",
+      "data": "All original measured public inputs/actions; no new or invented labels",
+      "resume": "Rebuild immutable pool only from the exact source-bound corpus; checkpoint config and global Torch RNG bind continuation",
+      "legacyBank": "Existing512-row bank remains saved for original provenance; full pool supplies native retention only",
+      "scope": "Soft training loss on every action head, no inference projection, evaluator data, new input or changed physics"
+    },
+    "corpusWarmLossProfile": "pose-budget-v2",
+    "corpusWarmLossDefinition": {
+      "method": "pose-budget-v2",
+      "scales": [
+        1.0,
+        19.685039370078737,
+        19.685039370078737,
+        14.285714285714285
+      ],
+      "reduction": "Mean over all four squared signed Beta-mean action errors after multiplying each axis scale",
+      "scope": "Training-only action units relative to unchanged20% pose budgets; no new tolerance, inference projection or private input"
+    },
+    "normalizationDefinition": null,
+    "deadlineContextDefinition": {
+      "schemaVersion": 1,
+      "settlingReserveSeconds": 2,
+      "input": "public-reference-duration-at-reset"
+    },
+    "objective": "finite-total-return-settle-margin-v4",
+    "objectiveDefinition": {
+      "method": "finite-total-return-settle-margin-v4",
+      "baseReward": "finite-total-return-pose-effort-v3",
+      "terminalReasons": [
+        "success",
+        "time_limit"
+      ],
+      "successTolerances": {
+        "positionErrorMeters": 0.02032,
+        "headingErrorRadians": 0.035,
+        "speedMetersPerSecond": 0.0254,
+        "yawRateRadiansPerSecond": 0.0873
+      },
+      "bonus": "2*min(tolerance/(tolerance+nonnegativeMeasuredError)) across all four criteria",
+      "range": [
+        0,
+        2
+      ],
+      "timing": "One bonus at intrinsic episode end; none for running or fault states",
+      "scope": "Privileged training-only terminal feedback; canonical reward, actor inputs and pass gates unchanged"
+    },
+    "curriculum": "mixed-full-reach-v5",
+    "curriculumDefinition": {
+      "method": "mixed-full-reach-v5",
+      "initialEasyEpisodes": 4,
+      "familyCycle": [
+        "field",
+        "full",
+        "short",
+        "field"
+      ],
+      "short": {
+        "startLimitInches": 12,
+        "distanceInches": [
+          12,
+          40
+        ],
+        "goalHeadingDegrees": [
+          -135,
+          135
+        ]
+      },
+      "field": {
+        "startLimitInches": 40,
+        "goalLimitInches": 45,
+        "goalHeadingDegrees": [
+          -175,
+          175
+        ]
+      },
+      "full": {
+        "startLimitInches": 50,
+        "goalLimitInches": 60,
+        "goalHeadingDegrees": [
+          -180,
+          180
+        ],
+        "boundaryProbability": 0.5
+      },
+      "startHeadingDegrees": [
+        -45,
+        45
+      ],
+      "deadlineChoicesSeconds": [
+        6,
+        10,
+        10,
+        10
+      ],
+      "physicalVariation": "Uniform nominal/heavy/battery/wide categories within the public original-engine ranges",
+      "scope": "Training distribution only; original reward, observations, actions, controller and pass gates unchanged"
+    },
+    "warmStartUpdates": 8,
+    "teacherSelection": "pose-deadline-margin-v2",
+    "teacherProfile": "robust-stop-fine-pose-heading-v1",
+    "teacherProfileDefinition": {
+      "schemaVersion": 1,
+      "id": "robust-stop-fine-pose-heading-v1",
+      "default": false,
+      "basePaces": [
+        0.85,
+        0.95,
+        1.0
+      ],
+      "basePlans": [
+        {
+          "kind": "base",
+          "pace": 0.85,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        },
+        {
+          "kind": "base",
+          "pace": 0.95,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        },
+        {
+          "kind": "base",
+          "pace": 1.0,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        }
+      ],
+      "maximumEpisodesPerWorld": 10,
+      "maximumProbeEpisodes": 6,
+      "maximumCombinedEpisodes": 1,
+      "actionOrder": [
+        "paceUnit",
+        "right",
+        "forward",
+        "heading"
+      ],
+      "actionBounds": [
+        -1.0,
+        1.0
+      ],
+      "paceMapping": "pace = 0.25 + (paceUnit + 1) * 0.75 / 2",
+      "offsetFrame": "Current reference heading; not start, goal or true heading",
+      "offsetScales": {
+        "rightMeters": 0.08,
+        "forwardMeters": 0.08,
+        "headingRadians": 0.1
+      },
+      "latePose": {
+        "observationSize": 34,
+        "referenceSecondsIndex": 25,
+        "resetDurationKey": "referenceDurationSeconds",
+        "phaseStartFraction": 0.8,
+        "probeOffsets": [
+          {
+            "kind": "fine-right-negative",
+            "right": -0.125,
+            "forward": 0.0,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-right-positive",
+            "right": 0.125,
+            "forward": 0.0,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-forward-negative",
+            "right": 0.0,
+            "forward": -0.125,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-forward-positive",
+            "right": 0.0,
+            "forward": 0.125,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-heading-negative",
+            "right": 0.0,
+            "forward": 0.0,
+            "heading": -0.1
+          },
+          {
+            "kind": "fine-heading-positive",
+            "right": 0.0,
+            "forward": 0.0,
+            "heading": 0.1
+          }
+        ],
+        "paceRanking": [
+          "contactSeconds",
+          "normalizedTerminalPoseErrorSquared",
+          "effortProxyVAs",
+          "elapsedSeconds",
+          "pace"
+        ],
+        "poseScales": {
+          "positionErrorMeters": 0.02032,
+          "headingErrorRadians": 0.035
+        },
+        "nonfaultReasons": [
+          "success",
+          "time_limit"
+        ],
+        "fallbackPace": 0.95,
+        "fallbackRule": "No empty or partial base measurements; all three actual attempts required",
+        "combinedRule": "Each axis: baseline zero or measured signed probe, same contact and strictly lower normalized squared position/heading error; measure combination separately",
+        "combinedTieRule": "Baseline zero, then negative, then positive",
+        "probeGate": "All three measured base paces required; probe only if none succeeds with exactly zero contact",
+        "combinedGate": "No successful zero-contact base teacher; combined labels still require their own actual episode",
+        "probeMagnitudes": {
+          "positionUnits": 0.125,
+          "headingUnits": 0.1,
+          "positionMeters": 0.01,
+          "headingRadians": 0.01
+        }
+      },
+      "costAccounting": "Caller charges every actual episode and step, including failures and interruptions; no refunds",
+      "scope": "Training-only measured labels; original physics, filter, actor features, reward and success gates unchanged",
+      "earlyStop": {
+        "order": "Original base pace order, then original six fine-position/angular probes",
+        "requiredReason": "success",
+        "contactSeconds": 0.0,
+        "maximumPositionErrorMeters": 0.016256000000000003,
+        "maximumHeadingErrorRadians": 0.028000000000000004,
+        "minimumDeadlineReserveSeconds": 1.0,
+        "rule": "Stop only after an actual complete robust success; remaining attempts are not measured or inferred",
+        "fallback": "Without robust success measure all bases and, if failure-gated, all six probes before combining"
+      }
+    },
+    "demonstrationAnchorWeight": 4,
+    "demonstrationAnchorLossProfile": "pose-budget-v2",
+    "gradientSteps": 32,
+    "replayCapacity": 1024,
+    "batchSize": 64,
+    "explorationStd": 0.05,
+    "policyRegularization": "public-deadline-residual-v1",
+    "nStepReturns": 32,
+    "deadlinePaceLossWeight": 4,
+    "criticTerminalFraction": 0,
+    "replayStrategy": "uniform-reservoir-v1",
+    "explorationProfile": "ou-pose-v1",
+    "poseExplorationStd": 0.2,
+    "explorationCorrelationSeconds": 1,
+    "td3Definition": {
+      "actor": "Deterministic Beta mean, every reference axis learned; no value-only critic branch",
+      "critics": "Independent twin-Q256x256 value estimators; original Simulator remains the environment",
+      "discountFactor": 1.0,
+      "targetTau": 0.005,
+      "policyDelay": 2,
+      "targetNoiseStd": 0.05,
+      "targetNoiseClip": 0.1,
+      "actorLearningRate": 0.0003,
+      "criticLearningRate": 0.0003,
+      "imitationLearningRate": 0.001,
+      "terminal": "Success, fault and original task deadline all stop bootstrap; never cross resets",
+      "returns": {
+        "method": "complete-intrinsic-episode-n-step-v1",
+        "steps": 32,
+        "discountFactor": 1.0,
+        "scope": "Recorded behavior rewards/actions until terminal; no reset crossing, evaluator actor input or substitute physics",
+        "offPolicy": "Later behavior actions introduce multi-step off-policy bias; this is an explicit TD3 variant, not canonical one-step equivalence"
+      },
+      "replay": "Only complete original-engine collections; every actual query/exposure charged",
+      "replayRetention": {
+        "method": "uniform-reservoir-v1",
+        "capacity": 1024,
+        "scope": "Recent ring by default; optional uniform reservoir over every accepted learning row, no reward/outcome selection or new query",
+        "replacement": "At rowN draw integer0..N-1; replace that slot only if below capacity. Every row counted; Torch RNG/checkpoint exact.",
+        "offPolicy": "Reservoir retains older behavior;32-step returns remain an off-policy approximation, no deterministic-policy truth claim"
+      },
+      "criticSampling": {
+        "method": "uniform-replay-v1",
+        "terminalMixtureWeight": 0,
+        "weight": "1/(occupiedRows*rowProbability), no batch normalization or clipping",
+        "scope": "Critic objective retains uniform-row expectation before gradient clipping; actor/priors independently uniform. Terminal horizons may share real end states."
+      },
+      "exploration": "IID pace and correlated OU pose noise, reset every real world; training only, clip to existing contract bounds",
+      "explorationDefinition": {
+        "method": "ou-pose-v1",
+        "policyDtSeconds": 0.05,
+        "paceStd": 0.05,
+        "poseStd": 0.2,
+        "correlationSeconds": 1,
+        "reset": "Zero pose state at every real episode; no mid-episode checkpoint promise",
+        "scope": "Same four bounded reference actions; no inference noise, actor truth, wider action range or changed reference filter"
+      },
+      "inference": "Unchanged deterministic mean; no inference projection or frozen head"
+    }
+  },
+  "proofConfig": {
+    "seed": 1360052,
+    "seedCount": 1,
+    "updates": 4,
+    "maxSteps": 4096,
+    "rolloutSteps": 64,
+    "algorithm": "td3-beta-mean-reference-v1",
+    "initialization": "broad-pace-v1",
+    "featureTransform": "deadline-context-v1",
+    "networkWidth": 256,
+    "trainingDevice": "cpu",
+    "expertDatasetDefinition": {
+      "schemaVersion": 1,
+      "method": "full-measured-corpus-warm-start-v1",
+      "manifestSha256": "a93483585c4c6c8cf384ab24fd026840395025913947c57a29298aa10e2f042e",
+      "worldsSha256": "e353cbc86f660fe1b8d0e250ce6bb0733317452f315108b4ef4dff42aabf3c5b",
+      "recordsSha256": "cbef943d4c295e9d6ca6e9536a2519398d2583679a8fc49c6531d16ed7bbf806",
+      "producerSourcesSha256": "ccc0e4c06ec7cea1ac32825b0794b9efc916b458a41744f72811298f3a8a16f2",
+      "featureTransform": "deadline-context-v1",
+      "featureSize": 145,
+      "worldCount": 128,
+      "labelWorldCount": 91,
+      "rowCount": 7856,
+      "sourceActualQueries": 108212,
+      "nativeCurriculumOffset": 128,
+      "warmLearning": "Every full admitted trajectory row, uniform original32-epoch imitation at each declared warm update",
+      "anchorSelection": "Existing512-row bank; equal chronological quota per admitted world, earliest declared worlds receive remainder, at most16 rows/world",
+      "accounting": "Source collection cost retained separately; rereading data adds no physical queries. Native collectionSteps and episodes exclude offline repetitions; accepted learning steps include them.",
+      "scope": "Measured training data only; no inference teacher, private actor input, changed physics/gate or learned-improvement claim"
+    },
+    "expertDatasetTransfer": {
+      "method": "explicit-measured-corpus-runtime-transfer-v2",
+      "attestationSha256": "78fc8ed763e14b1d76862fea74831b048c85cd04856be656fa2dfc96fd29d69b",
+      "producerTorchVersion": "2.8.0+cpu",
+      "consumerTorchVersion": "2.8.0+cpu",
+      "consumerPlatform": "Linux",
+      "producerEngineRuntime": {
+        "node": "v24.19.0",
+        "v8": "13.6.233.17-node.51",
+        "platform": "win32",
+        "arch": "x64"
+      },
+      "consumerEngineRuntime": {
+        "node": "v22.14.0",
+        "v8": "12.4.254.21-node.22",
+        "platform": "linux",
+        "arch": "x64"
+      },
+      "engineSourceIdentityPreserved": true,
+      "engineRuntimeParityVerified": false,
+      "newNativeQueries": 0,
+      "scope": "Explicit locally verified data transfer, not external custody, interchangeable checkpoints or learned/physical qualification. Original producer runtime and every recorded byte remain unchanged."
+    },
+    "corpusAnchorSource": "full-corpus-equal-world-v1",
+    "corpusAnchorDefinition": {
+      "method": "full-corpus-equal-world-v1",
+      "manifestSha256": "a93483585c4c6c8cf384ab24fd026840395025913947c57a29298aa10e2f042e",
+      "rows": 7856,
+      "labelWorlds": 91,
+      "batchRows": 32,
+      "sampling": "Uniform full-corpus row draw without replacement per actor step",
+      "rowWeight": "N/(W*L), equal expected contribution per admitted world; no minibatch renormalization",
+      "lossProfile": "pose-budget-v2",
+      "data": "All original measured public inputs/actions; no new or invented labels",
+      "resume": "Rebuild immutable pool only from the exact source-bound corpus; checkpoint config and global Torch RNG bind continuation",
+      "legacyBank": "Existing512-row bank remains saved for original provenance; full pool supplies native retention only",
+      "scope": "Soft training loss on every action head, no inference projection, evaluator data, new input or changed physics"
+    },
+    "corpusWarmLossProfile": "pose-budget-v2",
+    "corpusWarmLossDefinition": {
+      "method": "pose-budget-v2",
+      "scales": [
+        1.0,
+        19.685039370078737,
+        19.685039370078737,
+        14.285714285714285
+      ],
+      "reduction": "Mean over all four squared signed Beta-mean action errors after multiplying each axis scale",
+      "scope": "Training-only action units relative to unchanged20% pose budgets; no new tolerance, inference projection or private input"
+    },
+    "normalizationDefinition": null,
+    "deadlineContextDefinition": {
+      "schemaVersion": 1,
+      "settlingReserveSeconds": 2,
+      "input": "public-reference-duration-at-reset"
+    },
+    "objective": "finite-total-return-settle-margin-v4",
+    "objectiveDefinition": {
+      "method": "finite-total-return-settle-margin-v4",
+      "baseReward": "finite-total-return-pose-effort-v3",
+      "terminalReasons": [
+        "success",
+        "time_limit"
+      ],
+      "successTolerances": {
+        "positionErrorMeters": 0.02032,
+        "headingErrorRadians": 0.035,
+        "speedMetersPerSecond": 0.0254,
+        "yawRateRadiansPerSecond": 0.0873
+      },
+      "bonus": "2*min(tolerance/(tolerance+nonnegativeMeasuredError)) across all four criteria",
+      "range": [
+        0,
+        2
+      ],
+      "timing": "One bonus at intrinsic episode end; none for running or fault states",
+      "scope": "Privileged training-only terminal feedback; canonical reward, actor inputs and pass gates unchanged"
+    },
+    "curriculum": "mixed-full-reach-v5",
+    "curriculumDefinition": {
+      "method": "mixed-full-reach-v5",
+      "initialEasyEpisodes": 4,
+      "familyCycle": [
+        "field",
+        "full",
+        "short",
+        "field"
+      ],
+      "short": {
+        "startLimitInches": 12,
+        "distanceInches": [
+          12,
+          40
+        ],
+        "goalHeadingDegrees": [
+          -135,
+          135
+        ]
+      },
+      "field": {
+        "startLimitInches": 40,
+        "goalLimitInches": 45,
+        "goalHeadingDegrees": [
+          -175,
+          175
+        ]
+      },
+      "full": {
+        "startLimitInches": 50,
+        "goalLimitInches": 60,
+        "goalHeadingDegrees": [
+          -180,
+          180
+        ],
+        "boundaryProbability": 0.5
+      },
+      "startHeadingDegrees": [
+        -45,
+        45
+      ],
+      "deadlineChoicesSeconds": [
+        6,
+        10,
+        10,
+        10
+      ],
+      "physicalVariation": "Uniform nominal/heavy/battery/wide categories within the public original-engine ranges",
+      "scope": "Training distribution only; original reward, observations, actions, controller and pass gates unchanged"
+    },
+    "warmStartUpdates": 1,
+    "teacherSelection": "pose-deadline-margin-v2",
+    "teacherProfile": "robust-stop-fine-pose-heading-v1",
+    "teacherProfileDefinition": {
+      "schemaVersion": 1,
+      "id": "robust-stop-fine-pose-heading-v1",
+      "default": false,
+      "basePaces": [
+        0.85,
+        0.95,
+        1.0
+      ],
+      "basePlans": [
+        {
+          "kind": "base",
+          "pace": 0.85,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        },
+        {
+          "kind": "base",
+          "pace": 0.95,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        },
+        {
+          "kind": "base",
+          "pace": 1.0,
+          "right": 0.0,
+          "forward": 0.0,
+          "heading": 0.0,
+          "phaseStartFraction": 0.0
+        }
+      ],
+      "maximumEpisodesPerWorld": 10,
+      "maximumProbeEpisodes": 6,
+      "maximumCombinedEpisodes": 1,
+      "actionOrder": [
+        "paceUnit",
+        "right",
+        "forward",
+        "heading"
+      ],
+      "actionBounds": [
+        -1.0,
+        1.0
+      ],
+      "paceMapping": "pace = 0.25 + (paceUnit + 1) * 0.75 / 2",
+      "offsetFrame": "Current reference heading; not start, goal or true heading",
+      "offsetScales": {
+        "rightMeters": 0.08,
+        "forwardMeters": 0.08,
+        "headingRadians": 0.1
+      },
+      "latePose": {
+        "observationSize": 34,
+        "referenceSecondsIndex": 25,
+        "resetDurationKey": "referenceDurationSeconds",
+        "phaseStartFraction": 0.8,
+        "probeOffsets": [
+          {
+            "kind": "fine-right-negative",
+            "right": -0.125,
+            "forward": 0.0,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-right-positive",
+            "right": 0.125,
+            "forward": 0.0,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-forward-negative",
+            "right": 0.0,
+            "forward": -0.125,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-forward-positive",
+            "right": 0.0,
+            "forward": 0.125,
+            "heading": 0.0
+          },
+          {
+            "kind": "fine-heading-negative",
+            "right": 0.0,
+            "forward": 0.0,
+            "heading": -0.1
+          },
+          {
+            "kind": "fine-heading-positive",
+            "right": 0.0,
+            "forward": 0.0,
+            "heading": 0.1
+          }
+        ],
+        "paceRanking": [
+          "contactSeconds",
+          "normalizedTerminalPoseErrorSquared",
+          "effortProxyVAs",
+          "elapsedSeconds",
+          "pace"
+        ],
+        "poseScales": {
+          "positionErrorMeters": 0.02032,
+          "headingErrorRadians": 0.035
+        },
+        "nonfaultReasons": [
+          "success",
+          "time_limit"
+        ],
+        "fallbackPace": 0.95,
+        "fallbackRule": "No empty or partial base measurements; all three actual attempts required",
+        "combinedRule": "Each axis: baseline zero or measured signed probe, same contact and strictly lower normalized squared position/heading error; measure combination separately",
+        "combinedTieRule": "Baseline zero, then negative, then positive",
+        "probeGate": "All three measured base paces required; probe only if none succeeds with exactly zero contact",
+        "combinedGate": "No successful zero-contact base teacher; combined labels still require their own actual episode",
+        "probeMagnitudes": {
+          "positionUnits": 0.125,
+          "headingUnits": 0.1,
+          "positionMeters": 0.01,
+          "headingRadians": 0.01
+        }
+      },
+      "costAccounting": "Caller charges every actual episode and step, including failures and interruptions; no refunds",
+      "scope": "Training-only measured labels; original physics, filter, actor features, reward and success gates unchanged",
+      "earlyStop": {
+        "order": "Original base pace order, then original six fine-position/angular probes",
+        "requiredReason": "success",
+        "contactSeconds": 0.0,
+        "maximumPositionErrorMeters": 0.016256000000000003,
+        "maximumHeadingErrorRadians": 0.028000000000000004,
+        "minimumDeadlineReserveSeconds": 1.0,
+        "rule": "Stop only after an actual complete robust success; remaining attempts are not measured or inferred",
+        "fallback": "Without robust success measure all bases and, if failure-gated, all six probes before combining"
+      }
+    },
+    "demonstrationAnchorWeight": 4,
+    "demonstrationAnchorLossProfile": "pose-budget-v2",
+    "gradientSteps": 4,
+    "replayCapacity": 64,
+    "batchSize": 64,
+    "explorationStd": 0.05,
+    "policyRegularization": "public-deadline-residual-v1",
+    "nStepReturns": 32,
+    "deadlinePaceLossWeight": 4,
+    "criticTerminalFraction": 0,
+    "replayStrategy": "episode-balanced-reservoir-v1",
+    "episodeReplayDefinition": {
+      "method": "episode-balanced-reservoir-v1",
+      "retention": "Unchanged uniform accepted-row reservoir and actual row accounting",
+      "length": "Actual complete raw episode row count, attached before n-step horizon packing; all outcomes retained",
+      "probability": "Normalize1/episodeLength over occupied reservoir slots; draw with replacement",
+      "objective": "Both critics, actor Q and its public priors use the same episode-length-balanced row distribution",
+      "weight": "No inverse-probability correction: intentionally different training objective, not uniform-row equivalence",
+      "limitation": "Equal mass per episode only when every episode row is retained; a finite row reservoir approximates that balance",
+      "terminalMixture": "Must be zero; no compounded terminal selection",
+      "scope": "Training-only sampling metadata; no actor input, outcome filtering, new query, physics, reward or gate change"
+    },
+    "explorationProfile": "ou-pose-v1",
+    "poseExplorationStd": 0.2,
+    "explorationCorrelationSeconds": 1,
+    "td3Definition": {
+      "actor": "Deterministic Beta mean, every reference axis learned; no value-only critic branch",
+      "critics": "Independent twin-Q256x256 value estimators; original Simulator remains the environment",
+      "discountFactor": 1.0,
+      "targetTau": 0.005,
+      "policyDelay": 2,
+      "targetNoiseStd": 0.05,
+      "targetNoiseClip": 0.1,
+      "actorLearningRate": 0.0003,
+      "criticLearningRate": 0.0003,
+      "imitationLearningRate": 0.001,
+      "terminal": "Success, fault and original task deadline all stop bootstrap; never cross resets",
+      "returns": {
+        "method": "complete-intrinsic-episode-n-step-v1",
+        "steps": 32,
+        "discountFactor": 1.0,
+        "scope": "Recorded behavior rewards/actions until terminal; no reset crossing, evaluator actor input or substitute physics",
+        "offPolicy": "Later behavior actions introduce multi-step off-policy bias; this is an explicit TD3 variant, not canonical one-step equivalence"
+      },
+      "replay": "Only complete original-engine collections; every actual query/exposure charged",
+      "replayRetention": {
+        "method": "episode-balanced-reservoir-v1",
+        "capacity": 64,
+        "scope": "Uniform accepted-row reservoir with episode-length-balanced training draws, no reward/outcome filtering or new query",
+        "replacement": "At rowN draw integer0..N-1; replace that slot only if below capacity. Every row counted; Torch RNG/checkpoint exact.",
+        "offPolicy": "Reservoir retains older behavior;32-step returns remain an off-policy approximation, no deterministic-policy truth claim"
+      },
+      "criticSampling": {
+        "method": "episode-balanced-reservoir-v1",
+        "retention": "Unchanged uniform accepted-row reservoir and actual row accounting",
+        "length": "Actual complete raw episode row count, attached before n-step horizon packing; all outcomes retained",
+        "probability": "Normalize1/episodeLength over occupied reservoir slots; draw with replacement",
+        "objective": "Both critics, actor Q and its public priors use the same episode-length-balanced row distribution",
+        "weight": "No inverse-probability correction: intentionally different training objective, not uniform-row equivalence",
+        "limitation": "Equal mass per episode only when every episode row is retained; a finite row reservoir approximates that balance",
+        "terminalMixture": "Must be zero; no compounded terminal selection",
+        "scope": "Training-only sampling metadata; no actor input, outcome filtering, new query, physics, reward or gate change"
+      },
+      "exploration": "IID pace and correlated OU pose noise, reset every real world; training only, clip to existing contract bounds",
+      "explorationDefinition": {
+        "method": "ou-pose-v1",
+        "policyDtSeconds": 0.05,
+        "paceStd": 0.05,
+        "poseStd": 0.2,
+        "correlationSeconds": 1,
+        "reset": "Zero pose state at every real episode; no mid-episode checkpoint promise",
+        "scope": "Same four bounded reference actions; no inference noise, actor truth, wider action range or changed reference filter"
+      },
+      "inference": "Unchanged deterministic mean; no inference projection or frozen head"
+    }
+  },
+  "sources": {
+    "roboproof/motion_learning/model.py": "f5865223be6647d3aeb0d0e79fb1f889d25ca9df1dae01c3b425e7cb9fee8bdb",
+    "roboproof/motion_learning/train.py": "a82599abfba521c07a711649a0aa941e9a5c0367da33d85aff8ad103c247560e",
+    "roboproof/motion_learning/objective.py": "4e37eafdc384b9307da846c610f4f51f5ed21d71870f772fd11874db9cd8c16f",
+    "roboproof/motion_learning/imitation.py": "68c56c2e402321f791296b200085397a2d34dd5f513f9df6ec15ff6254ce87ed",
+    "roboproof/motion_learning/checkpoint_limits.py": "d02160131a8b4da70b67aa56777e805f71a788e924b74509bdc06b7be61f42bf",
+    "roboproof/motion_learning/teacher_profiles.py": "337c6744d57a6bbff42f0eedbfceff00d2d1a260bca48cb3a59bfbc8439b5ebf",
+    "roboproof/motion_learning/rollout_retention.py": "5613c24c659997e43d18d9182897d4a9f0f1d1922b52a82a3935831629af0471",
+    "roboproof/motion_learning/evaluation_exclusion.py": "fd2e08cfaffad8c5713d7dbaa6f400feb9e6e0de91660048f05bffa3f7bdd07f",
+    "roboproof/motion_learning/expert_data.py": "346a0dcb2df407082cd019c7d192b01dfec3a84d651c0e912120c243d0c6e4ca",
+    "roboproof/motion-holdout.js": "aa58e4b0094f5d22d90c8cb0a59adf0a82fc0fe9f5cec97816dfae1c469f69bb",
+    "roboproof/motion_env.py": "0cbd2954874289ccbda2d5580f321ea441e7bacfa5b0be645a2ccd82389f9ffb",
+    "roboproof/motion-bridge.js": "0d07867d2d495a3accefb822ae64c8a4230d01d56949a85a1cb157812816bf4f",
+    "tests/fixtures/motion-evaluation-worlds.json": "bf41b7a91fd66d72d6695c161dfe2f9c2a15c238b2d4d0fc0e94a5b9ee420d2d",
+    "tests/fixtures/motion-evaluation-worlds-v2.json": "030e32673ded57425063f253503473396e04d2128acda9153637e19dd0de8ad3",
+    "roboproof/motion_learning/td3.py": "449cda36f8898bb58eb413f49c8106e37440c12255814f9c66ca26038bc16621",
+    "roboproof/motion_learning/td3_train.py": "741e11263b766e857a3a9540f17a25eefc08a6997406c750215eb5da1c295314",
+    "roboproof/motion_learning/execution.py": "75ffa74da9b4821d63bf785046bfb1554d078d279e62c7f5ede6ea255484cd37",
+    "roboproof/motion_learning/actor_artifact.py": "75905fb71674d4e65cf07727928e825d8a3d156da0881e956d13c286b36b6cb0",
+    "roboproof/motion_learning/episode_replay.py": "77046154f3032c93483890520e2972417f5400c5979ebfc8e88d4f1e0c4e5f58",
+    "roboproof/motion_learning/corpus_warm.py": "583749709e705ab855c1205c2bc2e85ad01de31e67ad3616bf36f94f3f440cb8",
+    "roboproof/motion_learning/corpus_portability.py": "93709d4ca79bff0c9d2d36ef6a6cd2bf449abd83bb375289b173268256de8207"
+  }
+}

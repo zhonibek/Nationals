@@ -15,11 +15,18 @@ const {writeJson} = require('./core');
 const ROOT = path.resolve(__dirname, '..');
 const SOURCES = ['roboproof/motion_learning/model.py', 'roboproof/motion_learning/train.py', 'roboproof/motion_learning/objective.py',
   'roboproof/motion_learning/td3.py', 'roboproof/motion_learning/td3_train.py',
+  'roboproof/motion_learning/episode_replay.py',
   'roboproof/motion_learning/execution.py', 'roboproof/motion_learning/checkpoint_limits.py',
   'roboproof/motion_learning/teacher_profiles.py',
+  'roboproof/motion_learning/rollout_retention.py',
+  'roboproof/motion_learning/evaluation_exclusion.py',
+  'roboproof/motion_learning/expert_data.py',
+  'roboproof/motion_learning/corpus_warm.py',
+  'roboproof/motion_learning/actor_artifact.py',
   'roboproof/motion_learning/imitation.py',
   'roboproof/motion_env.py', 'roboproof/motion-bridge.js', 'roboproof/motion-development.js', 'roboproof/motion-experiment.js',
-  'roboproof/motion-learner.js', 'roboproof/motion-evaluation.js', 'roboproof/motion-exposures.js', 'roboproof/motion.js'];
+  'roboproof/motion-learner.js', 'roboproof/motion-evaluation.js', 'roboproof/motion-exposures.js', 'roboproof/motion-exposure-codec.js', 'roboproof/motion.js',
+  'roboproof/motion-holdout.js'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const textHash = filename => hash(fs.readFileSync(path.join(ROOT, filename), 'utf8').replace(/\r\n/g, '\n'));
 

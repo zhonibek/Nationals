@@ -107,7 +107,10 @@ function createClient(config = configuration(), fetchImpl = fetch) {
   configuration({ROBOTAI_NEMOTRON_BASE_URL: config.baseUrl, ROBOTAI_NEMOTRON_MODEL: config.model,
     ROBOTAI_NEMOTRON_TIMEOUT_MS: String(config.timeoutMs)});
   const metadata = {provider: 'local-openai-compatible', model: config.model, baseUrl: config.baseUrl,
-    cloudEnabled: false, weightsVerifiedBy: 'tools/setup-nemotron.ps1; an arbitrary endpoint alias alone does not prove model identity'};
+    cloudEnabled: false, transport: 'loopback-only', hardwarePolicy: 'NVIDIA T4 only', hardwareVerified: false,
+    cpuFallbackEnabled: false,
+    privacyScope: 'A loopback endpoint may forward to an explicitly approved remote T4; transport does not establish data locality or GPU identity',
+    weightsVerifiedBy: 'Pinned model file verification is separate from T4 admission; an arbitrary endpoint alias alone proves neither'};
   async function request(route, body, signal) {
     const deadline = AbortSignal.timeout(config.timeoutMs);
     const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -120,7 +123,7 @@ function createClient(config = configuration(), fetchImpl = fetch) {
     } catch (error) {
       if (combined.aborted) throw Error('Nemotron request cancelled or timed out; no task was executed');
       if (error.message.startsWith('Nemotron') || error.message.startsWith('Local Nemotron')) throw error;
-      throw Error('Cannot connect to local Nemotron. Start tools/start-nemotron.ps1 and check the runtime logs');
+      throw Error('Cannot connect to the approved Nemotron T4 runtime. The legacy CPU launcher is disabled; configure an authenticated loopback connection to a verified T4 server');
     }
   }
   return {
@@ -146,8 +149,10 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
   const skills = registry.session();
   await client.check(signal);
   const catalog = skills.catalog.map(({name, description}) => ({name, description}));
-  const relevantCatalog = game ? catalog.filter(entry => entry.name === 'plan-game-tactics') : catalog;
   const activeInstructions = new Map();
+  const canLoadSkill = name => (!game || name === 'plan-game-tactics') &&
+    (name !== 'prepare-motion-experiment' || !activeInstructions.has('plan-game-tactics')) &&
+    (name !== 'plan-game-tactics' || !activeInstructions.has('prepare-motion-experiment'));
   const messages = [{role: 'system', content: ''},
     {role: 'user', content: prompt.trim()}];
   const log = [], usage = [];
@@ -155,16 +160,19 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
   const analysisEvidence = {};
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     signal?.throwIfAborted();
+    const relevantCatalog = catalog.filter(entry => canLoadSkill(entry.name));
     messages[0].content = `${INSTRUCTIONS}\n${activeInstructions.size
       ? `Active reviewed instructions:\n${[...activeInstructions.values()].join('\n\n')}\nOther skill names: ${relevantCatalog.filter(entry => !activeInstructions.has(entry.name)).map(entry => entry.name).join(', ')}`
       : `Skill catalog: ${JSON.stringify(relevantCatalog)}`}\nUser-selected motion evidence available: ${Boolean(evidence)}\n` +
       `Selected game snapshot available: ${Boolean(game)}. ${game ? 'Only plan-game-tactics may activate for this read-only request.' : ''}`;
     const allowedTools = TOOLS.filter(tool => (['load_skill', 'ask_clarification'].includes(tool.function.name) || skills.permits(tool.function.name)) &&
+      (!['get_motion_contract', 'prepare_reach_pose'].includes(tool.function.name) || canLoadSkill('prepare-motion-experiment')) &&
+      (!['get_game_rules', 'get_game_snapshot'].includes(tool.function.name) || canLoadSkill('plan-game-tactics')) &&
       (tool.function.name !== 'prepare_reach_pose' || log.some(entry => entry.name === 'get_motion_contract')) &&
       (tool.function.name !== 'finish_analysis' || (Object.keys(analysisEvidence).length > 0 &&
         (!skills.permits('get_game_rules') || (analysisEvidence.gameRules && log.some(entry => entry.name === 'get_game_snapshot'))))))
-      .map(tool => game && tool.function.name === 'load_skill' ? {...tool, function: {...tool.function,
-        parameters: {...tool.function.parameters, properties: {name: {type: 'string', enum: ['plan-game-tactics']}}}}} : tool);
+      .map(tool => tool.function.name === 'load_skill' ? {...tool, function: {...tool.function,
+        parameters: {...tool.function.parameters, properties: {name: {type: 'string', enum: relevantCatalog.map(entry => entry.name)}}}}} : tool);
     const response = await client.complete(messages, signal, allowedTools);
     const choice = response.choices?.[0];
     if (!choice || ['length', 'content_filter'].includes(choice.finish_reason)) throw Error('Nemotron did not complete a bounded response; no task was executed');
@@ -209,6 +217,7 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
     } else if (call.function.name === 'load_skill') {
       objectKeys(argumentsValue, ['name'], 'arguments');
       if (game && argumentsValue.name !== 'plan-game-tactics') throw Error('Selected game snapshots permit read-only tactics only');
+      if (!canLoadSkill(argumentsValue.name)) throw Error('Read-only tactics and motion preparation cannot be combined in one session');
       result = skills.load(argumentsValue.name);
       activeInstructions.set(result.name, result.instructions);
       common.skills.loaded = skills.provenance();
@@ -233,6 +242,7 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
       objectKeys(argumentsValue, [], 'arguments');
       result = CONTRACT;
     } else if (call.function.name === 'prepare_reach_pose') {
+      if (game || activeInstructions.has('plan-game-tactics')) throw Error('Read-only tactics cannot prepare motion');
       if (!log.some(row => row.name === 'get_motion_contract')) throw Error('Nemotron must inspect the motion contract before proposing a task');
       objectKeys(argumentsValue, ['task', 'summary'], 'arguments');
       const task = normalizeTask(argumentsValue.task);
