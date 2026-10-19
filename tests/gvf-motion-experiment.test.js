@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {compareCorpus, progressJournal, requireApprovedRemote, selectCohort} = require('../roboproof/gvf-motion-experiment');
+const {compareCorpus, progressJournal, requireApprovedRemote, selectCohort, COHORTS, validTrainingReceipt,
+  validTrainingExposure} = require('../roboproof/gvf-motion-experiment');
 const {suite} = require('../roboproof/motion-evaluation');
 
 function report(reason, elapsedSeconds, effortProxyVAs, contactSeconds = 0) {
@@ -97,4 +98,46 @@ test('512x10 is the primary three-seed cohort and historical 64x2 remains explic
     /predeclared/);
   assert.throws(() => selectCohort(primary.map((row, index) => index ? row : ({config: {...row.config, seed: 50101}}))),
     /predeclared/);
+});
+
+test('free T4 512x10 is a separate predeclared cohort without relabelling AMD runs', () => {
+  const t4 = [50515, 50516, 50517].map(seed => ({config: {
+    algorithm: 'td3-tanh-gvf-residual-v1', seed, networkWidth: 512, hiddenLayers: 10}}));
+  assert.equal(selectCohort(t4).id, 't4-gvf512x10-v1');
+  assert.equal(selectCohort(t4).hardware, 'Tesla T4');
+  assert.equal(COHORTS.find(row => row.id === 'primary-gvf512x10-v1').hardware, 'MI300X');
+  assert.throws(() => selectCohort([...t4.slice(0, 2), {...t4[2], config: {...t4[2].config, seed: 50514}}]),
+    /predeclared/);
+});
+
+test('hardware receipts require a real CUDA T4 and explicitly free Colab execution', () => {
+  const device = {name: 'Tesla T4', totalMemoryBytes: 15 * 1024 ** 3, hip: null, torch: '2.11.0+cu130',
+    cudaBuild: '13.0', device: 'cuda:0', deviceIndex: 0, capability: [7, 5], precision: 'float32',
+    tf32: false, cublasWorkspace: ':4096:8', simulation: 'Original Node/WASM Simulator and iraLIB on CPU',
+    scope: 'Device visibility/runtime binding; successful network operations require actual training evidence'};
+  const record = {trainingDevice: device, operatorDeclaredApproval: {provider: 'Google Colab',
+    device: 'free Tesla T4', maxCredits: 0, billingBasis: 'free runtime only',
+    paymentMethodChargeAuthorized: false, autoReloadAuthorized: false}};
+  const host = {gpuUsedForOptimizer: true, gpu: structuredClone(device)};
+  assert.equal(validTrainingReceipt(record, host, 'Tesla T4'), true);
+  for (const [field, value] of [['capability', [8, 0]], ['totalMemoryBytes', 1], ['cudaBuild', '12.8']]) {
+    const invalid = structuredClone(record);
+    invalid.trainingDevice[field] = value;
+    assert.equal(validTrainingReceipt(invalid, {...host, gpu: invalid.trainingDevice}, 'Tesla T4'), false);
+  }
+  const paid = structuredClone(record);
+  paid.operatorDeclaredApproval.maxCredits = 1;
+  assert.equal(validTrainingReceipt(paid, host, 'Tesla T4'), false);
+  assert.equal(validTrainingReceipt(record, {...host, gpuUsedForOptimizer: false}, 'Tesla T4'), false);
+});
+
+test('T4 model admission binds the exact audited known-exposure snapshot and its limitations', () => {
+  const exposure = {sha256: '5ccc92f1200c3ee42f9ddacda009a4a5b6e35401a83038e756a49b19049f1eae',
+    reservedTrainingSeeds: [136001, 136002, 136003], knownWorldSeedCount: 63051,
+    knownBodyGeometryCount: 61489, legacyGeometryFullyKnown: false,
+    scope: 'Known saved seed and body-relative geometry exclusions only; 833 seed-only records remain and arbitrary OOD separation is not claimed'};
+  assert.equal(validTrainingExposure({knownExposureExclusion: exposure}, 'Tesla T4'), true);
+  assert.equal(validTrainingExposure({knownExposureExclusion: {...exposure, sha256: '0'.repeat(64)}}, 'Tesla T4'), false);
+  assert.equal(validTrainingExposure({}, 'MI300X'), true);
+  assert.equal(validTrainingExposure({}, 'Tesla T4'), false);
 });

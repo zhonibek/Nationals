@@ -25,6 +25,7 @@ EXPLORATION_STD = 0.15
 MANIFEST_PURPOSE = "remote-only experimental GVF residual TD3; original Simulator/iraLIB"
 MAX_APPROVED_CREDITS = 100.0
 MAX_EPISODE_DECISIONS = 200
+T4_EXPOSURE_LEDGER_SHA256 = "5ccc92f1200c3ee42f9ddacda009a4a5b6e35401a83038e756a49b19049f1eae"
 
 
 def require(condition, message):
@@ -97,6 +98,91 @@ def verify_mi300x(torch):
     return device, {"name": properties.name, "totalMemoryBytes": properties.total_memory,
                     "hip": str(torch.version.hip), "torch": str(torch.__version__),
                     "cudaBuild": torch.version.cuda, "device": str(device)}
+
+
+def verify_t4(torch):
+    if torch.version.hip is not None or torch.version.cuda is None or not torch.cuda.is_available():
+        raise RuntimeError("Actual CUDA PyTorch and an available NVIDIA device are required; no CPU fallback")
+    device = torch.device("cuda:0")
+    properties = torch.cuda.get_device_properties(device)
+    capability = list(torch.cuda.get_device_capability(device))
+    if ("T4" not in properties.name.upper() or properties.total_memory < 14 * 1024 ** 3 or
+            properties.total_memory > 16 * 1024 ** 3 or capability != [7, 5]):
+        raise RuntimeError("Actual Tesla T4 with capability 7.5 and 14-16 GiB is required")
+    return device, {"name": properties.name, "totalMemoryBytes": properties.total_memory,
+                    "hip": None, "torch": str(torch.__version__), "cudaBuild": str(torch.version.cuda),
+                    "device": str(device), "deviceIndex": 0, "capability": capability,
+                    "precision": "float32", "tf32": False,
+                    "cublasWorkspace": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+                    "simulation": "Original Node/WASM Simulator and iraLIB on CPU",
+                    "scope": "Device visibility/runtime binding; successful network operations require actual training evidence"}
+
+
+def load_t4_exposure_exclusion(filename, source_manifest_bytes, expected_sha256):
+    require(expected_sha256 == T4_EXPOSURE_LEDGER_SHA256,
+            "Only the independently audited frozen T4 exposure snapshot is admissible")
+    filename = Path(filename)
+    try:
+        relative = filename.resolve(strict=True).relative_to(ROOT).as_posix()
+    except (OSError, ValueError) as error:
+        raise ValueError("T4 exposure snapshot must be an existing project-contained file") from error
+    require(filename.is_file() and not filename.is_symlink() and filename.stat().st_size <= 4 * 1024 * 1024,
+            "Bounded regular T4 exposure snapshot required")
+    manifest = json.loads(source_manifest_bytes)
+    rows = [row for row in manifest["files"] if row["path"] == relative]
+    require(len(rows) == 1 and rows[0]["bytes"] == filename.stat().st_size and
+            digest(filename.read_bytes()) == rows[0]["sha256"],
+            "T4 exposure snapshot must be bound by the frozen source manifest")
+    node = __import__("shutil").which("node")
+    require(node is not None, "Original Simulator Node.js runtime required for exposure snapshot verification")
+    script = ("const fs=require('node:fs');const c=require('./roboproof/motion-exposure-codec');"
+        "const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const d=c.decodeExposureSnapshot(p);"
+        "const l=d.ledger;const x=l.unavailableExposureExclusions;"
+        "const r=Array.isArray(x)?[...new Set(x.flatMap(v=>v.trainingSeeds||[]))].sort((a,b)=>a-b):[];"
+        "process.stdout.write(JSON.stringify({sha256:d.ledgerSha256,worldSeeds:l.worldSeeds,"
+        "bodyGeometries:l.bodyGeometries,reservedTrainingSeeds:r,legacyGeometryFullyKnown:l.legacyGeometryFullyKnown}));")
+    output = __import__("subprocess").check_output([node, "-e", script, str(filename)], cwd=ROOT,
+        text=True, timeout=60)
+    value = json.loads(output)
+    seeds, geometries, reserved = value.get("worldSeeds"), value.get("bodyGeometries"), value.get("reservedTrainingSeeds")
+    require(value.get("sha256") == expected_sha256 and type(seeds) is list and type(geometries) is list and
+            type(reserved) is list and seeds == sorted(set(seeds)) and geometries == sorted(set(geometries)) and
+            reserved == [136001, 136002, 136003] and all(type(seed) is int and 0 <= seed <= 0xffffffff for seed in seeds) and
+            all(type(geometry) is str and len(geometry) == 64 and
+                all(character in "0123456789abcdef" for character in geometry) for geometry in geometries) and
+            value.get("legacyGeometryFullyKnown") is False,
+            "T4 exposure snapshot contents/reserved seeds do not match its frozen audited identity")
+    receipt = {"sha256": expected_sha256, "reservedTrainingSeeds": reserved,
+            "knownWorldSeedCount": len(seeds), "knownBodyGeometryCount": len(geometries),
+            "legacyGeometryFullyKnown": False,
+            "scope": "Known saved seed and body-relative geometry exclusions only; 833 seed-only records remain and arbitrary OOD separation is not claimed"}
+    return {**receipt, "worldSeeds": set(seeds) | set(reserved), "bodyGeometries": set(geometries),
+            "receipt": receipt}
+
+
+def _world_geometry_keys(task):
+    from .evaluation_exclusion import geometry_keys
+    return geometry_keys(task)
+
+
+def select_unexposed_training_world(generator, episode_index, curriculum, exposure, seen_seeds, seen_geometries):
+    from .train import training_world
+    for rejected in range(10000):
+        try:
+            world = training_world(generator, episode_index, curriculum)
+        except RuntimeError as error:
+            if str(error) not in ("Frozen evaluation world is excluded from training",
+                                  "Consumed final world or body-geometry alias is excluded from training"):
+                raise
+            continue
+        geometries = _world_geometry_keys(world["task"])
+        if (world["seed"] in exposure["worldSeeds"] or world["seed"] in seen_seeds or
+                geometries.intersection(exposure["bodyGeometries"]) or geometries.intersection(seen_geometries)):
+            continue
+        seen_seeds.add(world["seed"])
+        seen_geometries.update(geometries)
+        return world, rejected
+    raise RuntimeError("T4 training world generator exhausted its bounded known-exposure rejection budget")
 
 
 def validate_limits(seed, max_decisions, max_updates, max_seconds,
@@ -254,14 +340,28 @@ def _save_checkpoint(torch, learner, replay, rng, directory, identity, source_sh
 
 def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, seed=50101,
         max_decisions=10000, max_updates=10000, max_seconds=1800, approved_max_credits=None,
-        network_width=64, hidden_layers=2):
-    require_approved_remote(approved_amd_mi300x)
-    approved_credits = validate_approved_credits(approved_max_credits)
+        network_width=64, hidden_layers=2, approved_free_t4=False,
+        exposure_ledger=None, exposure_ledger_sha256=None):
+    if type(approved_amd_mi300x) is not bool or type(approved_free_t4) is not bool or approved_amd_mi300x == approved_free_t4:
+        raise ValueError("Exactly one explicitly approved GPU provider is required")
+    require_approved_remote(True)
+    approved_credits = validate_approved_credits(approved_max_credits) if approved_amd_mi300x else None
+    if approved_free_t4 and approved_max_credits is not None:
+        raise ValueError("Free T4 execution cannot declare or consume paid credits")
     config = validate_limits(seed, max_decisions, max_updates, max_seconds,
                              network_width, hidden_layers)
     source_bytes = verify_sources(source_manifest, source_manifest_sha256)
+    exposure = None
+    if approved_free_t4:
+        require(exposure_ledger is not None, "Free T4 training requires a frozen known-exposure snapshot")
+        exposure = load_t4_exposure_exclusion(exposure_ledger, source_bytes, exposure_ledger_sha256)
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    elif exposure_ledger is not None or exposure_ledger_sha256 is not None:
+        raise ValueError("AMD study cannot silently consume the T4-specific exposure declaration")
     import torch
-    device, gpu = verify_mi300x(torch)
+    device, gpu = verify_mi300x(torch) if approved_amd_mi300x else verify_t4(torch)
+    if approved_free_t4:
+        torch.backends.cuda.matmul.allow_tf32 = False
     from roboproof.motion_env import MotionEnvironment
     from . import gvf_contract
     from .gvf_model import atomic_actor_json, export
@@ -294,12 +394,20 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
     events_path.touch(mode=0o600, exist_ok=False)
     transitions_path = directory / "transitions.jsonl"
     transitions_path.touch(mode=0o600, exist_ok=False)
+    seen_world_seeds, seen_body_geometries = set(), set()
+    rejected_training_worlds = 0
+    approval = ({"provider": "AMD Developer Cloud", "device": "MI300X",
+            "maxCredits": approved_credits, "billingBasis": "existing AMD account credits only",
+            "paymentMethodChargeAuthorized": False, "autoReloadAuthorized": False}
+        if approved_amd_mi300x else
+        {"provider": "Google Colab", "device": "free Tesla T4", "maxCredits": 0,
+            "billingBasis": "free runtime only", "paymentMethodChargeAuthorized": False,
+            "autoReloadAuthorized": False})
     protocol = {"schemaVersion": 1, "runId": run_id, "config": config,
         "sourceManifestSha256": source_manifest_sha256, "createdAtUtc": utc_now(),
-        "operatorDeclaredApproval": {"provider": "AMD Developer Cloud", "device": "MI300X",
-            "maxCredits": approved_credits, "billingBasis": "existing AMD account credits only",
-            "paymentMethodChargeAuthorized": False, "autoReloadAuthorized": False},
-        "trainingDevice": gpu, "physicsDevice": "Original Simulator Node.js process on the same approved server",
+        "operatorDeclaredApproval": approval,
+        "knownExposureExclusion": exposure["receipt"] if exposure is not None else None,
+        "trainingDevice": gpu, "physicsDevice": "Original Simulator Node.js process on the same approved remote runtime",
         "trainingDriver": "roboproof.motion_learning.gvf_train", "resumeSupported": False,
         "learnedImprovementVerified": False, "independentQualificationPerformed": False,
         "scope": "Bounded experimental GVF residual TD3 fit; no promotion or physical/game-score claim"}
@@ -318,7 +426,12 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
                 "initialActor": {"path": initial_path.relative_to(directory).as_posix(), "sha256": initial_sha},
                 "decisions": decisions, "episodes": episodes, "updates": learner.updates})
             while decisions < max_decisions and learner.updates < max_updates and time.monotonic() < deadline:
-                world = training_world(rng, episodes, "mixed-full-reach-v5")
+                if exposure is None:
+                    world = training_world(rng, episodes, "mixed-full-reach-v5")
+                else:
+                    world, rejected = select_unexposed_training_world(rng, episodes,
+                        "mixed-full-reach-v5", exposure, seen_world_seeds, seen_body_geometries)
+                    rejected_training_worlds += rejected
                 exposure = {"event": "started", "episode": episodes + 1, "world": world,
                     "actorSha256": initial_sha if learner.updates == 0 else current_actor_sha,
                     "sourceManifestSha256": source_manifest_sha256, "startedAtUtc": utc_now()}
@@ -421,6 +534,7 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
                 status = "completed-budget" if decisions >= max_decisions or learner.updates >= max_updates else "time-budget-stopped"
             terminal = {**protocol, "status": status, "engineIdentity": environment.contract["identity"],
                 "decisions": decisions, "episodes": episodes, "updates": learner.updates,
+                "trainingExposureRejections": rejected_training_worlds,
                 "elapsedSeconds": round(time.monotonic() - started, 3),
                 "unresolvedExposure": unresolved_exposure,
                 "learnedImprovementVerified": False, "independentQualificationPerformed": False,
@@ -431,7 +545,8 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
     except BaseException as error:
         failure = {**protocol, "status": "failed", "error": str(error),
             "traceback": traceback.format_exc(), "decisions": decisions, "episodes": episodes,
-            "updates": learner.updates, "unresolvedExposure": unresolved_exposure,
+            "updates": learner.updates, "trainingExposureRejections": rejected_training_worlds,
+            "unresolvedExposure": unresolved_exposure,
             "learnedImprovementVerified": False, "independentQualificationPerformed": False,
             "terminalAtUtc": utc_now()}
         atomic_json(directory / "run.json", failure)
@@ -441,10 +556,12 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Bounded remote-only GVF residual TD3 training on original Simulator/iraLIB")
-    parser.add_argument("--approved-amd-mi300x", action="store_true", required=True)
+    approval = parser.add_mutually_exclusive_group(required=True)
+    approval.add_argument("--approved-amd-mi300x", action="store_true")
+    approval.add_argument("--approved-free-t4", action="store_true")
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--source-manifest-sha256", required=True)
-    parser.add_argument("--approved-max-credits", type=float, required=True)
+    parser.add_argument("--approved-max-credits", type=float)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=50101)
     parser.add_argument("--max-decisions", type=int, default=10000)
@@ -452,6 +569,8 @@ def main(argv=None):
     parser.add_argument("--max-seconds", type=int, default=1800)
     parser.add_argument("--network-width", type=int, default=64)
     parser.add_argument("--hidden-layers", type=int, default=2)
+    parser.add_argument("--exposure-ledger", type=Path)
+    parser.add_argument("--exposure-ledger-sha256")
     options = parser.parse_args(argv)
     result = run(**vars(options))
     print(json.dumps({"status": result["status"], "decisions": result["decisions"],

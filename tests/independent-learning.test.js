@@ -14,7 +14,7 @@ const {assertFreshCases} = require('../roboproof/motion-exposures');
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
-function fixture(context, passes = false, withExposure = false) {
+function fixture(context, passes = false, withExposure = false, withCuda = false) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'robotai-independent-view-'));
   context.after(() => fs.rmSync(root, {recursive: true, force: true}));
   const learningDirectory = path.join(root, 'learning'), holdoutDirectory = path.join(root, 'holdout');
@@ -55,6 +55,26 @@ function fixture(context, passes = false, withExposure = false) {
   const result = {schemaVersion: 1, caseCount: 2, identity, models, learnedImprovementVerified: passes,
     ...(knownExposure ? {knownExposureExclusion: knownExposure} : {}),
     holdoutAudit: {commitment: revealed.commitment, consumed: revealed.consumed}, privateSource: 'Never expose this'};
+  let runManifestSha256;
+  if (withCuda) {
+    const filename = 'roboproof/motion_learning/td3_train.py';
+    const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+    const run = {schemaVersion: 1, runId, status: 'completed', device: 'cuda', torch: '2.11.0+cu130',
+      config: {trainingDevice: 'cuda', algorithm: 'td3-beta-mean-reference-v1', seed: 201, seedCount: 3, networkWidth: 32},
+      execution: {device: 'cuda', torch: '2.11.0+cu130', platform: 'Linux', precision: 'float32',
+        simulation: 'Original Node/WASM Simulator and iraLIB on CPU', cudaBuild: '13.0', gpu: 'Tesla T4',
+        capability: [7, 5], memoryBytes: 15637086208, deviceIndex: 0, tf32: false, cublasWorkspace: ':4096:8',
+        scope: 'Device visibility/runtime binding; successful network operations require actual training evidence'},
+      sources: {[filename]: hash(source)}};
+    const bytes = JSON.stringify(run);
+    fs.writeFileSync(path.join(runDirectory, 'run.json'), bytes);
+    runManifestSha256 = hash(bytes);
+    result.trainingEvidence = [Learner.trainingEvidence({record: run, runManifestSha256})];
+    for (const model of result.models) {
+      model.trainingRunId = runId;
+      model.trainingManifestSha256 = runManifestSha256;
+    }
+  }
   const evaluationPath = path.join(directory, 'evaluation.json'), indexPath = path.join(runDirectory, 'independent-final.json');
   const saveResult = () => {
     const bytes = JSON.stringify(result);
@@ -62,7 +82,7 @@ function fixture(context, passes = false, withExposure = false) {
     fs.writeFileSync(indexPath, JSON.stringify({schemaVersion: 1, runId, holdoutId, evaluationSha256: hash(bytes)}));
   };
   saveResult();
-  const status = {available: true, runId, identity, models: models.map(model => ({seed: model.seed,
+  const status = {available: true, runId, identity, ...(withCuda ? {device: 'cuda'} : {}), models: models.map(model => ({seed: model.seed,
     policySha256: model.policySha256, initialSha256: model.initialSha256}))};
   const read = () => readIndependentEvaluation(status, learningDirectory, options);
   return {status, options, read, result, saveResult, indexPath, directory, learningDirectory};
@@ -88,6 +108,14 @@ test('a reported positive research gate never grants policy promotion', context 
   const saved = fixture(context, true);
   assert.equal(saved.read().gateReportedPassed, true);
   assert.equal(saved.read().policyPromotionAllowed, false);
+});
+
+test('CUDA independent evidence binds the verified T4 receipt and immutable run manifest', context => {
+  const saved = fixture(context, true, false, true);
+  assert.equal(saved.read().available, true);
+  assert.equal(saved.read().gateReportedPassed, true);
+  fs.appendFileSync(path.join(saved.learningDirectory, saved.status.runId, 'run.json'), ' ');
+  assert.equal(saved.read().available, false);
 });
 
 test('current verification requires positive bound evidence and matching source/runtime', context => {

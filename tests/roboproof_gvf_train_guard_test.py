@@ -63,6 +63,35 @@ class GvfTrainGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "180 GiB"):
             gvf_train.verify_mi300x(torch)
 
+    def test_t4_probe_requires_real_cuda_t4_capability_and_memory(self):
+        class FakeCuda:
+            def is_available(self):
+                return True
+
+            def get_device_properties(self, device):
+                return types.SimpleNamespace(name="Tesla T4", total_memory=15 * 1024 ** 3)
+
+            def get_device_capability(self, device):
+                return (7, 5)
+
+        torch = types.SimpleNamespace(version=types.SimpleNamespace(hip=None, cuda="13.0"),
+            cuda=FakeCuda(), device=lambda value: value, __version__="2.11.0+cu130")
+        device, info = gvf_train.verify_t4(torch)
+        self.assertEqual(device, "cuda:0")
+        self.assertEqual(info["name"], "Tesla T4")
+        self.assertEqual(info["capability"], [7, 5])
+        torch.version.hip = "rocm"
+        with self.assertRaisesRegex(RuntimeError, "CUDA PyTorch"):
+            gvf_train.verify_t4(torch)
+        torch.version.hip = None
+        torch.cuda.get_device_capability = lambda device: (8, 0)
+        with self.assertRaisesRegex(RuntimeError, "capability 7.5"):
+            gvf_train.verify_t4(torch)
+        torch.cuda.get_device_capability = lambda device: (7, 5)
+        torch.cuda.get_device_properties = lambda device: types.SimpleNamespace(name="Tesla T4", total_memory=13 * 1024 ** 3)
+        with self.assertRaisesRegex(RuntimeError, "14-16 GiB"):
+            gvf_train.verify_t4(torch)
+
     def test_training_limits_are_explicit_and_bounded(self):
         config = gvf_train.validate_limits(77, 128, 1, 60)
         self.assertEqual(config["seed"], 77)
@@ -97,6 +126,64 @@ class GvfTrainGuardTests(unittest.TestCase):
         self.assertEqual(trainer.call_args.kwargs["network_width"], 512)
         self.assertEqual(trainer.call_args.kwargs["hidden_layers"], 10)
         self.assertEqual(trainer.call_args.kwargs["seed"], 50512)
+
+    def test_cli_accepts_only_explicit_free_t4_without_credit_cap(self):
+        result = {"status": "completed-budget", "decisions": 128, "episodes": 1, "updates": 1}
+        arguments = ("--approved-free-t4", "--source-manifest", "source-manifest.json",
+            "--source-manifest-sha256", "a" * 64,
+            "--output", "roboproof/runs/motion/gvf-td3/gvf-td3-seed50515-t4-w512-d10",
+            "--seed", "50515", "--max-decisions", "100000", "--max-updates", "100000",
+            "--max-seconds", "3600", "--network-width", "512", "--hidden-layers", "10")
+        with mock.patch.object(gvf_train, "run", return_value=result) as trainer, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(gvf_train.main(arguments), 0)
+        self.assertIsNone(trainer.call_args.kwargs["approved_max_credits"])
+        self.assertTrue(trainer.call_args.kwargs["approved_free_t4"])
+        self.assertFalse(trainer.call_args.kwargs["approved_amd_mi300x"])
+
+    def test_free_t4_credit_override_is_rejected(self):
+        with mock.patch.object(gvf_train, "require_approved_remote"), \
+                self.assertRaisesRegex(ValueError, "cannot declare or consume paid credits"):
+            gvf_train.run(False, "manifest", "a" * 64, Path("unused"), approved_max_credits=0.01,
+                approved_free_t4=True)
+
+    def test_t4_snapshot_loader_recomputes_the_frozen_exposure_identity(self):
+        filename = Path(gvf_train.ROOT, ".cache/roboproof-t4-study-20261019-v2/training-exposure-ledger.json")
+        data = filename.read_bytes()
+        row = {"path": filename.relative_to(gvf_train.ROOT).as_posix(), "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest()}
+        manifest = json.dumps({"schemaVersion": 1, "purpose": gvf_train.MANIFEST_PURPOSE,
+            "files": [row]}, separators=(",", ":")).encode()
+        result = gvf_train.load_t4_exposure_exclusion(filename, manifest, gvf_train.T4_EXPOSURE_LEDGER_SHA256)
+        self.assertEqual(result["sha256"], gvf_train.T4_EXPOSURE_LEDGER_SHA256)
+        self.assertEqual(result["knownWorldSeedCount"], 63051)
+        self.assertEqual(result["knownBodyGeometryCount"], 61489)
+        self.assertEqual(result["reservedTrainingSeeds"], [136001, 136002, 136003])
+        json.dumps(result["receipt"], allow_nan=False)
+        with self.assertRaisesRegex(ValueError, "independently audited"):
+            gvf_train.load_t4_exposure_exclusion(filename, manifest, "0" * 64)
+
+    def test_t4_training_worlds_exclude_known_seeds_geometries_and_prior_fit_duplicates(self):
+        class Generator:
+            def __init__(self, worlds):
+                self.worlds = iter(worlds)
+
+        task = {"start": {"xIn": 0, "yIn": 0, "headingDeg": 0},
+                "goal": {"xIn": 20, "yIn": 30, "headingDeg": 90}}
+        changed_task = {"start": {"xIn": 0, "yIn": 0, "headingDeg": 0},
+                "goal": {"xIn": 40, "yIn": 30, "headingDeg": 90}}
+        worlds = [{"seed": 9, "task": task, "configuration": {}},
+            {"seed": 10, "task": task, "configuration": {}},
+            {"seed": 10, "task": changed_task, "configuration": {}}]
+        exposure = {"worldSeeds": {9}, "bodyGeometries": gvf_train._world_geometry_keys(task)}
+        seen_seeds, seen_geometry = set(), set()
+        fake_train = types.ModuleType("roboproof.motion_learning.train")
+        fake_train.training_world = lambda generator, index, curriculum: next(generator.worlds)
+        with mock.patch.dict(sys.modules, {"roboproof.motion_learning.train": fake_train}):
+            selected, rejected = gvf_train.select_unexposed_training_world(Generator(worlds), 4,
+                "mixed-full-reach-v5", exposure, seen_seeds, seen_geometry)
+        self.assertEqual(selected["seed"], 10)
+        self.assertEqual(rejected, 2)
 
     def test_operator_credit_cap_is_finite_positive_and_bounded(self):
         self.assertEqual(gvf_train.validate_approved_credits(100), 100.0)

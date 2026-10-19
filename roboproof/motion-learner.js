@@ -32,6 +32,30 @@ const settlingNormalizationDefinition = {schemaVersion: 1, method: 'sensor-settl
   initialContext: 'Unchanged field-scale initial sensor goal context', clip: [-10, 10],
   scope: 'Fixed public sensor/reference units only; no evaluator truth, fitted statistics or new input capacity'};
 
+function validateTrainingExecution(record) {
+  if (record?.device === 'cpu') return true;
+  const execution = record?.execution;
+  const cudaBuild = typeof record?.torch === 'string' ? record.torch.match(/\+cu(\d{2,3})$/)?.[1] : null;
+  const expectedCudaBuild = cudaBuild ? `${cudaBuild.slice(0, -1)}.${cudaBuild.slice(-1)}` : null;
+  return record?.device === 'cuda' && record?.config?.trainingDevice === 'cuda' &&
+    typeof record.torch === 'string' && /^2\.\d+\.\d+\+cu\d+$/.test(record.torch) &&
+    execution?.device === 'cuda' && execution.torch === record.torch && execution.platform === 'Linux' &&
+    execution.precision === 'float32' && execution.simulation === 'Original Node/WASM Simulator and iraLIB on CPU' &&
+    execution.cudaBuild === expectedCudaBuild &&
+    execution.gpu === 'Tesla T4' && Array.isArray(execution.capability) &&
+    execution.capability.length === 2 && execution.capability[0] === 7 && execution.capability[1] === 5 &&
+    Number.isSafeInteger(execution.memoryBytes) && execution.memoryBytes >= 14 * 1024 ** 3 &&
+    execution.deviceIndex === 0 && execution.tf32 === false &&
+    [':4096:8', ':16:8'].includes(execution.cublasWorkspace) &&
+    execution.scope === 'Device visibility/runtime binding; successful network operations require actual training evidence';
+}
+
+function assertEvaluationHost(record, platform = process.platform, environment = process.env) {
+  if (record?.device === 'cuda' && (platform !== 'linux' || environment.ROBOPROOF_APPROVED_REMOTE !== '1')) {
+    throw Error('CUDA-trained movement evaluation requires the approved remote Linux host; no laptop fallback');
+  }
+}
+
 function readJson(filename, maximum = 1024 * 1024, maximumForValue) {
   if (fs.statSync(filename).size > maximum) throw Error('Learning artifact exceeds size budget');
   const bytes = fs.readFileSync(filename);
@@ -161,8 +185,9 @@ function latest(directory = DEFAULT_DIRECTORY) {
   const pointer = readJson(path.join(directory, 'latest.json'), 1024).value;
   if (pointer.schemaVersion !== 1 || !validRun(pointer.runId)) throw Error('Invalid local learning pointer');
   const runDirectory = path.join(directory, pointer.runId);
-  const record = readJson(path.join(runDirectory, 'run.json'), 4 * 1024 * 1024).value;
-  if (record.schemaVersion !== 1 || record.runId !== pointer.runId || record.device !== 'cpu' ||
+  const manifest = readJson(path.join(runDirectory, 'run.json'), 4 * 1024 * 1024);
+  const record = manifest.value;
+  if (record.schemaVersion !== 1 || record.runId !== pointer.runId || !validateTrainingExecution(record) ||
       !Array.isArray(record.models) || record.models.length > 3 ||
       !['running', 'completed', 'budget-stopped', 'interrupted-or-failed'].includes(record.status)) throw Error('Invalid local learning record');
   if (record.identity && !isDeepStrictEqual(record.identity, loadHeadless().identity)) throw Error('Saved learning run is stale');
@@ -171,9 +196,24 @@ function latest(directory = DEFAULT_DIRECTORY) {
         !/^[a-f0-9]{64}$/.test(row.policySha256) || !/^[a-f0-9]{64}$/.test(row.initialSha256)) throw Error('Invalid local learning checkpoint');
     const model = policy(path.join(runDirectory, `seed-${row.seed}`, row.policyFile), row.policySha256);
     if (model.data.trainingSeed !== row.seed || model.data.updates !== row.updates || model.data.steps !== row.steps ||
-        model.data.trained !== row.trained) throw Error('Model summary does not match checkpoint');
+        model.data.trained !== row.trained || (record.device === 'cuda' &&
+          (model.data.width !== record.config.networkWidth || (model.data.hiddenLayers ?? 2) !== (record.config.networkDepth ?? 2)))) {
+      throw Error('Model summary does not match checkpoint');
+    }
   }
-  return {record, runDirectory};
+  return {record, runDirectory, runManifestSha256: manifest.sha256};
+}
+
+function trainingEvidence(saved) {
+  const config = saved.record.config || {};
+  const evidence = {runId: saved.record.runId, runManifestSha256: saved.runManifestSha256, device: saved.record.device,
+    execution: saved.record.execution || null,
+    config: {trainingDevice: config.trainingDevice || saved.record.device, networkDepth: config.networkDepth ?? 2}};
+  if (typeof saved.record.torch === 'string') evidence.torch = saved.record.torch;
+  for (const key of ['algorithm', 'seed', 'seedCount', 'networkWidth']) {
+    if (config[key] !== undefined) evidence.config[key] = config[key];
+  }
+  return evidence;
 }
 
 function status(directory = DEFAULT_DIRECTORY) {
@@ -186,10 +226,11 @@ function status(directory = DEFAULT_DIRECTORY) {
     const currentHashes = saved.record.models.map(row => row.policySha256);
     const matched = evaluation?.runId === saved.record.runId && evaluation?.policyContractVersion === Policy.CONTRACT_VERSION &&
       evaluation?.suiteVersion === 2 && isDeepStrictEqual(evaluation?.identity, saved.record.identity) &&
+      (saved.record.device !== 'cuda' || isDeepStrictEqual(evaluation?.trainingEvidence, trainingEvidence(saved))) &&
       JSON.stringify(evaluation.policyHashes) === JSON.stringify(currentHashes) &&
       evaluation.corpusSha256 === suite(2).corpusSha256;
     const verified = saved.record.status !== 'running' && matched && evaluation.learnedImprovementVerified === true;
-    return {available: true, ...saved.record, evaluation: matched ? evaluation : null, staleEvaluation: Boolean(evaluation && !matched), motionTrainingImplemented: true,
+    return {available: true, ...saved.record, runManifestSha256: saved.runManifestSha256, evaluation: matched ? evaluation : null, staleEvaluation: Boolean(evaluation && !matched), motionTrainingImplemented: true,
       motionPolicyTrained: saved.record.models.some(row => row.trained && row.actorWeightsChanged),
       learnedImprovementVerified: verified, hardwareExecutionEnabled: false, cloudExecutionEnabled: false};
   } catch (error) { return {available: false, motionTrainingImplemented: true,
@@ -227,6 +268,7 @@ function evaluateLearned(directory = DEFAULT_DIRECTORY) {
   const saved = latest(directory);
   if (!saved || !saved.record.models.some(row => row.trained)) throw Error('No trained motion run available');
   if (saved.record.status === 'running') throw Error('Freeze training before evaluation');
+  assertEvaluationHost(saved.record);
   const corpus = suite(2);
   const baselines = corpus.cases.map(world => baseline(world.seed, world.task, world.configuration));
   const compact = report => ({reason: report.reason, metrics: report.metrics});
@@ -252,7 +294,7 @@ function evaluateLearned(directory = DEFAULT_DIRECTORY) {
   const meanSuccessRate = rates.reduce((sum, value) => sum + value, 0) / rates.length;
   const result = {schemaVersion: 1, runId: saved.record.runId, evaluatedAt: new Date().toISOString(),
     corpusSha256: corpus.corpusSha256, suiteVersion: 2, policyContractVersion: Policy.CONTRACT_VERSION, identity: loadHeadless().identity,
-    policyHashes: saved.record.models.map(row => row.policySha256), models, acceptance: corpus.acceptance,
+    trainingEvidence: trainingEvidence(saved), policyHashes: saved.record.models.map(row => row.policySha256), models, acceptance: corpus.acceptance,
     independentTrainingSeedsRequirementMet: independentSeeds,
     independentSeedVariation: {count: rates.length, meanSuccessRate,
       populationStandardDeviation: Math.sqrt(rates.reduce((sum, value) => sum + (value - meanSuccessRate) ** 2, 0) / rates.length),
@@ -263,4 +305,5 @@ function evaluateLearned(directory = DEFAULT_DIRECTORY) {
   return result;
 }
 
-module.exports = {DEFAULT_DIRECTORY, readJson, policy, policyFromSnapshot, latest, status, runLearned, acceptance, evaluateLearned};
+module.exports = {DEFAULT_DIRECTORY, readJson, policy, policyFromSnapshot, latest, status, runLearned, acceptance, evaluateLearned,
+  validateTrainingExecution, assertEvaluationHost, trainingEvidence};

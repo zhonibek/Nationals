@@ -68,6 +68,18 @@ function readIndependentEvaluation(status, learningDirectory = path.join(__dirna
           !isDeepStrictEqual(committed.corpus.knownExposure, result.knownExposureExclusion) ||
           !isDeepStrictEqual(assertFreshCases(committed.corpus.cases, exposure.ledger), result.knownExposureExclusion)) throw Error('Independent known-exposure binding mismatch');
     }
+    if (status.device === 'cuda') {
+      const evidence = result.trainingEvidence;
+      if (!Array.isArray(evidence) || evidence.length !== 1 || evidence[0].runId !== status.runId ||
+          !Array.isArray(result.models) || result.models.some(model => model.trainingRunId !== status.runId ||
+            model.trainingManifestSha256 !== evidence[0].runManifestSha256)) throw Error('CUDA training evidence binding mismatch');
+      const manifest = read(path.join(learningDirectory, status.runId, 'run.json'));
+      const savedTraining = {record: manifest.value, runManifestSha256: manifest.sha256};
+      if (manifest.sha256 !== evidence[0].runManifestSha256 || manifest.value.runId !== status.runId ||
+          !Learner.validateTrainingExecution(manifest.value) ||
+          !isDeepStrictEqual(Learner.trainingEvidence(savedTraining), evidence[0])) throw Error('CUDA training manifest mismatch');
+      require('./motion-experiment').validateTrainingSources(manifest.value.sources);
+    }
     const candidates = freeze.value.candidates;
     if (!Array.isArray(candidates) || candidates.length !== 6 || new Set(candidates.map(row => row.id)).size !== 6) throw Error('Six unique frozen candidates required');
     const models = status.models.map(saved => {

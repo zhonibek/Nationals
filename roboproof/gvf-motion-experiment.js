@@ -17,10 +17,15 @@ const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_HOLDOUT = path.join(__dirname, 'runs/motion/holdout');
 const REQUIRED_SEEDS = Object.freeze([50512, 50513, 50514]);
 const COHORTS = Object.freeze([
-  Object.freeze({id: 'primary-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: REQUIRED_SEEDS}),
-  Object.freeze({id: 'historical-gvf64x2-v1', width: 64, hiddenLayers: 2, seeds: Object.freeze([50101, 50102, 50103])})
+  Object.freeze({id: 'primary-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: REQUIRED_SEEDS, hardware: 'MI300X'}),
+  Object.freeze({id: 't4-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: Object.freeze([50515, 50516, 50517]), hardware: 'Tesla T4'}),
+  Object.freeze({id: 'historical-gvf64x2-v1', width: 64, hiddenLayers: 2, seeds: Object.freeze([50101, 50102, 50103]), hardware: 'MI300X'})
 ]);
 const MANIFEST_PURPOSE = 'remote-only experimental GVF residual TD3; original Simulator/iraLIB';
+const T4_EXPOSURE_RECEIPT = Object.freeze({sha256: '5ccc92f1200c3ee42f9ddacda009a4a5b6e35401a83038e756a49b19049f1eae',
+  reservedTrainingSeeds: [136001, 136002, 136003], knownWorldSeedCount: 63051, knownBodyGeometryCount: 61489,
+  legacyGeometryFullyKnown: false,
+  scope: 'Known saved seed and body-relative geometry exclusions only; 833 seed-only records remain and arbitrary OOD separation is not claimed'});
 const SOURCE_FILES = [
   'roboproof/core.js', 'roboproof/scenario-spec.json', 'roboproof/gvf-motion-experiment.js',
   'roboproof/motion.js', 'roboproof/motion-evaluation.js',
@@ -166,9 +171,39 @@ function selectCohort(records) {
     records.every(record => record?.config?.networkWidth === candidate.width &&
       record?.config?.hiddenLayers === candidate.hiddenLayers));
   if (!cohort || !config || records.some(record => record?.config?.algorithm !== 'td3-tanh-gvf-residual-v1')) {
-    throw Error('Only a predeclared primary 512x10 or historical 64x2 three-seed cohort is admissible');
+    throw Error('Only a predeclared hardware-specific three-seed GVF cohort is admissible');
   }
   return cohort;
+}
+
+function validTrainingReceipt(record, host, hardware) {
+  const device = record?.trainingDevice;
+  const approval = record?.operatorDeclaredApproval;
+  if (host?.gpuUsedForOptimizer !== true || !isDeepStrictEqual(host.gpu, device)) return false;
+  if (hardware === 'MI300X') {
+    return device?.name?.toUpperCase().includes('MI300X') === true && Boolean(device.hip) &&
+      device.cudaBuild === null && Number.isSafeInteger(device.totalMemoryBytes) &&
+      device.totalMemoryBytes >= 180 * 1024 ** 3 && approval?.provider === 'AMD Developer Cloud' &&
+      approval?.device === 'MI300X' && approval.paymentMethodChargeAuthorized === false &&
+      approval.autoReloadAuthorized === false;
+  }
+  const torchCuda = typeof device?.torch === 'string' ? device.torch.match(/\+cu(\d{2,3})$/)?.[1] : null;
+  const expectedCudaBuild = torchCuda ? `${torchCuda.slice(0, -1)}.${torchCuda.slice(-1)}` : null;
+  return hardware === 'Tesla T4' && device?.name?.toUpperCase().includes('T4') === true &&
+    device.hip === null && typeof device.cudaBuild === 'string' && device.cudaBuild === expectedCudaBuild &&
+    Number.isSafeInteger(device.totalMemoryBytes) && device.totalMemoryBytes >= 14 * 1024 ** 3 &&
+    device.totalMemoryBytes <= 16 * 1024 ** 3 && isDeepStrictEqual(device.capability, [7, 5]) &&
+    device.device === 'cuda:0' && device.deviceIndex === 0 && device.precision === 'float32' &&
+    device.tf32 === false && device.cublasWorkspace === ':4096:8' &&
+    device.simulation === 'Original Node/WASM Simulator and iraLIB on CPU' &&
+    device.scope === 'Device visibility/runtime binding; successful network operations require actual training evidence' &&
+    approval?.provider === 'Google Colab' && approval.device === 'free Tesla T4' &&
+    approval.maxCredits === 0 && approval.billingBasis === 'free runtime only' &&
+    approval.paymentMethodChargeAuthorized === false && approval.autoReloadAuthorized === false;
+}
+
+function validTrainingExposure(record, hardware) {
+  return hardware !== 'Tesla T4' || isDeepStrictEqual(record?.knownExposureExclusion, T4_EXPOSURE_RECEIPT);
 }
 
 function modelsForRuns(runDirectories) {
@@ -189,13 +224,13 @@ function modelsForRuns(runDirectories) {
         record.runId !== path.basename(absolute).replace(/^gvf-td3-/, '') || !record.engineIdentity ||
         !isDeepStrictEqual(record.engineIdentity, currentIdentity) || !record.config ||
         record.config.algorithm !== 'td3-tanh-gvf-residual-v1' || record.config.networkWidth !== cohort.width ||
-        record.config.hiddenLayers !== cohort.hiddenLayers || record.config.physics !== 'original-Simulator-iraLIB-only' ||
-        record.trainingDevice?.name?.toUpperCase().includes('MI300X') !== true || !record.trainingDevice.hip ||
-        record.trainingDevice.cudaBuild !== null || record.trainingDevice.totalMemoryBytes < 180 * 1024 ** 3) {
-      throw Error('Completed MI300X GVF training run with matching original-engine identity required');
+        record.config.hiddenLayers !== cohort.hiddenLayers || record.config.physics !== 'original-Simulator-iraLIB-only') {
+      throw Error('Completed GVF training run with matching original-engine identity required');
     }
     const {value: host} = readJson(path.join(absolute, 'host.json'));
-    if (host.gpuUsedForOptimizer !== true || !isDeepStrictEqual(host.gpu, record.trainingDevice)) throw Error('Verified MI300X optimizer-use receipt required');
+    if (!validTrainingReceipt(record, host, cohort.hardware) || !validTrainingExposure(record, cohort.hardware)) {
+      throw Error(`Verified ${cohort.hardware} optimizer-use receipt required`);
+    }
     const manifest = verifySourceManifest(absolute, record.sourceManifestSha256);
     const initialPath = path.join(absolute, 'actors/actor-episode-000000.json');
     const learnedPath = path.join(absolute, 'actors', `actor-episode-${String(record.episodes).padStart(6, '0')}.json`);
@@ -221,7 +256,7 @@ function modelsForRuns(runDirectories) {
       new Set(models.map(model => model.sourceManifestSha256)).size !== 1 ||
       !models.every(model => isDeepStrictEqual({...model.config, seed: undefined}, {...models[0].config, seed: undefined}) &&
         isDeepStrictEqual(model.trainingDevice, models[0].trainingDevice))) {
-    throw Error('Three predeclared independent GVF seeds must share one exact method, source bundle and MI300X runtime');
+    throw Error('Three predeclared independent GVF seeds must share one exact method, source bundle and approved runtime');
   }
   return models.map(model => ({...model, cohort: {id: cohort.id, width: cohort.width,
     hiddenLayers: cohort.hiddenLayers, seeds: [...cohort.seeds]}}));
@@ -472,4 +507,4 @@ if (require.main === module) {
 }
 
 module.exports = {REQUIRED_SEEDS, COHORTS, selectCohort, identity, audit, requireApprovedRemote, modelsForRuns,
-  compareCorpus, evaluateDevelopment, prepare, evaluateFinal, progressJournal, main};
+  validTrainingReceipt, validTrainingExposure, compareCorpus, evaluateDevelopment, prepare, evaluateFinal, progressJournal, main};

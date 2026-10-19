@@ -28,15 +28,35 @@ const SOURCES = ['roboproof/motion_learning/model.py', 'roboproof/motion_learnin
   'roboproof/motion-learner.js', 'roboproof/motion-evaluation.js', 'roboproof/motion-exposures.js', 'roboproof/motion-exposure-codec.js', 'roboproof/motion.js',
   'roboproof/motion-holdout.js'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-const textHash = filename => hash(fs.readFileSync(path.join(ROOT, filename), 'utf8').replace(/\r\n/g, '\n'));
+const textHash = filename => hash(fs.readFileSync(path.join(ROOT, filename), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'));
 
 function identity() {
   return {sources: {...Object.fromEntries(SOURCES.map(filename => [filename, textHash(filename)])),
     originalEngine: hash(JSON.stringify(loadHeadless().identity))},
     runtime: {node: process.version, v8: process.versions.v8, platform: process.platform, architecture: process.arch,
-      requiredTorch: '2.8.0+cpu'}};
+      policyInference: 'Bounded JavaScript float32 actor on the original Simulator/iraLIB engine'}};
 }
 function audit(directory) { return createLocalFilesystemHoldoutAudit(directory, {readCurrentSourceRuntimeIdentity: identity}); }
+
+function assertEvaluationHost(platform = process.platform, environment = process.env) {
+  if (platform !== 'linux' || environment.ROBOPROOF_APPROVED_REMOTE !== '1') {
+    throw Error('Movement comparison campaigns require the approved remote Linux host; no laptop fallback');
+  }
+}
+
+function validateTrainingSources(sources) {
+  if (!sources || typeof sources !== 'object' || Array.isArray(sources) || !Object.keys(sources).length) throw Error('Training source manifest required');
+  for (const [filename, digest] of Object.entries(sources)) {
+    if (typeof filename !== 'string') throw Error('Training source manifest is malformed');
+    const resolved = path.resolve(ROOT, filename);
+    const relative = path.relative(ROOT, resolved);
+    if (!filename || path.isAbsolute(filename) || relative === '..' || relative.startsWith(`..${path.sep}`) ||
+        !/^[a-f0-9]{64}$/.test(digest) || textHash(filename) !== digest) {
+      throw Error('Training source differs from the declared evaluation method');
+    }
+  }
+  return true;
+}
 
 function prepare(directory, {shortFamilies = 8, fieldFamilies = 16, fullFamilies = 8} = {}) {
   if (![shortFamilies, fieldFamilies, fullFamilies].every(value => Number.isInteger(value) && value >= 1 && value <= 32)) throw Error('Bounded final families required');
@@ -98,6 +118,7 @@ function compareCorpus(corpus, models) {
     const initialRegressions = records.results.filter(row => row.initial.reason === 'success' && row.learned.reason !== 'success').map(row => row.id);
     const effortImprovementAgainstInitial = 1 - learned.meanEffortProxyVAsAllWorlds / initial.meanEffortProxyVAsAllWorlds;
     return {seed: model.seed, policySha256: model.learned.sha256, initialSha256: model.initial.sha256,
+      trainingRunId: model.trainingEvidence?.runId, trainingManifestSha256: model.trainingEvidence?.runManifestSha256,
       baseline: original, neutral, fixedPace, untrained: initial, learned, results: records.results, acceptance: accepted,
       initialSuccessRegressions: initialRegressions,
       measuredEfficiencyEvidence: learned.successRate >= original.successRate && learned.successRate >= initial.successRate &&
@@ -105,29 +126,38 @@ function compareCorpus(corpus, models) {
         accepted.meanEffortImprovementFraction >= 0.05 && effortImprovementAgainstInitial >= 0.05,
       meanEffortImprovementAgainstInitial: effortImprovementAgainstInitial};
   });
+  const trainingEvidence = [...new Map(models.filter(model => model.trainingEvidence)
+    .map(model => [model.trainingEvidence.runId, model.trainingEvidence])).values()];
   return {schemaVersion: 1, evaluatedAt: new Date().toISOString(), identity: loadHeadless().identity,
     specification: corpus.specification, scope: corpus.scope, caseCount: corpus.cases.length, baseline: original, neutral, fixedPace,
+    trainingEvidence,
     models: resultModels, learnedImprovementVerified: models.length === 3 && resultModels.every(model => model.acceptance.passed),
     measuredEfficiencyEvidence: models.length === 3 && resultModels.every(model => model.measuredEfficiencyEvidence),
     interpretation: 'All cases, failures and independent seeds retained. Secondary efficiency evidence is not permission to bypass the strict verified-policy gate.'};
 }
 
 function modelsForRun(directory, update) {
+  assertEvaluationHost();
   directory = path.resolve(directory);
   const saved = Learner.latest(directory);
-  if (!saved || saved.record.status === 'running' || saved.record.torch !== '2.8.0+cpu') throw Error('A completed compatible CPU training run is required');
-  for (const [filename, digest] of Object.entries(saved.record.sources)) {
-    if (textHash(filename) !== digest) throw Error('Training source differs from the declared evaluation method');
-  }
+  if (!saved || saved.record.status === 'running') throw Error('A frozen compatible training run is required');
+  if (saved.record.device === 'cpu' && saved.record.torch !== '2.8.0+cpu') throw Error('A compatible CPU training runtime is required');
+  if (saved.record.device === 'cuda') Learner.assertEvaluationHost(saved.record);
+  if (!Learner.validateTrainingExecution(saved.record)) throw Error('A verified training execution receipt is required');
+  validateTrainingSources(saved.record.sources);
+  const executionEvidence = Learner.trainingEvidence(saved);
   return saved.record.models.map(row => {
     const folder = path.join(saved.runDirectory, `seed-${row.seed}`);
     const filename = update === undefined ? row.policyFile : `policy-${String(update).padStart(4, '0')}.json`;
-    return {seed: row.seed, trainingWorlds: row.history.flatMap(entry => entry.worlds), initialFile: path.join(folder, 'initial-policy.json'), learnedFile: path.join(folder, filename),
+    return {seed: row.seed, trainingWorlds: row.history.flatMap(entry => entry.worlds), trainingEvidence: executionEvidence,
+      initialFile: path.join(folder, 'initial-policy.json'), learnedFile: path.join(folder, filename),
       initial: Learner.policy(path.join(folder, 'initial-policy.json')), learned: Learner.policy(path.join(folder, filename))};
   });
 }
 
 function evaluateFinal(directory, learningDirectory, update) {
+  const saved = Learner.latest(path.resolve(learningDirectory));
+  if (!saved || saved.record.status !== 'completed') throw Error('Complete the frozen training run before independent qualification');
   const models = modelsForRun(learningDirectory, update);
   if (models.length !== 3 || !models.every(model => model.learned.data.trained && !model.initial.data.trained)) throw Error('Three trained and initial candidates required before final reveal');
   const holdout = audit(directory);
@@ -148,7 +178,8 @@ function evaluateFinal(directory, learningDirectory, update) {
   const frozenModels = models.map(model => {
     const initial = revealed.candidates.find(candidate => candidate.id === `initial-${model.seed}`);
     const learned = revealed.candidates.find(candidate => candidate.id === `learned-${model.seed}`);
-    return {seed: model.seed, initial: Learner.policyFromSnapshot(initial.json, initial.sha256),
+    return {seed: model.seed, trainingEvidence: model.trainingEvidence,
+      initial: Learner.policyFromSnapshot(initial.json, initial.sha256),
       learned: Learner.policyFromSnapshot(learned.json, learned.sha256)};
   });
   const result = compareCorpus(revealed.corpus, frozenModels);
@@ -177,4 +208,4 @@ if (require.main === module) {
   } else throw Error('Use prepare or development; final evaluation requires an explicitly frozen protocol');
 }
 
-module.exports = {identity, audit, prepare, compareCorpus, modelsForRun, evaluateFinal};
+module.exports = {identity, audit, prepare, compareCorpus, modelsForRun, evaluateFinal, validateTrainingSources, assertEvaluationHost};

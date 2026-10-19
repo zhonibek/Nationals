@@ -33,8 +33,56 @@ function fixture(directory, trained = true) {
     models: [{seed: 42, steps: model.steps, updates: model.updates, trained, actorWeightsChanged: trained,
       policyFile, policySha256, initialSha256}]}));
   fs.writeFileSync(path.join(directory, 'latest.json'), JSON.stringify({schemaVersion: 1, runId}));
-  return {model, filename: path.join(root, policyFile), policySha256};
+  return {model, filename: path.join(root, policyFile), policySha256, runId,
+    runFilename: path.join(directory, runId, 'run.json')};
 }
+
+function cudaExecutionRecord() {
+  return {device: 'cuda', torch: '2.11.0+cu130', config: {trainingDevice: 'cuda', networkWidth: 32},
+    execution: {device: 'cuda', torch: '2.11.0+cu130', platform: 'Linux', precision: 'float32',
+      simulation: 'Original Node/WASM Simulator and iraLIB on CPU', cudaBuild: '13.0', gpu: 'Tesla T4',
+      capability: [7, 5], memoryBytes: 15637086208, deviceIndex: 0, tf32: false, cublasWorkspace: ':4096:8',
+      scope: 'Device visibility/runtime binding; successful network operations require actual training evidence'}};
+}
+
+test('CUDA run admission requires the exact recorded T4 execution and matching actor architecture', context => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-cuda-run-'));
+  context.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  const fixtureRun = fixture(directory);
+  const base = JSON.parse(fs.readFileSync(fixtureRun.runFilename, 'utf8'));
+  const valid = {...base, ...cudaExecutionRecord()};
+  fs.writeFileSync(fixtureRun.runFilename, JSON.stringify(valid));
+  assert.equal(Learner.validateTrainingExecution(valid), true);
+  assert.equal(Learner.latest(directory).record.device, 'cuda');
+  assert.throws(() => Learner.evaluateLearned(directory), /approved remote Linux host/);
+
+  for (const mutate of [
+    row => { row.execution.device = 'cuda:0'; },
+    row => { row.execution.gpu = 'Other GPU'; },
+    row => { row.execution.tf32 = true; },
+    row => { row.execution.cudaBuild = '12.8'; },
+    row => { row.execution.torch = '2.11.0+cpu'; },
+    row => { row.execution.memoryBytes = 1; }
+  ]) {
+    const invalid = structuredClone(valid);
+    mutate(invalid);
+    fs.writeFileSync(fixtureRun.runFilename, JSON.stringify(invalid));
+    assert.equal(Learner.validateTrainingExecution(invalid), false);
+    assert.throws(() => Learner.latest(directory), /Invalid local learning record/);
+  }
+  const mismatchedArchitecture = structuredClone(valid);
+  mismatchedArchitecture.config.networkWidth = 64;
+  fs.writeFileSync(fixtureRun.runFilename, JSON.stringify(mismatchedArchitecture));
+  assert.equal(Learner.validateTrainingExecution(mismatchedArchitecture), true);
+  assert.throws(() => Learner.latest(directory), /Model summary does not match checkpoint/);
+});
+
+test('CUDA full evaluation requires the approved remote Linux marker', () => {
+  const record = cudaExecutionRecord();
+  assert.throws(() => Learner.assertEvaluationHost(record, 'win32', {}), /approved remote Linux host/);
+  assert.throws(() => Learner.assertEvaluationHost(record, 'linux', {}), /approved remote Linux host/);
+  assert.doesNotThrow(() => Learner.assertEvaluationHost(record, 'linux', {ROBOPROOF_APPROVED_REMOTE: '1'}));
+});
 
 test('bounded JSON inference rejects altered, nonfinite and stale policies', context => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'motion-model-'));

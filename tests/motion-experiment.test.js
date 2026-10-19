@@ -33,5 +33,17 @@ test('fresh mixed-domain commitment reports only metadata before candidates are 
 
 test('current source candidates from relative directories expose absolute artifact paths', () => {
   const fsSource = fs.readFileSync(path.join(__dirname, '../roboproof/motion-experiment.js'), 'utf8');
-  assert.match(fsSource, /function modelsForRun\(directory, update\)\s*\{\s*directory = path\.resolve\(directory\)/);
+  assert.match(fsSource, /function modelsForRun\(directory, update\)\s*\{\s*assertEvaluationHost\(\);\s*directory = path\.resolve\(directory\)/);
+});
+
+test('movement campaigns require the approved remote and training source hashes are path-bound', () => {
+  assert.throws(() => Experiment.assertEvaluationHost('win32', {ROBOPROOF_APPROVED_REMOTE: '1'}), /approved remote Linux host/);
+  assert.throws(() => Experiment.assertEvaluationHost('linux', {}), /approved remote Linux host/);
+  assert.doesNotThrow(() => Experiment.assertEvaluationHost('linux', {ROBOPROOF_APPROVED_REMOTE: '1'}));
+  const filename = 'roboproof/motion_learning/td3_train.py';
+  const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const sha256 = createHash('sha256').update(source).digest('hex');
+  assert.equal(Experiment.validateTrainingSources({[filename]: sha256}), true);
+  assert.throws(() => Experiment.validateTrainingSources({'../outside.py': sha256}), /Training source differs/);
+  assert.throws(() => Experiment.validateTrainingSources({[filename]: 'f'.repeat(64)}), /Training source differs/);
 });
