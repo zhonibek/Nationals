@@ -35,6 +35,7 @@
     
     <!-- 2D / 3D Mode Switcher -->
     <div class="view-mode-tabs">
+      <a href="portal.html" class="view-tab" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.4rem; background:rgba(99, 102, 241, 0.2); border:1px solid #6366f1; color:#c7d2fe; font-weight:700;">🏠 Главный портал</a>
       <button id="tab2D" class="view-tab active">🗺️ 2D Тактический</button>
       <button id="tab3D" class="view-tab">🎮 3D</button>
     </div>
@@ -58,6 +59,9 @@
       <div class="viewport-toolbar">
         <div class="toolbar-group">
           <!-- Planner vs Match Mode Toggle -->
+          <button id="btnToggleAiStudio" class="btn btn-primary" style="background: linear-gradient(135deg, #6366f1, #a855f7); font-weight: 700; border: none; box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);" title="Открыть интерактивную студию AI программирования робота">
+            🤖 AI Программирование
+          </button>
           <button id="btnToggleJerry" class="btn btn-secondary" title="Переключить в визуальный планировщик путей Jerry.io">
             ✏️ Редактор Jerry.io
           </button>
@@ -104,6 +108,97 @@
             <div class="speed-opt" data-speed="1.0">1.0x</div>
             <div class="speed-opt" data-speed="1.5">1.5x</div>
           </div>
+        </div>
+      </div>
+
+      <!-- AI Robot Autonomous Programming Studio Panel -->
+      <div id="aiStudioPanel" class="ai-studio-panel" style="display: none;">
+        <div class="ai-studio-header">
+          <div class="ai-studio-title">
+            <span class="ai-icon">🤖</span>
+            <div>
+              <h4>AI Студия автономного программирования робота</h4>
+              <p>Введите задачу на естественном языке (русский/английский) или выберите готовый пресет — AI сгенерирует путь, C++ код и запустит робота в 3D!</p>
+            </div>
+          </div>
+          <button id="btnAiClose" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">✕ Скрыть</button>
+        </div>
+
+        <!-- AI Engine Status Strip -->
+        <div class="ai-engine-status-strip">
+          <div class="engine-status-info">
+            <span class="status-indicator-dot" id="aiStatusDot"></span>
+            <span id="aiStatusText">AI Движок: Проверка соединения с Nemotron...</span>
+          </div>
+          <button type="button" id="btnCheckNemotron" class="btn-check-nemotron">
+            🔄 Проверить Nemotron
+          </button>
+        </div>
+
+        <!-- AI Prompt Input Bar -->
+        <div class="ai-input-bar">
+          <input type="text" id="aiPromptInput" placeholder="Например: Проехать вперед 36 дюймов, повернуть на 90°, поднять вилку на 12&quot; и забить Cup..." />
+          <button type="button" id="btnAiGenerate" class="btn btn-primary" style="background: linear-gradient(135deg, #6366f1, #a855f7);">
+            ✨ Сгенерировать AI программу
+          </button>
+        </div>
+
+        <!-- 1-Click AI Presets (Instant test buttons) -->
+        <div class="ai-presets">
+          <span class="presets-label">⚡ Готовые AI пресеты:</span>
+          <button type="button" class="ai-chip" data-preset="skills">🏆 Skills 60-Point Routine</button>
+          <button type="button" class="ai-chip" data-preset="scurve">🎯 S-Curve Quintic Spline</button>
+          <button type="button" class="ai-chip" data-preset="strafe">🔄 360° Holonomic Spin & Strafe</button>
+          <button type="button" class="ai-chip" data-preset="pickup">📦 Захват Cup + Подъем в цель</button>
+          <button type="button" class="ai-chip" data-preset="zigzag">⚡ Зигзаг объезд препятствий</button>
+          <button type="button" class="ai-chip" data-preset="box">📐 Квадратный патруль (Box)</button>
+        </div>
+
+        <!-- PPO / Multi-Strategy Trajectory Optimizer Comparison -->
+        <div id="aiOptimizerSection" class="ai-optimizer-section" style="display: none;">
+          <div class="optimizer-header">
+            <span class="optimizer-badge">🧠 GVF-TD3 & Multi-Strategy Optimizer</span>
+            <span id="aiOptimizerVerdict" class="optimizer-verdict">Запуск физических rollouts в симуляторе...</span>
+          </div>
+          <div class="strategy-cards-grid" id="aiStrategyCards">
+            <!-- Dynamic strategy cards: Spline vs GVF-TD3 vs Strafe vs SnapTurn -->
+          </div>
+        </div>
+
+        <!-- Generated Code & Action Plan Display -->
+        <div class="ai-display-grid">
+          <!-- C++ Code Viewer -->
+          <div class="ai-code-card">
+            <div class="code-card-header">
+              <span>💻 Сгенерированный PROS C++ код (src/main.cpp)</span>
+              <button type="button" id="btnAiCopyCpp" class="btn-sm">📋 Копировать C++</button>
+            </div>
+            <pre id="aiCppCodeView" class="ai-code-editor">// Нажмите готовый пресет выше или введите свою команду для генерации...</pre>
+          </div>
+
+          <!-- Action Steps Timeline -->
+          <div class="ai-plan-card">
+            <div class="code-card-header">
+              <span>📋 План действий робота (Шаги автономки)</span>
+              <span id="aiStepCount" class="badge-count">0 шагов</span>
+            </div>
+            <div id="aiStepsList" class="ai-steps-list">
+              <div class="step-empty">Выберите команду для планирования маршрута</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Execution Toolbar -->
+        <div class="ai-studio-actions">
+          <button type="button" id="btnAiRunInSim" class="btn btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size: 0.95rem; font-weight: 700; padding: 0.6rem 1.4rem;">
+            ▶ Запустить программу на роботе в 3D
+          </button>
+          <button type="button" id="btnAiSendJerry" class="btn btn-secondary">
+            ✏️ Передать точки в Jerry.io редактор
+          </button>
+          <button type="button" id="btnAiResetRobot" class="btn btn-secondary">
+            🔄 Сброс робота в (0,0,0)
+          </button>
         </div>
       </div>
 
@@ -189,7 +284,14 @@
       <div class="viewport-toolbar" style="flex-wrap:wrap"><span id="matchStatus" role="status"></span><button id="exportMatch" class="btn btn-secondary">Скачать протокол JSON</button></div>
       <div class="viewport-toolbar" style="flex-wrap:wrap"><button id="askTactics" class="btn btn-secondary" type="button">Спросить тактический AI</button><button id="stopTactics" class="btn btn-secondary" type="button" disabled>Стоп AI</button></div>
       <p id="tacticsStatus" role="status" aria-live="polite">Передаётся только компактный снимок игры локальному Nemotron. Это совет, не автопилот.</p>
-      <div id="tacticsReply" hidden><h3>Тактический совет · не выполнен</h3><p id="tacticsMessage"></p><a href="/#nemotron" target="_blank" rel="noopener">Открыть координатор · Robot tools → Restore saved experiment</a></div>
+      <div id="tacticsReply" hidden>
+        <h3>Тактический совет · не выполнен</h3>
+        <p id="tacticsMessage"></p>
+        <div style="display: flex; gap: 0.6rem; margin-top: 0.75rem; flex-wrap: wrap;">
+          <button id="btnTacticsToPpo" class="btn btn-primary" type="button" style="background: linear-gradient(135deg, #10b981, #06b6d4); font-weight: 600;">⚡ Запустить эту тактику в PPO Оптимизаторе</button>
+          <a href="/#nemotron" target="_blank" rel="noopener" class="btn btn-secondary">Открыть координатор · Robot tools → Restore</a>
+        </div>
+      </div>
       <div class="viewport-toolbar" style="flex-wrap:wrap">
         <label>Режим <select id="gameMode"><option value="practice">Тренировка ∞</option><option value="match">Матч 2:00</option></select></label>
         <label><input id="practicePreload" type="checkbox"> Preload Pin при старте тренировки</label>
