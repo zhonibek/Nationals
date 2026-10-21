@@ -15,9 +15,9 @@ const SAFETY = 'src/lemlib/safety.cpp';
 const REVIEWED = {
   'src/main.cpp': '24361265605b8e917748953786cfada0bf0806ef1ddea823bdec28c2166d6c27',
   'include/robot_config.hpp': 'a398014bb612cb1d13d61ea8fe9930d4136562feaeac22f6c22356d778456e5b',
-  'include/subsystems/control/Cascade.hpp': '1afa2a237881005035cd1ef74e8cdbe191cfcdb73c3f27471d57e0b71c291e63',
+  'include/subsystems/control/Cascade.hpp': 'aad6a37207c5b2d59b2a9d05f0d01233feff6b742d527707b2dc05239d3d2ba0',
   'include/subsystems/control/BezierReference.hpp': '35425902da85f2812e804f7655d62bb4a12ab472f8cc19a1d8840fc596a65680',
-  'src/subsystems/control/HolonomicMotion.cpp': 'fc42bd6223cf92fa46ed0278239f9077ed1240ebc5da764da650fdccceb7c5be',
+  'src/subsystems/control/HolonomicMotion.cpp': '17645f3f75bb4a832aa0cf60084f799282b9ac4a80bde3a2cfa1c6da048e5ec6',
   'src/subsystems/ltv/ltv.cpp': '6a7e5f2ff565898da0f66968802924d55bdadf815bf7bbc59e48dcc9e2a26960',
   'src/subsystems/trajectory/QuinticSpline.cpp': '1e7ec2a644bf58065fa05c0dc2306f65c6207918421dd55dc688c9d81049c672',
   'src/subsystems/pedro/BezierCurve.cpp': '58bc2bc6873abf9f45d898255632ee1ec9fb8bd573b0e11161d68d283b5643f2',
@@ -30,17 +30,17 @@ const REVIEWED = {
   'src/subsystems/mcl/MCL.cpp': '196b3519c2bcd1d9c07fd7605d7638c4093a6becd5cc0519b90988df902a10e3',
   'src/subsystems/flc/FuzzyLogic.cpp': 'a230cf42f819746cf707bbfc695c6a0e119a2b125486454a1445f00cf6d08e2d',
   'src/subsystems/OdomReset.cpp': 'c3b20356311e0a886c715ca97458450e89288c0a970b855990eb8db85d572448',
-  'simulator/native/control.cpp': '3f632d72f56847876f8357374a0f292b5bf07ea5000e5f59c4f620f9e8b37b1a',
-  'simulator/control-runtime.js': 'dad5517b5acbffe37fad87dda99978a1634d96cc3b9567079edcdd9978706bec',
-  'simulator/engine.js': '042e6c84fc8e78269409f22aa7a53c1f05c16e46afeb931bf1bc8cee43a801b3'
+  'simulator/native/control.cpp': 'bb7af1b3fc49b2ab155ee07239d19bf2a37ab723fcd2d1b58431e793580a3235',
+  'simulator/control-runtime.js': '084224d2fc60970d0ee9bb00fa7f4041932c962741fb00939fdbbf719d1b25b0',
+  'simulator/engine.js': '50d86a21ae4bfd009e674fe49f1486b174cde045493516b99ecbee0444da215d'
 };
 const CHECKS = [
   ['entry', MAIN, 'void initialize()', 'void autonomous()', 'void opcontrol()'],
   ['drive', MAIN, 'pros::MotorGroup leftMotors({frontLeft,backLeft},pros::MotorGearset::green)', 'pros::MotorGroup rightMotors({frontRight,backRight},pros::MotorGearset::green)', 'chassis.setDrivebaseType(lemlib::DrivebaseType::XDRIVE)'],
   ['sensors', MAIN, 'lemlib::OdomSensors sensors(nullptr,nullptr,nullptr,nullptr,nullptr)'],
   ['point_wiring', MAIN, 'lemlib::MotionResult autoPose(', 'return nationals::followReference(', 'nationals::pointReference(start,end,time,duration)'],
-  ['boundary', BOUNDARY, 'Feedback readFeedback(', 'getOdomSnapshot()', 'get_actual_velocity_all()', 'Cascade control;', 'control.update(target,feedback,dt)', 'output.wheelVoltages(token,command.volts)'],
-  ['cascade', CASCADE, 'class Cascade', 'class WheelVelocity', 'bool solve(', 'inverseX(s,f,w,c.radius,o.target)', 'return wheels.update(s,f,w,fb,dt,config)'],
+  ['boundary', BOUNDARY, 'Feedback readFeedback(', 'getOdomSnapshot()', 'get_actual_velocity_all()', 'Cascade control;', 'control.update(target,feedback,dt,maxAngularSpeed)', 'output.wheelVoltages(token,command.volts)'],
+  ['cascade', CASCADE, 'class Cascade', 'class WheelVelocity', 'bool solve(', 'inverseX(s,f,w,c.radius,o.target)', 'return wheels.update(s,f,limit(w,-maxAngularSpeed,maxAngularSpeed),fb,dt,config)'],
   ['odom', ODOM, 'if(type==lemlib::DrivebaseType::XDRIVE)', 'get_position_all()', 'const float mid=pose.theta+dh/2', 'driveOutput().watchdog()'],
   ['calibration', 'src/lemlib/chassis/chassis.cpp', 'void lemlib::Chassis::calibrate(', 'setSensors(sensors, drivetrain)', 'init()'],
   ['output', SAFETY, 'DriveOutput::acquire(', 'DriveOutput::wheelVoltages(', 'pros::c::motor_move_voltage(', 'DriveOutput::watchdog()'],
@@ -59,8 +59,8 @@ const CHECKS = [
   ['fuzzy', 'src/subsystems/flc/FuzzyLogic.cpp', 'FuzzyLogicController::computeMultipliers('],
   ['odom_reset', 'src/subsystems/OdomReset.cpp', 'OdomReset::wallReset('],
   ['wasm_bridge', 'simulator/native/control.cpp', 'static nationals::Cascade controller;', 'int control_step()'],
-  ['wasm_runtime', 'simulator/control-runtime.js', 'class ProductionControl', 'this.e.control_step()'],
-  ['simulator', 'simulator/engine.js', 'class VexRobotSimulator', 'this.productionControl.step(ref,feedback,dt)']
+  ['wasm_runtime', 'simulator/control-runtime.js', 'class ProductionControl', 'this.e.control_step()', 'this.e.control_step_gvf()'],
+  ['simulator', 'simulator/engine.js', 'class VexRobotSimulator', 'this.productionControl.step(ref,feedback,dt,']
 ];
 const CORE_CHECKS = ['entry', 'drive', 'sensors', 'point_wiring', 'boundary', 'cascade', 'odom', 'calibration', 'output'];
 const MODULES = [
