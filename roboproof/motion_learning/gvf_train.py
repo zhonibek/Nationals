@@ -9,8 +9,10 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import random
+import signal
 import sys
 import tempfile
+import threading
 import time
 import traceback
 
@@ -25,6 +27,8 @@ EXPLORATION_STD = 0.15
 MANIFEST_PURPOSE = "remote-only experimental GVF residual TD3; original Simulator/iraLIB"
 MAX_APPROVED_CREDITS = 100.0
 MAX_EPISODE_DECISIONS = 200
+RUN_DISK_RESERVE_BYTES = 4 * 1024 ** 3
+EPISODE_OUTPUT_RESERVE_BYTES = 64 * 1024 ** 2
 T4_EXPOSURE_LEDGER_SHA256 = "5ccc92f1200c3ee42f9ddacda009a4a5b6e35401a83038e756a49b19049f1eae"
 
 
@@ -252,6 +256,13 @@ def _random_state_to_json(state):
     return [state[0], list(state[1]), state[2]]
 
 
+def _random_state_from_json(state):
+    require(type(state) is list and len(state) == 3 and type(state[0]) is int and
+            type(state[1]) is list and all(type(value) is int for value in state[1]) and
+            (state[2] is None or type(state[2]) is float), "Exact serialized Python RNG state required")
+    return state[0], tuple(state[1]), state[2]
+
+
 class ReplayBuffer:
     def __init__(self, torch, capacity=REPLAY_CAPACITY):
         self.capacity = capacity
@@ -292,30 +303,66 @@ class ReplayBuffer:
                 "rewards": self.rewards.clone(), "nextObservations": self.next_observations.clone(),
                 "done": self.done.clone()}
 
+    def load_state_dict(self, torch, state):
+        require(type(state) is dict and set(state) == {"capacity", "count", "cursor", "observations",
+                "actions", "rewards", "nextObservations", "done"}, "Exact GVF replay state required")
+        count, cursor = state["count"], state["cursor"]
+        require(type(state["capacity"]) is int and state["capacity"] == self.capacity and
+                type(count) is int and 0 <= count <= self.capacity and type(cursor) is int and
+                0 <= cursor < self.capacity and (count == self.capacity or cursor == count),
+                "GVF replay capacity/cursor/count mismatch")
+        expected = {"observations": self.observations, "actions": self.actions, "rewards": self.rewards,
+            "nextObservations": self.next_observations, "done": self.done}
+        for name, target in expected.items():
+            value = state[name]
+            require(torch.is_tensor(value) and tuple(value.shape) == tuple(target.shape) and
+                    value.dtype == target.dtype and value.device == target.device and value.layout == target.layout,
+                    "GVF replay tensor shape/dtype/device mismatch: " + name)
+            if name != "done":
+                require(torch.isfinite(value).all().item(), "Nonfinite GVF replay state: " + name)
+        require((state["actions"][:count].abs() <= 1).all().item(), "GVF replay actions outside [-1,1]")
+        if count < self.capacity:
+            for name, value in state.items():
+                if name in expected and value.ndim > 1 and not torch.equal(value[count:], torch.zeros_like(value[count:])):
+                    raise ValueError("Unused GVF replay rows must remain zero: " + name)
+                if name in ("rewards", "done") and not torch.equal(value[count:], torch.zeros_like(value[count:])):
+                    raise ValueError("Unused GVF replay rows must remain zero: " + name)
+        for name, target in expected.items():
+            target.copy_(state[name])
+        self.count = count
+        self.cursor = cursor
 
-def _safe_output(path):
+
+def _safe_output(path, resume=False):
     path = Path(path)
     parent = OUTPUT_ROOT
     if path.parent.resolve() != parent.resolve() or not path.name.startswith("gvf-td3-"):
-        raise ValueError("New bounded run directory under roboproof/runs/motion/gvf-td3 required")
+        raise ValueError("Bounded run directory under roboproof/runs/motion/gvf-td3 required")
     for ancestor in [parent, *parent.parents]:
         if ancestor == ROOT.parent:
             break
         if ancestor.is_symlink():
             raise ValueError("Training output path/ancestor must not be a symlink")
     parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if path.exists() or path.is_symlink():
-        raise ValueError("Never overwrite or reuse a training run directory")
-    path.mkdir(mode=0o700)
+    if resume:
+        if path.is_symlink() or not path.is_dir():
+            raise ValueError("Explicit resume requires an existing regular run directory")
+    else:
+        if path.exists() or path.is_symlink():
+            raise ValueError("Never overwrite or reuse a training run directory")
+        path.mkdir(mode=0o700)
     return path
 
 
 def _save_checkpoint(torch, learner, replay, rng, directory, identity, source_sha256,
-                     config, episode_count, decisions, run_id):
-    payload = {"schemaVersion": 1, "runId": run_id, "seed": config["seed"], "config": config,
+                     config, episode_count, decisions, run_id, seen_world_seeds,
+                     seen_body_geometries, rejected_training_worlds):
+    payload = {"schemaVersion": 2, "runId": run_id, "seed": config["seed"], "config": config,
         "sourceManifestSha256": source_sha256, "engineIdentity": identity,
         "episodeCount": episode_count, "decisions": decisions,
         "pythonRandomState": _random_state_to_json(rng.getstate()),
+        "seenWorldSeeds": sorted(seen_world_seeds), "seenBodyGeometries": sorted(seen_body_geometries),
+        "trainingWorldRejections": rejected_training_worlds,
         "learner": learner.state_dict(), "replay": replay.state_dict()}
     target = directory / "checkpoints" / f"episode-{episode_count:06d}.pt"
     descriptor, temporary = tempfile.mkstemp(prefix=".checkpoint-", suffix=".tmp", dir=target.parent)
@@ -338,10 +385,190 @@ def _save_checkpoint(torch, learner, replay, rng, directory, identity, source_sh
     return target, checkpoint_sha
 
 
+def _checkpoint_size_upper_bound(learner, replay):
+    model_bytes = sum(tensor.numel() * tensor.element_size()
+        for model in (learner.actor, learner.critics, learner.actor_target, learner.critics_target)
+        for tensor in model.state_dict().values())
+    trainable = (learner.actor, learner.critics)
+    trainable_bytes = sum(parameter.numel() * parameter.element_size()
+        for model in trainable for parameter in model.parameters())
+    optimizer_steps = 1024 * sum(1 for model in trainable for _ in model.parameters())
+    replay_bytes = sum(tensor.numel() * tensor.element_size()
+        for tensor in (replay.observations, replay.actions, replay.rewards,
+                       replay.next_observations, replay.done))
+    return math.ceil((model_bytes + 2 * trainable_bytes + optimizer_steps + replay_bytes) * 1.25) + 16 * 1024 ** 2
+
+
+def _read_run_json(path, maximum=4 * 1024 * 1024):
+    path = Path(path)
+    require(path.is_file() and not path.is_symlink() and path.stat().st_size <= maximum,
+            "Bounded regular resume evidence required: " + path.name)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _preserve_terminal_record(path, record):
+    path = Path(path)
+    if path.exists():
+        require(_read_run_json(path) == record,
+                "Existing pre-resume terminal receipt differs from the validated stop")
+        return
+    write_exclusive(path, record)
+
+
+def _validate_resume_history(directory, record, source_sha256):
+    events_path = directory / "exposures.jsonl"
+    require(events_path.is_file() and not events_path.is_symlink() and events_path.stat().st_size <= 64 * 1024 * 1024,
+            "Bounded complete training exposure history required")
+    lines = events_path.read_text(encoding="utf-8").splitlines()
+    episodes = record["episodes"]
+    require(len(lines) == episodes * 2, "Only fully completed episode exposure history is resumable")
+    worlds, total_decisions = [], 0
+    for episode in range(1, episodes + 1):
+        started = json.loads(lines[(episode - 1) * 2])
+        completed = json.loads(lines[(episode - 1) * 2 + 1])
+        require(started.get("event") == "started" and completed.get("event") == "completed" and
+                started.get("episode") == episode and completed.get("episode") == episode and
+                started.get("world") == completed.get("world") and
+                type(completed.get("decisionCount")) is int and
+                1 <= completed["decisionCount"] <= MAX_EPISODE_DECISIONS and
+                started.get("sourceManifestSha256") == source_sha256 == completed.get("sourceManifestSha256"),
+                "Training exposure history must be consecutive, paired and source-bound")
+        episode_path = directory / "episodes" / f"episode-{episode:06d}.json"
+        require(episode_path.is_file() and not episode_path.is_symlink() and episode_path.stat().st_size <= 8 * 1024 * 1024 and
+                digest(episode_path.read_bytes()) == completed.get("episodeFileSha256"),
+                "Completed episode artifact differs from its exposure record")
+        saved_episode = _read_run_json(episode_path, 8 * 1024 * 1024)
+        require(saved_episode.get("episode") == episode and saved_episode.get("complete") is True and
+                saved_episode.get("world") == started["world"] and
+                saved_episode.get("decisionCount") == completed.get("decisionCount") and
+                len(saved_episode.get("transitions", [])) == completed.get("decisionCount"),
+                "Completed episode artifact/counter mismatch")
+        worlds.append(started["world"])
+        total_decisions += completed["decisionCount"]
+    require(total_decisions == record["decisions"], "Completed episode decisions do not match terminal run")
+    return worlds
+
+
+def _load_resume_state(torch, learner, replay, rng, directory, run_id, config,
+                       source_bytes, source_sha256, gpu, approval, exposure_exclusion, identity):
+    record = _read_run_json(directory / "run.json")
+    terminal = _read_run_json(directory / "terminal.json")
+    require(record == terminal and record.get("status") in
+            ("time-budget-stopped", "storage-budget-stopped", "signal-stopped") and
+            record.get("resumeSupported") is True and record.get("unresolvedExposure") is None,
+            "Only a clean, explicitly resumable stop may continue")
+    require(record.get("runId") == run_id and record.get("config") == config and
+            record.get("sourceManifestSha256") == source_sha256 and
+            record.get("trainingDevice") == gpu and record.get("operatorDeclaredApproval") == approval and
+            record.get("knownExposureExclusion") == (exposure_exclusion["receipt"] if exposure_exclusion else None) and
+            record.get("engineIdentity") == identity,
+            "Resume source/configuration/provider/exposure/engine identity mismatch")
+    source_path = directory / "source-manifest.json"
+    require(source_path.is_file() and not source_path.is_symlink() and source_path.stat().st_size <= 4 * 1024 * 1024 and
+            source_path.read_bytes() == source_bytes,
+            "Resume source manifest bytes changed")
+    host = _read_run_json(directory / "host.json")
+    current_host = {"system": platform.platform(), "python": platform.python_version(),
+        "node": __import__("subprocess").check_output(["node", "--version"], text=True).strip(),
+        "gpu": gpu, "gpuUsedForOptimizer": True}
+    require(all(host.get(name) == value for name, value in current_host.items()),
+            "Resume host/runtime/GPU identity mismatch")
+    require(type(record.get("episodes")) is int and record["episodes"] > 0 and
+            type(record.get("decisions")) is int and record["decisions"] > 0 and
+            type(record.get("updates")) is int and 0 <= record["updates"] <= config["maxUpdates"] and
+            type(record.get("resumeCount")) is int and record["resumeCount"] >= 0,
+            "Resumable run counters required")
+    elapsed = record.get("cumulativeElapsedSeconds", record.get("elapsedSeconds"))
+    require(type(elapsed) in (int, float) and math.isfinite(elapsed) and elapsed >= 0,
+            "Finite cumulative elapsed-time receipt required")
+    exposed_worlds = _validate_resume_history(directory, record, source_sha256)
+    initial = record.get("initialActor")
+    actor = record.get("actor")
+    checkpoint = record.get("checkpoint")
+    last_episode = record.get("lastEpisode")
+    for pointer, name in ((initial, "initial actor"), (actor, "current actor"),
+                          (checkpoint, "checkpoint"), (last_episode, "last episode")):
+        require(type(pointer) is dict and set(pointer) == {"path", "sha256"} and
+                type(pointer["path"]) is str and type(pointer["sha256"]) is str and
+                len(pointer["sha256"]) == 64 and all(character in "0123456789abcdef" for character in pointer["sha256"]),
+                "Exact saved " + name + " receipt required")
+    require(initial["path"] == "actors/actor-episode-000000.json" and
+            actor["path"] == f"actors/actor-episode-{record['episodes']:06d}.json" and
+            checkpoint["path"] == f"checkpoints/episode-{record['episodes']:06d}.pt" and
+            last_episode["path"] == f"episodes/episode-{record['episodes']:06d}.json",
+            "Resume artifact pointers/counters must match the committed episode")
+    initial_path = directory / initial["path"]
+    actor_path = directory / actor["path"]
+    last_episode_path = directory / last_episode["path"]
+    for path, pointer, label in ((initial_path, initial, "initial actor"), (actor_path, actor, "current actor"),
+                                 (last_episode_path, last_episode, "last episode")):
+        require(path.resolve().is_relative_to(directory.resolve()) and path.is_file() and not path.is_symlink() and
+                path.stat().st_size <= 8 * 1024 * 1024 and
+                digest(path.read_bytes()) == pointer["sha256"], "Saved " + label + " hash mismatch")
+    checkpoint_path = directory / checkpoint["path"]
+    require(checkpoint_path.resolve().is_relative_to(directory.resolve()) and checkpoint_path.is_file() and
+            not checkpoint_path.is_symlink() and checkpoint_path.stat().st_size <= 1024 * 1024 * 1024 and
+            digest(checkpoint_path.read_bytes()) == checkpoint["sha256"], "Saved checkpoint hash mismatch")
+    history_path = directory / "checkpoints.jsonl"
+    require(history_path.is_file() and not history_path.is_symlink() and history_path.stat().st_size <= 64 * 1024 * 1024,
+            "Bounded checkpoint receipt history required")
+    checkpoint_rows = [json.loads(line) for line in history_path.read_text(encoding="utf-8").splitlines()]
+    require(checkpoint_rows and checkpoint_rows[-1].get("path") == checkpoint["path"] and
+            checkpoint_rows[-1].get("sha256") == checkpoint["sha256"] and
+            checkpoint_rows[-1].get("bytes") == checkpoint_path.stat().st_size and
+            checkpoint_rows[-1].get("episodeCount") == record["episodes"] and
+            checkpoint_rows[-1].get("decisions") == record["decisions"],
+            "Latest checkpoint receipt does not match terminal run")
+    payload = torch.load(checkpoint_path, weights_only=True)
+    expected_keys = {"schemaVersion", "runId", "seed", "config", "sourceManifestSha256", "engineIdentity",
+        "episodeCount", "decisions", "pythonRandomState", "seenWorldSeeds", "seenBodyGeometries",
+        "trainingWorldRejections", "learner", "replay"}
+    require(type(payload) is dict and set(payload) == expected_keys and payload["schemaVersion"] == 2 and
+            payload["runId"] == run_id and payload["seed"] == config["seed"] and
+            payload["config"] == config and payload["sourceManifestSha256"] == source_sha256 and
+            payload["engineIdentity"] == identity and payload["episodeCount"] == record["episodes"] and
+            payload["decisions"] == record["decisions"] and
+            payload["trainingWorldRejections"] == record["trainingExposureRejections"],
+            "Checkpoint run/source/engine/counter mismatch")
+    seen_seeds, seen_geometry = payload["seenWorldSeeds"], payload["seenBodyGeometries"]
+    require(type(seen_seeds) is list and seen_seeds == sorted(set(seen_seeds)) and
+            all(type(seed) is int and 0 <= seed <= 0xffffffff for seed in seen_seeds) and
+            type(seen_geometry) is list and seen_geometry == sorted(set(seen_geometry)) and
+            all(type(value) is str and len(value) == 64 and
+                all(character in "0123456789abcdef" for character in value) for value in seen_geometry) and
+            type(payload["trainingWorldRejections"]) is int and payload["trainingWorldRejections"] >= 0,
+            "Checkpoint exposure/RNG continuation state malformed")
+    if exposure_exclusion is None:
+        require(not seen_seeds and not seen_geometry,
+                "Non-T4 resume must not consume T4-only duplicate exposure state")
+    else:
+        expected_seeds = {world["seed"] for world in exposed_worlds}
+        expected_geometry = set().union(*(_world_geometry_keys(world["task"]) for world in exposed_worlds))
+        require(set(seen_seeds) == expected_seeds and set(seen_geometry) == expected_geometry,
+                "Checkpoint duplicate-exposure state differs from completed T4 world history")
+    require(type(payload["learner"]) is dict and payload["learner"].get("updates") == record["updates"] and
+            type(record.get("trainingExposureRejections")) is int and record["trainingExposureRejections"] ==
+            payload["trainingWorldRejections"], "Checkpoint learner/rejection counters differ from terminal run")
+    replay.load_state_dict(torch, payload["replay"])
+    require(replay.count == min(record["decisions"], REPLAY_CAPACITY) and
+            replay.cursor == record["decisions"] % REPLAY_CAPACITY,
+            "Restored replay count/cursor does not match completed decisions")
+    learner.load_state_dict(payload["learner"])
+    rng.setstate(_random_state_from_json(payload["pythonRandomState"]))
+    return {"record": record, "initialSha256": initial["sha256"], "actorSha256": actor["sha256"],
+        "checkpoint": checkpoint, "seenWorldSeeds": set(seen_seeds), "seenBodyGeometries": set(seen_geometry),
+        "trainingWorldRejections": payload["trainingWorldRejections"],
+        "cumulativeElapsedSeconds": record.get("cumulativeElapsedSeconds", record.get("elapsedSeconds", 0.0))}
+
+
 def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, seed=50101,
         max_decisions=10000, max_updates=10000, max_seconds=1800, approved_max_credits=None,
         network_width=64, hidden_layers=2, approved_free_t4=False,
-        exposure_ledger=None, exposure_ledger_sha256=None):
+        exposure_ledger=None, exposure_ledger_sha256=None, resume=False, stop_requested=None):
+    require(type(resume) is bool, "Explicit boolean resume option required")
+    if stop_requested is None:
+        stop_requested = lambda: False
+    require(callable(stop_requested), "A callable graceful-stop check is required")
     if type(approved_amd_mi300x) is not bool or type(approved_free_t4) is not bool or approved_amd_mi300x == approved_free_t4:
         raise ValueError("Exactly one explicitly approved GPU provider is required")
     require_approved_remote(True)
@@ -351,10 +578,10 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
     config = validate_limits(seed, max_decisions, max_updates, max_seconds,
                              network_width, hidden_layers)
     source_bytes = verify_sources(source_manifest, source_manifest_sha256)
-    exposure = None
+    exposure_exclusion = None
     if approved_free_t4:
         require(exposure_ledger is not None, "Free T4 training requires a frozen known-exposure snapshot")
-        exposure = load_t4_exposure_exclusion(exposure_ledger, source_bytes, exposure_ledger_sha256)
+        exposure_exclusion = load_t4_exposure_exclusion(exposure_ledger, source_bytes, exposure_ledger_sha256)
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     elif exposure_ledger is not None or exposure_ledger_sha256 is not None:
         raise ValueError("AMD study cannot silently consume the T4-specific exposure declaration")
@@ -371,13 +598,14 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
     run_id = Path(output).name.removeprefix("gvf-td3-")
     if not run_id or len(run_id) > 64 or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for character in run_id):
         raise ValueError("Bounded explicit run ID required in output directory name")
-    directory = _safe_output(output)
-    (directory / "episodes").mkdir(mode=0o700)
-    (directory / "actors").mkdir(mode=0o700)
-    (directory / "checkpoints").mkdir(mode=0o700)
-    (directory / "source-manifest.json").write_bytes(source_bytes)
-    for filename in (directory / "source-manifest.json",):
-        os.chmod(filename, 0o600)
+    directory = _safe_output(output, resume=resume)
+    previous = _read_run_json(directory / "run.json") if resume else None
+    if not resume:
+        (directory / "episodes").mkdir(mode=0o700)
+        (directory / "actors").mkdir(mode=0o700)
+        (directory / "checkpoints").mkdir(mode=0o700)
+        (directory / "source-manifest.json").write_bytes(source_bytes)
+        os.chmod(directory / "source-manifest.json", 0o600)
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
     torch.manual_seed(seed)
@@ -385,15 +613,14 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
     rng = random.Random(seed)
     learner = GvfTD3(width=network_width, hidden_layers=hidden_layers, device=device)
     replay = ReplayBuffer(torch)
+    checkpoint_upper_bound = _checkpoint_size_upper_bound(learner, replay)
     decisions = episodes = 0
     status = "failed"
     unresolved_exposure = None
     started = time.monotonic()
     deadline = started + max_seconds
     events_path = directory / "exposures.jsonl"
-    events_path.touch(mode=0o600, exist_ok=False)
     transitions_path = directory / "transitions.jsonl"
-    transitions_path.touch(mode=0o600, exist_ok=False)
     seen_world_seeds, seen_body_geometries = set(), set()
     rejected_training_worlds = 0
     approval = ({"provider": "AMD Developer Cloud", "device": "MI300X",
@@ -403,40 +630,90 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
         {"provider": "Google Colab", "device": "free Tesla T4", "maxCredits": 0,
             "billingBasis": "free runtime only", "paymentMethodChargeAuthorized": False,
             "autoReloadAuthorized": False})
+    resume_count = (previous.get("resumeCount", 0) + 1) if resume else 0
     protocol = {"schemaVersion": 1, "runId": run_id, "config": config,
-        "sourceManifestSha256": source_manifest_sha256, "createdAtUtc": utc_now(),
+        "sourceManifestSha256": source_manifest_sha256,
+        "createdAtUtc": previous.get("createdAtUtc", utc_now()) if resume else utc_now(),
+        "resumeCount": resume_count,
         "operatorDeclaredApproval": approval,
-        "knownExposureExclusion": exposure["receipt"] if exposure is not None else None,
+        "knownExposureExclusion": exposure_exclusion["receipt"] if exposure_exclusion is not None else None,
         "trainingDevice": gpu, "physicsDevice": "Original Simulator Node.js process on the same approved remote runtime",
-        "trainingDriver": "roboproof.motion_learning.gvf_train", "resumeSupported": False,
+        "trainingDriver": "roboproof.motion_learning.gvf_train", "resumeSupported": True,
         "learnedImprovementVerified": False, "independentQualificationPerformed": False,
         "scope": "Bounded experimental GVF residual TD3 fit; no promotion or physical/game-score claim"}
-    atomic_json(directory / "run.json", {**protocol, "status": "running", "decisions": 0, "episodes": 0, "updates": 0})
-    write_exclusive(directory / "host.json", {"checkedAtUtc": utc_now(), "system": platform.platform(),
+    host_record = {"checkedAtUtc": utc_now(), "system": platform.platform(),
         "python": platform.python_version(), "node": __import__("subprocess").check_output(["node", "--version"], text=True).strip(),
-        "gpu": gpu, "gpuUsedForOptimizer": True})
+        "gpu": gpu, "gpuUsedForOptimizer": True}
+    if not resume:
+        atomic_json(directory / "run.json", {**protocol, "status": "running", "decisions": 0, "episodes": 0, "updates": 0})
+        write_exclusive(directory / "host.json", host_record)
+        events_path.touch(mode=0o600, exist_ok=False)
+        transitions_path.touch(mode=0o600, exist_ok=False)
+        (directory / "segments.jsonl").touch(mode=0o600, exist_ok=False)
+    else:
+        require((directory / "segments.jsonl").is_file() and not (directory / "segments.jsonl").is_symlink(),
+                "Append-only training segment history required for resume")
     try:
         with MotionEnvironment(control_mode="gvf-residual") as environment:
             identity = environment.contract["identity"]
-            initial_actor = export(learner.actor, identity, seed, 0, 0)
-            initial_path = directory / "actors/actor-episode-000000.json"
-            atomic_actor_json(initial_path, initial_actor)
-            initial_sha = digest(initial_path.read_bytes())
+            if resume:
+                resumed = _load_resume_state(torch, learner, replay, rng, directory, run_id, config,
+                    source_bytes, source_manifest_sha256, gpu, approval,
+                    exposure_exclusion, identity)
+                previous = resumed["record"]
+                decisions, episodes = previous["decisions"], previous["episodes"]
+                seen_world_seeds = resumed["seenWorldSeeds"]
+                seen_body_geometries = resumed["seenBodyGeometries"]
+                rejected_training_worlds = resumed["trainingWorldRejections"]
+                prior_elapsed = resumed["cumulativeElapsedSeconds"]
+                initial_sha, current_actor_sha = resumed["initialSha256"], resumed["actorSha256"]
+                checkpoint_receipt = resumed["checkpoint"]
+                initial_actor_receipt = previous["initialActor"]
+                actor_receipt = previous["actor"]
+                last_episode_receipt = previous["lastEpisode"]
+                history_dir = directory / "terminal-history"
+                history_dir.mkdir(mode=0o700, exist_ok=True)
+                history_target = history_dir / f"terminal-before-resume-{resume_count:06d}.json"
+                _preserve_terminal_record(history_target, previous)
+                append_jsonl(directory / "segments.jsonl", {"event": "resumed", "resumeCount": resume_count,
+                    "atUtc": utc_now(), "priorStatus": previous["status"], "checkpointSha256": checkpoint_receipt["sha256"]})
+            else:
+                prior_elapsed = 0.0
+                initial_actor = export(learner.actor, identity, seed, 0, 0)
+                initial_path = directory / "actors/actor-episode-000000.json"
+                atomic_actor_json(initial_path, initial_actor)
+                initial_sha = digest(initial_path.read_bytes())
+                initial_actor_receipt = {"path": initial_path.relative_to(directory).as_posix(), "sha256": initial_sha}
+                current_actor_sha = None
+                checkpoint_receipt = None
+                actor_receipt = None
+                last_episode_receipt = None
+            append_jsonl(directory / "segments.jsonl", {"event": "started", "resumeCount": resume_count,
+                "atUtc": utc_now(), "seed": seed, "maxSeconds": max_seconds})
             atomic_json(directory / "run.json", {**protocol, "status": "running", "engineIdentity": identity,
-                "initialActor": {"path": initial_path.relative_to(directory).as_posix(), "sha256": initial_sha},
-                "decisions": decisions, "episodes": episodes, "updates": learner.updates})
+                "initialActor": initial_actor_receipt, "actor": actor_receipt, "checkpoint": checkpoint_receipt,
+                "lastEpisode": last_episode_receipt, "decisions": decisions, "episodes": episodes,
+                "updates": learner.updates, "cumulativeElapsedSeconds": prior_elapsed})
             while decisions < max_decisions and learner.updates < max_updates and time.monotonic() < deadline:
-                if exposure is None:
+                if stop_requested() and episodes > 0:
+                    status = "signal-stopped"
+                    break
+                free_disk_bytes = __import__("shutil").disk_usage(directory).free
+                minimum_free_bytes = checkpoint_upper_bound + EPISODE_OUTPUT_RESERVE_BYTES + RUN_DISK_RESERVE_BYTES
+                if free_disk_bytes < minimum_free_bytes:
+                    status = "storage-budget-stopped"
+                    break
+                if exposure_exclusion is None:
                     world = training_world(rng, episodes, "mixed-full-reach-v5")
                 else:
                     world, rejected = select_unexposed_training_world(rng, episodes,
-                        "mixed-full-reach-v5", exposure, seen_world_seeds, seen_body_geometries)
+                        "mixed-full-reach-v5", exposure_exclusion, seen_world_seeds, seen_body_geometries)
                     rejected_training_worlds += rejected
-                exposure = {"event": "started", "episode": episodes + 1, "world": world,
+                episode_exposure = {"event": "started", "episode": episodes + 1, "world": world,
                     "actorSha256": initial_sha if learner.updates == 0 else current_actor_sha,
                     "sourceManifestSha256": source_manifest_sha256, "startedAtUtc": utc_now()}
-                append_jsonl(events_path, exposure)
-                unresolved_exposure = exposure
+                append_jsonl(events_path, episode_exposure)
+                unresolved_exposure = episode_exposure
                 actor_sha = initial_sha if learner.updates == 0 else current_actor_sha
                 policy_identity = {"kind": "untrained" if learner.updates == 0 else "learned",
                     "id": f"gvf-td3-seed-{seed}-episode-{episodes + 1}", "sha256": actor_sha}
@@ -494,7 +771,7 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
                         "world": world, "decisions": episode_decisions, "episodeFileSha256": episode_sha,
                         "sourceManifestSha256": source_manifest_sha256,
                         "atUtc": utc_now()})
-                    unresolved_exposure = {**exposure, "status": "partial-unresolved", "episodeFileSha256": episode_sha}
+                    unresolved_exposure = {**episode_exposure, "status": "partial-unresolved", "episodeFileSha256": episode_sha}
                     status = "budget-stopped-with-unresolved-exposure"
                     break
                 for row in episode_rows:
@@ -513,7 +790,8 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
                 atomic_actor_json(actor_path, actor)
                 current_actor_sha = digest(actor_path.read_bytes())
                 checkpoint_path, checkpoint_sha = _save_checkpoint(torch, learner, replay, rng,
-                    directory, identity, source_manifest_sha256, config, episodes, decisions, run_id)
+                    directory, identity, source_manifest_sha256, config, episodes, decisions, run_id,
+                    seen_world_seeds, seen_body_geometries, rejected_training_worlds)
                 append_jsonl(events_path, {"event": "completed", "episode": episodes, "world": world,
                     "reason": report["reason"], "decisionCount": episode_decisions,
                     "reward": report["totalReward"], "metrics": report["metrics"],
@@ -521,26 +799,44 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
                     "sourceManifestSha256": source_manifest_sha256,
                     "checkpointSha256": checkpoint_sha, "completedAtUtc": utc_now()})
                 unresolved_exposure = None
+                actor_receipt = {"path": actor_path.relative_to(directory).as_posix(), "sha256": current_actor_sha}
+                checkpoint_receipt = {"path": checkpoint_path.relative_to(directory).as_posix(), "sha256": checkpoint_sha}
+                last_episode_receipt = {"path": episode_path.relative_to(directory).as_posix(), "sha256": episode_sha}
                 current = {**protocol, "status": "running", "engineIdentity": identity,
                     "decisions": decisions, "episodes": episodes, "updates": learner.updates,
-                    "actor": {"path": actor_path.relative_to(directory).as_posix(), "sha256": current_actor_sha},
-                    "checkpoint": {"path": checkpoint_path.relative_to(directory).as_posix(), "sha256": checkpoint_sha},
-                    "lastEpisode": {"path": episode_path.relative_to(directory).as_posix(), "sha256": episode_sha}}
+                    "initialActor": initial_actor_receipt, "actor": actor_receipt,
+                    "checkpoint": checkpoint_receipt, "lastEpisode": last_episode_receipt,
+                    "cumulativeElapsedSeconds": prior_elapsed + time.monotonic() - started}
                 atomic_json(directory / "run.json", current)
                 print(json.dumps({"episode": episodes, "decisions": decisions, "updates": learner.updates,
                     "reason": report["reason"], "elapsedSeconds": round(time.monotonic() - started, 2)},
                     allow_nan=False), flush=True)
             if status == "failed":
-                status = "completed-budget" if decisions >= max_decisions or learner.updates >= max_updates else "time-budget-stopped"
+                if decisions >= max_decisions or learner.updates >= max_updates:
+                    status = "completed-budget"
+                elif stop_requested() and episodes > 0:
+                    status = "signal-stopped"
+                else:
+                    status = "time-budget-stopped"
             terminal = {**protocol, "status": status, "engineIdentity": environment.contract["identity"],
                 "decisions": decisions, "episodes": episodes, "updates": learner.updates,
+                "initialActor": initial_actor_receipt, "actor": actor_receipt,
+                "checkpoint": checkpoint_receipt, "lastEpisode": last_episode_receipt,
                 "trainingExposureRejections": rejected_training_worlds,
-                "elapsedSeconds": round(time.monotonic() - started, 3),
+                "checkpointSizeUpperBoundBytes": checkpoint_upper_bound,
+                "freeDiskBytesAtStop": __import__("shutil").disk_usage(directory).free,
+                "reservedDiskBytes": RUN_DISK_RESERVE_BYTES + EPISODE_OUTPUT_RESERVE_BYTES,
+                "segmentElapsedSeconds": round(time.monotonic() - started, 3),
+                "cumulativeElapsedSeconds": round(prior_elapsed + time.monotonic() - started, 3),
                 "unresolvedExposure": unresolved_exposure,
                 "learnedImprovementVerified": False, "independentQualificationPerformed": False,
                 "terminalAtUtc": utc_now()}
+            terminal["elapsedSeconds"] = terminal["cumulativeElapsedSeconds"]
             atomic_json(directory / "run.json", terminal)
-            write_exclusive(directory / "terminal.json", terminal)
+            atomic_json(directory / "terminal.json", terminal)
+            append_jsonl(directory / "segments.jsonl", {"event": "stopped", "resumeCount": resume_count,
+                "status": status, "atUtc": terminal["terminalAtUtc"], "decisions": decisions,
+                "episodes": episodes, "updates": learner.updates})
         return terminal
     except BaseException as error:
         failure = {**protocol, "status": "failed", "error": str(error),
@@ -550,8 +846,26 @@ def run(approved_amd_mi300x, source_manifest, source_manifest_sha256, output, se
             "learnedImprovementVerified": False, "independentQualificationPerformed": False,
             "terminalAtUtc": utc_now()}
         atomic_json(directory / "run.json", failure)
-        write_exclusive(directory / "terminal.json", failure)
+        atomic_json(directory / "terminal.json", failure)
+        append_jsonl(directory / "segments.jsonl", {"event": "failed", "resumeCount": resume_count,
+            "atUtc": failure["terminalAtUtc"], "decisions": decisions, "episodes": episodes,
+            "updates": learner.updates})
         raise
+
+
+def _install_graceful_stop_handlers():
+    stop_event = threading.Event()
+    previous_handlers = {}
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, lambda _signum, _frame: stop_event.set())
+    return stop_event, previous_handlers
+
+
+def _restore_signal_handlers(previous_handlers):
+    for signum, handler in previous_handlers.items():
+        signal.signal(signum, handler)
 
 
 def main(argv=None):
@@ -571,12 +885,18 @@ def main(argv=None):
     parser.add_argument("--hidden-layers", type=int, default=2)
     parser.add_argument("--exposure-ledger", type=Path)
     parser.add_argument("--exposure-ledger-sha256")
+    parser.add_argument("--resume", action="store_true")
     options = parser.parse_args(argv)
-    result = run(**vars(options))
+    stop_event, previous_handlers = _install_graceful_stop_handlers()
+    try:
+        result = run(**vars(options), stop_requested=stop_event.is_set)
+    finally:
+        _restore_signal_handlers(previous_handlers)
     print(json.dumps({"status": result["status"], "decisions": result["decisions"],
         "episodes": result["episodes"], "updates": result["updates"],
         "learnedImprovementVerified": False, "independentQualificationPerformed": False}), flush=True)
-    return 0 if result["status"] in ("completed-budget", "time-budget-stopped") else 1
+    accepted_statuses = ("completed-budget", "time-budget-stopped", "storage-budget-stopped", "signal-stopped")
+    return 0 if result["status"] in accepted_statuses else 1
 
 
 if __name__ == "__main__":

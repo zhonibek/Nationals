@@ -16,9 +16,12 @@ const GvfLearner = require('./motion-gvf-learner');
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_HOLDOUT = path.join(__dirname, 'runs/motion/holdout');
 const REQUIRED_SEEDS = Object.freeze([50512, 50513, 50514]);
+const T4_V1_SEEDS = Object.freeze([50515, 50516, 50517]);
+const T4_V2_SEEDS = Object.freeze([50518, 50519, 50520]);
 const COHORTS = Object.freeze([
   Object.freeze({id: 'primary-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: REQUIRED_SEEDS, hardware: 'MI300X'}),
-  Object.freeze({id: 't4-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: Object.freeze([50515, 50516, 50517]), hardware: 'Tesla T4'}),
+  Object.freeze({id: 't4-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: T4_V1_SEEDS, hardware: 'Tesla T4'}),
+  Object.freeze({id: 't4-gvf512x10-v2', width: 512, hiddenLayers: 10, seeds: T4_V2_SEEDS, hardware: 'Tesla T4'}),
   Object.freeze({id: 'historical-gvf64x2-v1', width: 64, hiddenLayers: 2, seeds: Object.freeze([50101, 50102, 50103]), hardware: 'MI300X'})
 ]);
 const MANIFEST_PURPOSE = 'remote-only experimental GVF residual TD3; original Simulator/iraLIB';

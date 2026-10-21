@@ -200,3 +200,23 @@ test('game API accepts explicit compact snapshot only and cannot approve tactica
   assert.equal((await fetch(`${base}/simulator/tactics-ui.js`)).status, 200);
   assert.equal(record.run, undefined);
 });
+
+test('offline tactical requests report provider failure without fabricating or saving analysis', async context => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'robotai-tactics-offline-'));
+  context.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  const client = {...tacticalFixture(), check: async () => { throw Error('Cannot connect to the approved Nemotron T4 runtime'); }};
+  const server = createServer({reportPath: 'missing.json', nemotronDirectory: directory, nemotronClient: client});
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  context.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (route, body) => fetch(`${base}/api/nemotron/${route}`, {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const check = await post('check', {});
+  assert.equal(check.status, 503);
+  assert.equal((await check.json()).available, false);
+  const response = await post('plan', {prompt: 'fixture tactics', gameSnapshot: snapshot()});
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /Cannot connect/);
+  assert.equal((await fetch(`${base}/api/nemotron/latest`)).status, 404);
+  assert.equal(client.calls.length, 0);
+});

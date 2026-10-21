@@ -50,11 +50,11 @@ test('reviewed skills progressively load with hashes and fixed permissions', () 
   for (const name of ['../secret', 'shell', '__proto__', null]) assert.throws(() => registry.session().load(name), /Unknown reviewed/);
 });
 
-test('bundled local runtime caps prompt-cache memory rather than using the 8 GiB upstream default', () => {
+test('legacy local Nemotron launcher remains disabled until an approved T4 runtime is configured', () => {
   const source = fs.readFileSync(path.join(__dirname, '../tools/start-nemotron.ps1'), 'utf8');
   assert.match(source, /\$CacheMiB = 128/);
-  assert.match(source, /\$CacheMiB -lt 0 -or \$CacheMiB -gt 1024/);
-  assert.match(source, /'--cache-ram', "\$CacheMiB"/);
+  assert.match(source, /legacy CPU launcher is disabled/);
+  assert.doesNotMatch(source, /llama-server|--cache-ram/);
 });
 
 test('modified, oversized or permission-expanding skill packages fail closed', context => {

@@ -1,9 +1,14 @@
 """Synthetic gradient checks only; never import Torch on unapproved/local hosts."""
 
 import copy
+import hashlib
+import json
 import os
+import platform
 from pathlib import Path
+import random
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -16,9 +21,10 @@ sys.path.insert(0, str(ROOT))
 class GvfTD3RemoteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        global torch, learner
+        global torch, learner, trainer
         import torch
         from roboproof.motion_learning import gvf_td3 as learner
+        from roboproof.motion_learning import gvf_train as trainer
 
     def setUp(self):
         torch.manual_seed(73019)
@@ -234,6 +240,119 @@ class GvfTD3RemoteTests(unittest.TestCase):
             restored_before = restored.state_dict()
             checkpoint["optimizers"]["critics"]["state"].clear()
             self.assert_tree_equal(restored.state_dict(), restored_before)
+
+    def test_remote_replay_checkpoint_restores_ring_cursor_and_rejects_corruption(self):
+        source = trainer.ReplayBuffer(torch, capacity=8)
+        for index in range(5):
+            source.append({"features": [index / 10] * 36, "action": [0.1, -0.2, 0.3],
+                "reward": float(index), "nextFeatures": [(index + 1) / 10] * 36, "done": index == 4})
+        checkpoint = source.state_dict()
+        restored = trainer.ReplayBuffer(torch, capacity=8)
+        restored.load_state_dict(torch, checkpoint)
+        self.assertEqual((restored.count, restored.cursor), (5, 5))
+        self.assert_tree_equal(restored.state_dict(), checkpoint)
+        malformed = copy.deepcopy(checkpoint)
+        malformed["cursor"] = 4
+        before = restored.state_dict()
+        with self.assertRaisesRegex(ValueError, "capacity/cursor/count"):
+            restored.load_state_dict(torch, malformed)
+        self.assert_tree_equal(restored.state_dict(), before)
+        malformed = copy.deepcopy(checkpoint)
+        malformed["observations"][-1, 0] = 1.0
+        with self.assertRaisesRegex(ValueError, "Unused GVF replay rows"):
+            restored.load_state_dict(torch, malformed)
+        self.assert_tree_equal(restored.state_dict(), before)
+
+    def test_remote_saved_gvf_run_checkpoint_restores_exact_bound_state(self):
+        from roboproof.motion_learning.gvf_model import atomic_actor_json, export
+
+        seed = 50515
+        config = trainer.validate_limits(seed, 128, 8, 60, network_width=64, hidden_layers=2)
+        device, gpu = trainer.verify_t4(torch)
+        approval = {"provider": "Google Colab", "device": "free Tesla T4", "maxCredits": 0,
+            "billingBasis": "free runtime only", "paymentMethodChargeAuthorized": False,
+            "autoReloadAuthorized": False}
+        identity = {"testOnly": True, "simulator": "original-engine-identity-binding"}
+        source_bytes = b"verified test-only GVF source manifest\n"
+        source_sha = hashlib.sha256(source_bytes).hexdigest()
+        run_id = "resume-restore-test"
+        rng = random.Random(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        from roboproof.motion_learning.gvf_td3 import GvfTD3
+        learner = GvfTD3(width=64, hidden_layers=2, device=device)
+        replay = trainer.ReplayBuffer(torch)
+        row = {"features": [0.0] * 36, "action": [0.0] * 3, "reward": 1.0,
+            "nextFeatures": [0.1] * 36, "done": True}
+        replay.append(row)
+        world = {"seed": 700001, "task": {"start": {"xIn": 0, "yIn": 0},
+            "goal": {"xIn": 10, "yIn": 10}}, "configuration": {}}
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for name in ("actors", "episodes", "checkpoints"):
+                (directory / name).mkdir()
+            (directory / "source-manifest.json").write_bytes(source_bytes)
+            host = {"checkedAtUtc": trainer.utc_now(), "system": platform.platform(),
+                "python": platform.python_version(), "node": __import__("subprocess").check_output(
+                    ["node", "--version"], text=True).strip(), "gpu": gpu, "gpuUsedForOptimizer": True}
+            trainer.write_exclusive(directory / "host.json", host)
+            initial_actor = export(learner.actor, identity, seed, 0, 0)
+            initial_path = directory / "actors/actor-episode-000000.json"
+            atomic_actor_json(initial_path, initial_actor)
+            initial_receipt = {"path": "actors/actor-episode-000000.json",
+                "sha256": trainer.digest(initial_path.read_bytes())}
+            actor = export(learner.actor, identity, seed, 1, 0)
+            actor_path = directory / "actors/actor-episode-000001.json"
+            atomic_actor_json(actor_path, actor)
+            actor_receipt = {"path": "actors/actor-episode-000001.json",
+                "sha256": trainer.digest(actor_path.read_bytes())}
+            episode = {"schemaVersion": 1, "episode": 1, "world": world, "complete": True,
+                "decisionCount": 1, "transitions": [row]}
+            episode_path = directory / "episodes/episode-000001.json"
+            episode_sha = trainer.write_exclusive(episode_path, episode)
+            exposure_started = {"event": "started", "episode": 1, "world": world,
+                "sourceManifestSha256": source_sha}
+            trainer.append_jsonl(directory / "exposures.jsonl", exposure_started)
+            checkpoint_path, checkpoint_sha = trainer._save_checkpoint(torch, learner, replay, rng,
+                directory, identity, source_sha, config, 1, 1, run_id, set(), set(), 0)
+            trainer.append_jsonl(directory / "exposures.jsonl", {"event": "completed", "episode": 1,
+                "world": world, "decisionCount": 1, "episodeFileSha256": episode_sha,
+                "sourceManifestSha256": source_sha, "checkpointSha256": checkpoint_sha})
+            checkpoint_receipt = {"path": "checkpoints/episode-000001.pt", "sha256": checkpoint_sha}
+            episode_receipt = {"path": "episodes/episode-000001.json", "sha256": episode_sha}
+            record = {"schemaVersion": 1, "runId": run_id, "config": config,
+                "sourceManifestSha256": source_sha, "createdAtUtc": trainer.utc_now(), "resumeCount": 0,
+                "operatorDeclaredApproval": approval, "knownExposureExclusion": None, "trainingDevice": gpu,
+                "trainingDriver": "roboproof.motion_learning.gvf_train", "resumeSupported": True,
+                "status": "time-budget-stopped", "engineIdentity": identity, "initialActor": initial_receipt,
+                "actor": actor_receipt, "checkpoint": checkpoint_receipt, "lastEpisode": episode_receipt,
+                "decisions": 1, "episodes": 1, "updates": 0, "trainingExposureRejections": 0,
+                "elapsedSeconds": 1.0, "cumulativeElapsedSeconds": 1.0, "unresolvedExposure": None}
+            trainer.write_exclusive(directory / "run.json", record)
+            trainer.write_exclusive(directory / "terminal.json", record)
+            trainer.write_exclusive(directory / "segments.jsonl", {"event": "stopped"})
+            trainer.write_exclusive(directory / "transitions.jsonl", {"episode": 1, **row})
+            restored_learner = GvfTD3(width=64, hidden_layers=2, device=device)
+            restored_replay = trainer.ReplayBuffer(torch)
+            restored_rng = random.Random(0)
+            result = trainer._load_resume_state(torch, restored_learner, restored_replay, restored_rng,
+                directory, run_id, config, source_bytes, source_sha, gpu, approval, None, identity)
+            self.assertEqual((result["record"]["decisions"], result["record"]["episodes"],
+                restored_learner.updates, restored_replay.count, restored_replay.cursor), (1, 1, 0, 1, 1))
+            self.assertEqual(result["checkpoint"], checkpoint_receipt)
+            self.assertTrue(torch.equal(restored_learner.actor.layers[0].weight, learner.actor.layers[0].weight))
+            self.assertEqual(rng.random(), restored_rng.random())
+            record["status"] = "signal-stopped"
+            trainer.atomic_json(directory / "run.json", record)
+            trainer.atomic_json(directory / "terminal.json", record)
+            signal_resumed = trainer._load_resume_state(torch, GvfTD3(width=64, hidden_layers=2, device=device),
+                trainer.ReplayBuffer(torch), random.Random(0), directory, run_id, config,
+                source_bytes, source_sha, gpu, approval, None, identity)
+            self.assertEqual(signal_resumed["record"]["status"], "signal-stopped")
+            with self.assertRaisesRegex(ValueError, "identity mismatch"):
+                trainer._load_resume_state(torch, GvfTD3(width=64, hidden_layers=2, device=device),
+                    trainer.ReplayBuffer(torch), random.Random(0), directory, run_id, config,
+                    source_bytes, source_sha, gpu, approval, None, {"testOnly": True})
 
     def test_legacy_metadata_config_counters_and_malformed_state_are_rejected_atomically(self):
         for _ in range(2):

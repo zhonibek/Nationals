@@ -193,7 +193,7 @@ test('API cannot approve a clarification and times out bounded agent requests', 
   const post = (route, body) => fetch(`${base}/api/nemotron/${route}`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
   assert.equal((await post('run', {id: record.id})).status, 400);
   const response = await post('plan', {prompt: 'fixture'});
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 504);
   assert.match((await response.json()).error, /cancelled/);
   assert.equal(fs.readdirSync(directory).length, 1);
 });

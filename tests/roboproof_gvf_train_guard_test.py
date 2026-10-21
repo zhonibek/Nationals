@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import random
 import sys
 import tempfile
 import types
@@ -107,6 +108,41 @@ class GvfTrainGuardTests(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 gvf_train.validate_limits(*values)
 
+    def test_python_rng_state_round_trips_without_losing_gaussian_cache(self):
+        original = random.Random(513)
+        original.gauss(0.0, 1.0)
+        serialized = gvf_train._random_state_to_json(original.getstate())
+        restored = random.Random()
+        restored.setstate(gvf_train._random_state_from_json(serialized))
+        self.assertEqual([original.random(), original.gauss(1.0, 2.0)],
+            [restored.random(), restored.gauss(1.0, 2.0)])
+        for malformed in (None, [], [True, [], None], [3, [1, "x"], None], [3, [1], "cached"]):
+            with self.subTest(malformed=malformed), self.assertRaises(ValueError):
+                gvf_train._random_state_from_json(malformed)
+
+    def test_graceful_stop_handler_sets_event_and_restores_prior_handlers(self):
+        stop_event, previous_handlers = gvf_train._install_graceful_stop_handlers()
+        try:
+            self.assertEqual(set(previous_handlers), {gvf_train.signal.SIGINT, gvf_train.signal.SIGTERM})
+            for signum in previous_handlers:
+                gvf_train.signal.getsignal(signum)(signum, None)
+                self.assertTrue(stop_event.is_set())
+                stop_event.clear()
+        finally:
+            gvf_train._restore_signal_handlers(previous_handlers)
+        for signum, handler in previous_handlers.items():
+            self.assertIs(gvf_train.signal.getsignal(signum), handler)
+
+    def test_resume_terminal_receipt_preservation_is_idempotent_and_exact(self):
+        record = {"status": "time-budget-stopped", "episodes": 3}
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "terminal-before-resume.json"
+            gvf_train._preserve_terminal_record(target, record)
+            gvf_train._preserve_terminal_record(target, record)
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), record)
+            with self.assertRaisesRegex(ValueError, "differs from the validated stop"):
+                gvf_train._preserve_terminal_record(target, {**record, "episodes": 4})
+
     def test_training_rejects_unsupported_network_architectures(self):
         for width, depth in ((128, 3), (1024, 10), (256, 2.0), (True, 10)):
             with self.subTest(width=width, depth=depth), self.assertRaises(ValueError):
@@ -140,6 +176,33 @@ class GvfTrainGuardTests(unittest.TestCase):
         self.assertIsNone(trainer.call_args.kwargs["approved_max_credits"])
         self.assertTrue(trainer.call_args.kwargs["approved_free_t4"])
         self.assertFalse(trainer.call_args.kwargs["approved_amd_mi300x"])
+        self.assertTrue(callable(trainer.call_args.kwargs["stop_requested"]))
+        self.assertFalse(trainer.call_args.kwargs["stop_requested"]())
+
+    def test_cli_accepts_a_clean_signal_stop(self):
+        result = {"status": "signal-stopped", "decisions": 128, "episodes": 1, "updates": 1}
+        arguments = ("--approved-free-t4", "--source-manifest", "source-manifest.json",
+            "--source-manifest-sha256", "a" * 64,
+            "--output", "roboproof/runs/motion/gvf-td3/gvf-td3-seed50515-t4-w512-d10",
+            "--seed", "50515", "--max-decisions", "100000", "--max-updates", "100000",
+            "--max-seconds", "3600", "--network-width", "512", "--hidden-layers", "10")
+        with mock.patch.object(gvf_train, "run", return_value=result) as trainer, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(gvf_train.main(arguments), 0)
+        self.assertTrue(callable(trainer.call_args.kwargs["stop_requested"]))
+        self.assertFalse(trainer.call_args.kwargs["stop_requested"]())
+
+    def test_cli_requires_explicit_flag_to_resume_a_clean_budget_stop(self):
+        result = {"status": "time-budget-stopped", "decisions": 128, "episodes": 1, "updates": 1}
+        arguments = ("--approved-free-t4", "--source-manifest", "source-manifest.json",
+            "--source-manifest-sha256", "a" * 64,
+            "--output", "roboproof/runs/motion/gvf-td3/gvf-td3-seed50515-t4-w512-d10",
+            "--seed", "50515", "--max-decisions", "100000", "--max-updates", "100000",
+            "--max-seconds", "3600", "--network-width", "512", "--hidden-layers", "10", "--resume")
+        with mock.patch.object(gvf_train, "run", return_value=result) as trainer, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(gvf_train.main(arguments), 0)
+        self.assertTrue(trainer.call_args.kwargs["resume"])
 
     def test_free_t4_credit_override_is_rejected(self):
         with mock.patch.object(gvf_train, "require_approved_remote"), \
@@ -174,9 +237,12 @@ class GvfTrainGuardTests(unittest.TestCase):
                 "goal": {"xIn": 20, "yIn": 30, "headingDeg": 90}}
         changed_task = {"start": {"xIn": 0, "yIn": 0, "headingDeg": 0},
                 "goal": {"xIn": 40, "yIn": 30, "headingDeg": 90}}
+        next_task = {"start": {"xIn": 5, "yIn": 5, "headingDeg": 0},
+            "goal": {"xIn": 20, "yIn": 30, "headingDeg": 90}}
         worlds = [{"seed": 9, "task": task, "configuration": {}},
             {"seed": 10, "task": task, "configuration": {}},
-            {"seed": 10, "task": changed_task, "configuration": {}}]
+            {"seed": 10, "task": changed_task, "configuration": {}},
+            {"seed": 11, "task": next_task, "configuration": {}}]
         exposure = {"worldSeeds": {9}, "bodyGeometries": gvf_train._world_geometry_keys(task)}
         seen_seeds, seen_geometry = set(), set()
         fake_train = types.ModuleType("roboproof.motion_learning.train")
@@ -184,8 +250,15 @@ class GvfTrainGuardTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"roboproof.motion_learning.train": fake_train}):
             selected, rejected = gvf_train.select_unexposed_training_world(Generator(worlds), 4,
                 "mixed-full-reach-v5", exposure, seen_seeds, seen_geometry)
+            following, following_rejected = gvf_train.select_unexposed_training_world(Generator([
+                {"seed": 9, "task": task, "configuration": {}},
+                {"seed": 12, "task": next_task, "configuration": {}}]), 5,
+                "mixed-full-reach-v5", exposure, seen_seeds, seen_geometry)
         self.assertEqual(selected["seed"], 10)
         self.assertEqual(rejected, 2)
+        self.assertEqual(following["seed"], 12)
+        self.assertEqual(following_rejected, 1)
+        self.assertEqual(exposure["worldSeeds"], {9})
 
     def test_operator_credit_cap_is_finite_positive_and_bounded(self):
         self.assertEqual(gvf_train.validate_approved_credits(100), 100.0)

@@ -110,6 +110,17 @@ test('free T4 512x10 is a separate predeclared cohort without relabelling AMD ru
     /predeclared/);
 });
 
+test('fresh free T4 512x10 cohort excludes unresolved v1 seeds and preserves its strict identity', () => {
+  const t4 = [50518, 50519, 50520].map(seed => ({config: {
+    algorithm: 'td3-tanh-gvf-residual-v1', seed, networkWidth: 512, hiddenLayers: 10}}));
+  assert.equal(selectCohort(t4).id, 't4-gvf512x10-v2');
+  assert.equal(selectCohort(t4).hardware, 'Tesla T4');
+  assert.deepEqual(COHORTS.find(row => row.id === 't4-gvf512x10-v1').seeds, [50515, 50516, 50517]);
+  assert.deepEqual(COHORTS.find(row => row.id === 't4-gvf512x10-v2').seeds, [50518, 50519, 50520]);
+  assert.throws(() => selectCohort([...t4.slice(0, 2), {...t4[2], config: {...t4[2].config, seed: 50515}}]),
+    /predeclared/);
+});
+
 test('hardware receipts require a real CUDA T4 and explicitly free Colab execution', () => {
   const device = {name: 'Tesla T4', totalMemoryBytes: 15 * 1024 ** 3, hip: null, torch: '2.11.0+cu130',
     cudaBuild: '13.0', device: 'cuda:0', deviceIndex: 0, capability: [7, 5], precision: 'float32',
