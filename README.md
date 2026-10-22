@@ -1,5 +1,8 @@
 # Nationals-work3
 
+> 🏆 **Хакатон / Hackathon Submission**: Подробное описание проекта, архитектура Physical AI, результаты тестов и демонстрация оформлены в [**HACKATHON_POST.md**](HACKATHON_POST.md).
+> 🚀 **Быстрый запуск в 1 клик**: Запустите `start.bat` для открытия 3D-симулятора поля (порт 8765), RoboProof Mission Control (порт 8766) и Мастер-портала.
+
 **Nationals-work3** is a VEX V5 robotics project and experimental robotics-AI workspace. It brings together PROS firmware, a browser-based VEX game simulator, the original Simulator/iraLIB motion environment, and RoboProof tools for inspecting and experimenting with robot movement.
 
 The repository contains both working engineering components and research-stage features. A simulator pass, successful training run, or AI-generated recommendation is not by itself proof that a learned policy is better or safe on a physical robot. The current controller remains the default; experimental learned movement must pass the documented qualification gates before promotion.

@@ -23,7 +23,10 @@ if (-not $simPort) {
 $roboPort = Get-NetTCPConnection -LocalPort 8766 -ErrorAction SilentlyContinue
 if (-not $roboPort) {
     Write-Host "[2/3] Starting App 2: RoboProof Mission Control on port 8766..." -ForegroundColor Green
-    Start-Process -FilePath "node" -ArgumentList "roboproof/server.js" -WorkingDirectory $repo -WindowStyle Hidden
+    $bundledNode = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe'
+    if (Test-Path -LiteralPath $bundledNode) { $node = $bundledNode } else { $node = (Get-Command node -ErrorAction SilentlyContinue).Source }
+    if (-not $node) { $node = "node" }
+    Start-Process -FilePath $node -ArgumentList "roboproof/server.js" -WorkingDirectory $repo -WindowStyle Hidden
     Start-Sleep -Milliseconds 800
 } else {
     Write-Host "[2/3] App 2: RoboProof is already running on port 8766" -ForegroundColor DarkGreen
