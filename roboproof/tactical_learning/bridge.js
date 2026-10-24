@@ -7,11 +7,13 @@ const {evaluatePolicies} = require('../tactical_baselines');
 const environment = new TacticalEnvironment();
 const input = readline.createInterface({input: process.stdin, crlfDelay: Infinity});
 
-function respond(value) {
-  process.stdout.write(JSON.stringify(value) + '\n');
+function respond(value, callback) {
+  process.stdout.write(JSON.stringify(value) + '\n', callback);
 }
 
+let closing = false;
 input.on('line', line => {
+  if (closing) return;
   try {
     const request = JSON.parse(line);
     if (request.operation === 'reset') respond({ok: true, observation: environment.reset(request.seed, request.alliance)});
@@ -23,8 +25,12 @@ input.on('line', line => {
           [name, {meanMargin: value.meanMargin, margins: value.matches.map(match => match.finalScore.margin)}]))}))
         .catch(error => respond({ok: false, error: error.message}));
     } else if (request.operation === 'close') {
-      respond({ok: true});
+      // input.close() alone does not end the process while the trainer keeps stdin open: it runs inside
+      // stdin's 'data' event, so the stream's read-ahead restarts the pipe read right after the pause
+      // stopped it, and that read keeps the event loop alive until EOF. Exit once the answer is flushed.
+      closing = true;
       input.close();
+      respond({ok: true}, error => process.exit(error ? 1 : 0));
     } else throw Error('Unsupported tactical bridge operation');
   } catch (error) {
     respond({ok: false, error: error instanceof Error ? error.message : String(error)});

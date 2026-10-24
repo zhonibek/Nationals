@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
@@ -63,12 +64,40 @@ class NodeTacticalEnvironment:
     def baselines(self, seeds, alliance):
         return self.request({"operation": "baselines", "seeds": [int(seed) for seed in seeds], "alliance": alliance})["baselines"]
 
-    def close(self):
-        if self.process.poll() is None:
+    def close(self, timeout=10):
+        """Shut the bridge down within bounded time and return what happened; never raises on a stuck bridge."""
+        process = self.process
+        shutdown = {"method": "already-exited", "closeAcknowledged": False, "timeoutSeconds": timeout}
+        if process.poll() is None:
             try:
-                self.request({"operation": "close"})
-            finally:
-                self.process.wait(timeout=10)
+                process.stdin.write(json.dumps({"operation": "close"}, separators=(",", ":")) + "\n")
+                process.stdin.flush()
+            except (OSError, ValueError) as error:
+                shutdown["closeRequestError"] = f"{type(error).__name__}: {error}"[:500]
+            # EOF on stdin also ends the bridge's read loop, so a bridge that ignores the request still exits.
+            with contextlib.suppress(OSError, ValueError):
+                process.stdin.close()
+            for method, stop in (("exited", None), ("terminated", process.terminate), ("killed", process.kill)):
+                if stop is not None:
+                    with contextlib.suppress(OSError):
+                        stop()
+                try:
+                    process.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    continue
+                shutdown["method"] = method
+                break
+            else:
+                shutdown["method"] = "kill-unconfirmed"
+        shutdown["returnCode"] = process.returncode
+        if process.returncode is not None:
+            # The bridge has exited, so reading its remaining output cannot block.
+            with contextlib.suppress(OSError, ValueError):
+                shutdown["closeAcknowledged"] = any(line.strip() == '{"ok":true}' for line in process.stdout.read().splitlines())
+            for stream in (process.stdin, process.stdout, process.stderr):
+                with contextlib.suppress(OSError, ValueError):
+                    stream.close()
+        return shutdown
 
 
 def sha256_file(path: Path) -> str:
@@ -221,6 +250,15 @@ def run_episode(environment, model, seed, alliance, device, deterministic=False)
                         "episodeReturn": total_reward, "done": observation["done"]}
 
 
+def write_json_atomic(path: Path, value):
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        stream.write(json.dumps(value, indent=2) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
 def atomic_torch_save(value, path: Path):
     temporary = path.with_suffix(path.suffix + ".tmp")
     torch.save(value, temporary)
@@ -340,15 +378,17 @@ def main():
                     "evaluationEpisodesCompleted": len(evaluation), "learnedImprovementVerified": False,
                     "independentQualificationPerformed": False})
     finally:
-        environment.close()
-        if completed < args.episodes and status == "interrupted":
-            status = "interrupted"
         run.update({"status": status, "episodesCompleted": completed,
                     "elapsedSeconds": round(time.monotonic() - started, 3),
                     "learnedImprovementVerified": False, "independentQualificationPerformed": False})
-        (args.output / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
+        # The final record lands before the bridge is shut down, so a stuck bridge cannot leave it "running".
+        try:
+            write_json_atomic(args.output / "run.json", run)
+        finally:
+            run["bridgeShutdown"] = environment.close()
+        write_json_atomic(args.output / "run.json", run)
     print(json.dumps({"event": "finished", "runId": run_id, "status": status, "episodesCompleted": completed,
-                      "elapsedSeconds": round(time.monotonic() - started, 3),
+                      "elapsedSeconds": run["elapsedSeconds"], "bridgeShutdown": run["bridgeShutdown"]["method"],
                       "output": str(args.output), "learnedImprovementVerified": False,
                       "independentQualificationPerformed": False}, sort_keys=True), flush=True)
 

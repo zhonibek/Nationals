@@ -41,7 +41,10 @@ python -m roboproof.tactical_learning.train \
 
 The output path must not already exist. The worker writes `run.json`,
 `episodes.jsonl`, `exposure.jsonl`, periodic `latest.pt` checkpoints,
-`training.jsonl`, and `evaluation.json`. Preserve the complete run folder,
+`training.jsonl`, and `evaluation.json`. The final `run.json` is written
+before the Node bridge is shut down; its `bridgeShutdown` field records how
+the bridge stopped (`exited`, `terminated`, `killed` or `kill-unconfirmed`),
+and a stuck bridge does not change the trainer's exit status. Preserve the complete run folder,
 hash it, and copy it to the approved private RoboProof Drive folder before
 disconnecting the ephemeral runtime. Model weights and run artifacts are not
 committed to Git.
