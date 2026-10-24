@@ -4,8 +4,11 @@ const OverrideGame = require('../simulator/override');
 
 const MATCH_SECONDS = OverrideGame.constants.MATCH_SECONDS;
 const MAX_FIELD_OBJECTS_PER_ROBOT = 6;
-const FEATURE_COUNT = 22;
-const ACTION_SECONDS = Object.freeze({pickup: 1.25, place: 1.5, toggle: 0.6, park: 0.5});
+const FEATURE_COUNT = 23;
+// Nominal seconds per mechanism action. `pickup` is a loose field object, `loaderPickup` an object at the loader outlet.
+const ACTION_SECONDS = Object.freeze({pickup: 1.25, loaderPickup: 1.25, place: 1.5, toggle: 0.6, park: 0.5, load: 1.0});
+// The robot waits this far in front of its loader (towards field centre) for a match load.
+const LOADER_APPROACH_INCHES = 10;
 
 function seededRandom(seed) {
   let state = seed >>> 0;
@@ -34,6 +37,19 @@ function goalAllows(game, kind, goal) {
   return kind === 'pin' ? !top || top.type === 'cup' : Boolean(top && top.type === 'pin');
 }
 
+function loaderApproach(loader) {
+  const length = Math.hypot(loader.x, loader.y) || 1;
+  return {x: loader.x - loader.x / length * LOADER_APPROACH_INCHES, y: loader.y - loader.y / length * LOADER_APPROACH_INCHES};
+}
+
+function nextMatchLoad(game, alliance, kind) {
+  return game[kind + 's'].find(object => object.location === 'alliance-station' && (object.alliance || object.allianceColor) === alliance);
+}
+
+function loaderOutletBusy(game, loader) {
+  return [...game.pins, ...game.cups].some(object => object.location === 'field' && Math.hypot(object.x - loader.x, object.y - loader.y) < 3);
+}
+
 function bounded(value, denominator) {
   return Math.max(-1, Math.min(1, value / denominator));
 }
@@ -52,7 +68,7 @@ function advanceTime(game, seconds) {
 }
 
 class TacticalEnvironment {
-  constructor({movementSpeedInchesPerSecond = 24, maximumDecisions = 24} = {}) {
+  constructor({movementSpeedInchesPerSecond = 24, maximumDecisions = 40, actionSeconds = {}} = {}) {
     if (!Number.isFinite(movementSpeedInchesPerSecond) || movementSpeedInchesPerSecond < 1 || movementSpeedInchesPerSecond > 60) {
       throw Error('Tactical movement-speed assumption must be between 1 and 60 inches per second');
     }
@@ -60,6 +76,10 @@ class TacticalEnvironment {
       throw Error('Tactical decision budget must be between 1 and 100');
     }
     this.movementSpeedInchesPerSecond = movementSpeedInchesPerSecond;
+    for (const [key, value] of Object.entries(actionSeconds)) {
+      if (!(key in ACTION_SECONDS) || !Number.isFinite(value) || value < 0 || value > 20) throw Error(`Invalid tactical action time ${key}`);
+    }
+    this.actionSeconds = Object.freeze({...ACTION_SECONDS, ...actionSeconds});
     this.maximumDecisions = maximumDecisions;
     this.reset(1, 'red');
   }
@@ -120,7 +140,7 @@ class TacticalEnvironment {
       if (!travel.ok) return null;
       const moved = game.robots.find(candidate => candidate.id === robot.id);
       if (!moved.midfield) return null;
-      if (!advanceTime(game, ACTION_SECONDS.park)) return null;
+      if (!advanceTime(game, this.actionSeconds.park)) return null;
     } else if (action.kind === 'toggle') {
       target = game.toggles.find(candidate => candidate.id === action.targetId);
       if (!target || target.state === this.alliance) return null;
@@ -128,7 +148,7 @@ class TacticalEnvironment {
       if (!travel.ok) return null;
       const result = game.interact(robot.id, 'toggle', 'pin');
       if (!result.ok) return null;
-      if (!advanceTime(game, ACTION_SECONDS.toggle)) return null;
+      if (!advanceTime(game, this.actionSeconds.toggle)) return null;
     } else if (action.kind === 'score-pin' || action.kind === 'score-cup') {
       const kind = action.kind === 'score-pin' ? 'pin' : 'cup';
       const key = `${kind}Id`;
@@ -144,7 +164,7 @@ class TacticalEnvironment {
         if (!travel.ok) return null;
         const pickup = game.interact(robot.id, 'pickup', kind);
         if (!pickup.ok || game.robots.find(candidate => candidate.id === robot.id).possession[key] !== target.id) return null;
-        if (!advanceTime(game, ACTION_SECONDS.pickup)) return null;
+        if (!advanceTime(game, this.actionSeconds.pickup)) return null;
       }
       robot = game.robots.find(candidate => candidate.id === action.robotId);
       const destination = {x: goal.x, y: goal.y};
@@ -152,7 +172,34 @@ class TacticalEnvironment {
       if (!travel.ok) return null;
       const placement = game.interact(robot.id, 'place', kind);
       if (!placement.ok) return null;
-      if (!advanceTime(game, ACTION_SECONDS.place)) return null;
+      if (!advanceTime(game, this.actionSeconds.place)) return null;
+    } else if (action.kind === 'load-score-pin' || action.kind === 'load-score-cup') {
+      // Match load: drive to the alliance loader, receive the object through the rules engine,
+      // pick it up at the outlet, carry it to the goal and place it.
+      const kind = action.kind === 'load-score-pin' ? 'pin' : 'cup';
+      const key = `${kind}Id`;
+      const loader = game.loaders.find(candidate => candidate.id === action.loaderId && candidate.alliance === this.alliance);
+      goal = game.goal(action.goalId);
+      if (!loader || !goal || robot.possession[key] || !goalAllows(game, kind, goal)) return null;
+      const approach = this._travel(game, robot.id, loaderApproach(loader));
+      if (!approach.ok) return null;
+      const onField = new Set(game[kind + 's'].filter(object => object.location === 'field').map(object => object.id));
+      if (!game.interact(robot.id, 'load', kind).ok) return null;
+      target = game[kind + 's'].find(object => object.location === 'field' && !onField.has(object.id));
+      if (!target || !advanceTime(game, this.actionSeconds.load)) return null;
+      // The intake reaches the outlet from the approach point, so pickup takes the loaded object, not a nearby field one.
+      const waiting = game.robots.find(candidate => candidate.id === robot.id);
+      const waitingPose = {x: waiting.x, y: waiting.y, theta: waiting.theta};
+      game.setRobotPose(robot.id, {x: target.x, y: target.y, theta: waiting.theta});
+      const pickup = game.interact(robot.id, 'pickup', kind);
+      game.setRobotPose(robot.id, waitingPose);
+      if (!pickup.ok || game.robots.find(candidate => candidate.id === robot.id).possession[key] !== target.id) return null;
+      if (!advanceTime(game, this.actionSeconds.loaderPickup)) return null;
+      const travel = this._travel(game, robot.id, {x: goal.x, y: goal.y});
+      if (!travel.ok) return null;
+      const placement = game.interact(robot.id, 'place', kind);
+      if (!placement.ok) return null;
+      if (!advanceTime(game, this.actionSeconds.place)) return null;
     } else {
       return null;
     }
@@ -185,7 +232,7 @@ class TacticalEnvironment {
             const distanceToTarget = heldId ? 0 : Math.hypot(targetPose.x - robot.x, targetPose.y - robot.y);
             const distanceToGoal = Math.hypot(goal.x - targetPose.x, goal.y - targetPose.y);
             if (this.game.clock + (distanceToTarget + distanceToGoal) / this.movementSpeedInchesPerSecond +
-                ACTION_SECONDS.pickup + ACTION_SECONDS.place >= MATCH_SECONDS) continue;
+                this.actionSeconds.pickup + this.actionSeconds.place >= MATCH_SECONDS) continue;
             if (!heldId && this.game[kind + 's'].some(other => other.id !== target.id && other.status === 'field' &&
                 other.location === 'field' && Math.hypot(other.x - targetPose.x, other.y - targetPose.y) < 1e-6)) continue;
             action._features = this._features(action, {distanceToTarget, distanceToGoal, target, goal, robot, kind});
@@ -193,17 +240,37 @@ class TacticalEnvironment {
           }
         }
       }
+      for (const kind of ['pin', 'cup']) {
+        if (robot.possession[`${kind}Id`]) continue;
+        const load = nextMatchLoad(this.game, this.alliance, kind);
+        if (!load) continue;
+        for (const loader of this.game.loaders.filter(candidate => candidate.alliance === this.alliance)) {
+          if (loaderOutletBusy(this.game, loader)) continue;
+          const approach = loaderApproach(loader);
+          const distanceToTarget = Math.hypot(approach.x - robot.x, approach.y - robot.y);
+          for (const goal of goals) {
+            if (!goalAllows(this.game, kind, goal)) continue;
+            const distanceToGoal = Math.hypot(goal.x - approach.x, goal.y - approach.y);
+            if (this.game.clock + (distanceToTarget + distanceToGoal) / this.movementSpeedInchesPerSecond +
+                this.actionSeconds.load + this.actionSeconds.loaderPickup + this.actionSeconds.place >= MATCH_SECONDS) continue;
+            const action = {id: `load-score-${kind}:${robot.id}:${loader.id}:${goal.id}`, kind: `load-score-${kind}`,
+              robotId: robot.id, loaderId: loader.id, goalId: goal.id};
+            action._features = this._features(action, {distanceToTarget, distanceToGoal, target: load, goal, robot, kind, fromLoader: true});
+            actions.push(action);
+          }
+        }
+      }
       for (const toggle of this.game.toggles) {
         if (toggle.state === this.alliance) continue;
         const action = {id: `toggle:${robot.id}:${toggle.id}`, kind: 'toggle', robotId: robot.id, targetId: toggle.id};
-        if (this.game.clock + Math.hypot(toggle.x - robot.x, toggle.y - robot.y) / this.movementSpeedInchesPerSecond + ACTION_SECONDS.toggle >= MATCH_SECONDS) continue;
+        if (this.game.clock + Math.hypot(toggle.x - robot.x, toggle.y - robot.y) / this.movementSpeedInchesPerSecond + this.actionSeconds.toggle >= MATCH_SECONDS) continue;
         action._features = this._features(action, {distanceToTarget: Math.hypot(toggle.x - robot.x, toggle.y - robot.y), robot, toggle});
         actions.push(action);
       }
       if (!robot.midfield) {
         const action = {id: `park:${robot.id}`, kind: 'park', robotId: robot.id};
         const destination = {x: robot.alliance === 'red' ? -9 : 9, y: robot.id.endsWith('2') ? 9 : -9};
-        if (this.game.clock + Math.hypot(destination.x - robot.x, destination.y - robot.y) / this.movementSpeedInchesPerSecond + ACTION_SECONDS.park >= MATCH_SECONDS) continue;
+        if (this.game.clock + Math.hypot(destination.x - robot.x, destination.y - robot.y) / this.movementSpeedInchesPerSecond + this.actionSeconds.park >= MATCH_SECONDS) continue;
         action._features = this._features(action, {distanceToTarget: Math.hypot(destination.x - robot.x, destination.y - robot.y), robot});
         actions.push(action);
       }
@@ -216,7 +283,7 @@ class TacticalEnvironment {
     const robot = details.robot;
     const score = game.score();
     const controlled = score[this.alliance] - score[this.alliance === 'red' ? 'blue' : 'red'];
-    const type = action.kind === 'score-pin' ? 0 : action.kind === 'score-cup' ? 1 : action.kind === 'toggle' ? 2 : 3;
+    const type = action.kind.endsWith('score-pin') ? 0 : action.kind.endsWith('score-cup') ? 1 : action.kind === 'toggle' ? 2 : 3;
     const features = Array(FEATURE_COUNT).fill(0);
     features[type] = 1;
     features[4] = this.alliance === 'red' ? -1 : 1;
@@ -239,6 +306,7 @@ class TacticalEnvironment {
     features[19] = details.goal ? bounded(details.goal.x, 72) : 0;
     features[20] = details.goal ? bounded(details.goal.y, 72) : 0;
     features[21] = game.clock >= MATCH_SECONDS - OverrideGame.constants.ENDGAME_SECONDS ? 1 : 0;
+    features[22] = details.fromLoader ? 1 : 0;
     return features;
   }
 
@@ -256,6 +324,26 @@ class TacticalEnvironment {
     return {schemaVersion: 1, seed: this.seed, alliance: this.alliance, clock: this.game.clock,
       score, decisions: this.decisions, done: this.done, movementModel: 'teleport macro-actions with explicit nominal travel-time proxy; not a motion/physics result',
       actions};
+  }
+
+  // Engine preview of every current candidate: points gained (score-margin change) and seconds used.
+  // Read-only: each preview runs on a cloned game.
+  previewCandidates() {
+    const rows = [];
+    for (const action of this._prepared.values()) {
+      const preview = this._preview(action);
+      rows.push({id: action.id, kind: action.kind, robotId: action.robotId, targetId: action.targetId ?? null,
+        loaderId: action.loaderId ?? null, goalId: action.goalId ?? null, legal: Boolean(preview),
+        points: preview ? preview.reward : null, seconds: preview ? Number(preview.durationSeconds.toFixed(3)) : null,
+        pointsPerSecond: preview && preview.durationSeconds > 0 ? Number((preview.reward / preview.durationSeconds).toFixed(4)) : null});
+    }
+    return rows;
+  }
+
+  matchLoadsRemaining() {
+    const count = kind => this.game[kind + 's'].filter(object => object.location === 'alliance-station' &&
+      (object.alliance || object.allianceColor) === this.alliance).length;
+    return {pins: count('pin'), cups: count('cup')};
   }
 
   step(actionId) {
@@ -279,4 +367,4 @@ class TacticalEnvironment {
   }
 }
 
-module.exports = {TacticalEnvironment, FEATURE_COUNT, MAX_FIELD_OBJECTS_PER_ROBOT, cloneGame};
+module.exports = {TacticalEnvironment, FEATURE_COUNT, MAX_FIELD_OBJECTS_PER_ROBOT, ACTION_SECONDS, cloneGame, loaderApproach};

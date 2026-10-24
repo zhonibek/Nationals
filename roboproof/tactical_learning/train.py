@@ -22,7 +22,7 @@ from .model import FEATURE_COUNT, MODEL_ID, TacticalActorCritic
 
 ROOT = Path(__file__).resolve().parents[2]
 BRIDGE = ROOT / "roboproof/tactical_learning/bridge.js"
-SOURCE_FILES = ("roboproof/tactical_environment.js", "roboproof/tactical_learning/bridge.js",
+SOURCE_FILES = ("roboproof/tactical_environment.js", "roboproof/tactical_baselines.js", "roboproof/tactical_learning/bridge.js",
                 "roboproof/tactical_learning/model.py", "roboproof/tactical_learning/train.py",
                 "simulator/override.js", "simulator/override-geometry.js", "simulator/override-dynamics.js")
 
@@ -55,6 +55,9 @@ class NodeTacticalEnvironment:
 
     def step(self, action_id):
         return self.request({"operation": "step", "actionId": action_id})
+
+    def baselines(self, seeds, alliance):
+        return self.request({"operation": "baselines", "seeds": [int(seed) for seed in seeds], "alliance": alliance})["baselines"]
 
     def close(self):
         if self.process.poll() is None:
@@ -270,8 +273,22 @@ def main():
             seed = (args.seed ^ 0x5BD1E995 ^ offset) & 0xFFFFFFFF
             _, result = run_episode(environment, model, seed, "red" if offset % 2 == 0 else "blue", device, deterministic=True)
             evaluation.append(result)
-        evaluation_record = {"schemaVersion": 1, "runId": run_id, "episodes": evaluation,
-                             "meanScoreMargin": (sum(row["score"]["margin"] for row in evaluation) / len(evaluation)) if evaluation else None,
+        # Same held-out seeds per alliance for the non-learning tactics (loader-cycle is the team tactic).
+        baselines = {}
+        for alliance in ("red", "blue"):
+            seeds = [row["seed"] for row in evaluation if row["alliance"] == alliance]
+            if seeds:
+                baselines[alliance] = environment.baselines(seeds, alliance)
+        learned_mean = (sum(row["score"]["margin"] for row in evaluation) / len(evaluation)) if evaluation else None
+        baseline_means = {}
+        for name in ("loader-cycle", "field-greedy", "greedy-all", "random"):
+            margins = [margin for alliance in baselines.values() for margin in alliance[name]["margins"]]
+            baseline_means[name] = sum(margins) / len(margins) if margins else None
+        evaluation_record = {"schemaVersion": 2, "runId": run_id, "episodes": evaluation,
+                             "meanScoreMargin": learned_mean, "baselineMeanScoreMargin": baseline_means,
+                             "baselines": baselines,
+                             "beatsLoaderCycleOnHoldout": (learned_mean is not None and baseline_means["loader-cycle"] is not None
+                                                           and learned_mean > baseline_means["loader-cycle"]),
                              "scope": "randomized start-pose holdout in the abstract macro-action model only",
                              "learnedImprovementVerified": False, "independentQualificationPerformed": False}
         (args.output / "evaluation.json").write_text(json.dumps(evaluation_record, indent=2) + "\n", encoding="utf-8")

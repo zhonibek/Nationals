@@ -4,8 +4,8 @@ import torch
 from torch import nn
 
 
-FEATURE_COUNT = 22
-MODEL_ID = "override-tactical-actor-critic-v1"
+FEATURE_COUNT = 23
+MODEL_ID = "override-tactical-actor-critic-v2-loader"
 
 
 class TacticalActorCritic(nn.Module):

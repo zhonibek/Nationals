@@ -49,3 +49,32 @@ test('candidate IDs are validated against the current state and game clones pres
   assert.notEqual(copy.goals, environment.game.goals);
   assert(observation.actions.some(action => action.id.includes('blue-1')));
 });
+
+test('loader macro-actions request a real match load, score it and are previewed exactly', () => {
+  const environment = new TacticalEnvironment();
+  environment.reset(17, 'red');
+  // Both robots start holding a preload Pin, so only Cup match loads are offered until a Pin is scored.
+  const rows = environment.previewCandidates();
+  assert(rows.some(row => row.kind === 'load-score-cup'));
+  assert(!rows.some(row => row.kind === 'load-score-pin'));
+  const preload = rows.filter(row => row.kind === 'score-pin' && row.robotId === 'red-1' && row.points > 0)[0];
+  environment.step(preload.id);
+  const load = environment.previewCandidates().find(row => row.kind === 'load-score-pin' && row.robotId === 'red-1' && row.legal);
+  assert(load, 'expected a legal Pin match-load cycle after scoring the preload');
+  const before = environment.matchLoadsRemaining();
+  const result = environment.step(load.id);
+  assert.equal(result.rejectedAction, undefined);
+  assert.equal(result.reward, load.points);
+  assert.equal(Number(result.durationSeconds.toFixed(3)), load.seconds);
+  assert.equal(environment.matchLoadsRemaining().pins, before.pins - 1);
+  const features = environment.observe().actions.find(action => action.id.startsWith('load-score-'))?.features;
+  assert.equal(features?.[FEATURE_COUNT - 1], 1);
+});
+
+test('tactical action times are configurable and validated', () => {
+  const slow = new TacticalEnvironment({actionSeconds: {pickup: 4}});
+  assert.equal(slow.actionSeconds.pickup, 4);
+  assert.equal(slow.actionSeconds.loaderPickup, 1.25);
+  assert.throws(() => new TacticalEnvironment({actionSeconds: {teleport: 0}}), /Invalid tactical action time/);
+  assert.throws(() => new TacticalEnvironment({actionSeconds: {pickup: -1}}), /Invalid tactical action time/);
+});
