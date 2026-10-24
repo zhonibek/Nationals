@@ -25,6 +25,10 @@ BRIDGE = ROOT / "roboproof/tactical_learning/bridge.js"
 SOURCE_FILES = ("roboproof/tactical_environment.js", "roboproof/tactical_baselines.js", "roboproof/tactical_learning/bridge.js",
                 "roboproof/tactical_learning/model.py", "roboproof/tactical_learning/train.py",
                 "simulator/override.js", "simulator/override-geometry.js", "simulator/override-dynamics.js")
+# Paid Nebius AI Cloud Serverless AI job GPUs the user approved separately from the free T4:
+# torch device-name fragment -> exact CUDA capability and memory floor of the real device.
+APPROVED_NEBIUS_GPUS = {"L40S": {"capability": (8, 9), "minimumMemoryBytes": 40 * 1024 ** 3}}
+MAX_APPROVED_NEBIUS_COST_USD = 10.0
 
 
 class NodeTacticalEnvironment:
@@ -71,9 +75,46 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def validate_runtime(approved_free_t4: bool):
+def validate_nebius_runtime(approved_nebius_gpu: str, approved_max_cost_usd):
+    expected = APPROVED_NEBIUS_GPUS.get(approved_nebius_gpu)
+    if expected is None:
+        raise RuntimeError("Unapproved Nebius GPU type; approved: " + ", ".join(sorted(APPROVED_NEBIUS_GPUS)))
+    if (isinstance(approved_max_cost_usd, bool) or not isinstance(approved_max_cost_usd, (int, float))
+            or not math.isfinite(approved_max_cost_usd)
+            or not 0 < approved_max_cost_usd <= MAX_APPROVED_NEBIUS_COST_USD):
+        raise RuntimeError(f"A Nebius job needs an explicit approved maximum cost above 0 and at most "
+                           f"{MAX_APPROVED_NEBIUS_COST_USD:g} USD")
+    if platform.system() != "Linux" or torch.version.cuda is None or torch.version.hip is not None:
+        raise RuntimeError("Tactical training is restricted to a remote Linux CUDA runtime; no local or ROCm fallback")
+    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+        raise RuntimeError("Exactly one visible NVIDIA CUDA GPU is required")
+    properties = torch.cuda.get_device_properties(0)
+    if (approved_nebius_gpu not in properties.name.upper()
+            or (properties.major, properties.minor) != expected["capability"]
+            or properties.total_memory < expected["minimumMemoryBytes"]):
+        major, minor = expected["capability"]
+        raise RuntimeError(f"This approved Nebius job is pinned to an actual NVIDIA {approved_nebius_gpu} "
+                           f"(CUDA capability {major}.{minor})")
+    if shutil.which("node") is None:
+        raise RuntimeError("Original Simulator game engine requires Node.js")
+    # The approved cost is the user's declared ceiling; the trainer cannot see provider billing.
+    return {"platform": platform.platform(), "python": platform.python_version(), "torch": str(torch.__version__),
+            "cuda": str(torch.version.cuda), "gpu": properties.name, "capability": [properties.major, properties.minor],
+            "memoryBytes": properties.total_memory, "node": subprocess.run(["node", "--version"], check=True,
+                capture_output=True, text=True).stdout.strip(), "device": "cuda:0",
+            "provider": "nebius-serverless-ai-job", "approvedGpu": approved_nebius_gpu,
+            "approvedMaxCostUsd": float(approved_max_cost_usd), "providerBillingVerified": False}
+
+
+def validate_runtime(approved_free_t4: bool, approved_nebius_gpu: str | None = None, approved_max_cost_usd=None):
+    if approved_free_t4 and approved_nebius_gpu is not None:
+        raise RuntimeError("Choose exactly one approved runtime: approved-free-t4 or approved-nebius-gpu")
+    if approved_nebius_gpu is not None:
+        return validate_nebius_runtime(approved_nebius_gpu, approved_max_cost_usd)
+    if approved_max_cost_usd is not None:
+        raise RuntimeError("approved-max-cost-usd applies only to an approved Nebius GPU job")
     if not approved_free_t4:
-        raise RuntimeError("Explicit approved-free-t4 opt-in is required")
+        raise RuntimeError("Explicit approved-free-t4 or approved-nebius-gpu opt-in is required")
     if platform.system() != "Linux" or torch.version.cuda is None or torch.version.hip is not None:
         raise RuntimeError("Tactical training is restricted to a remote Linux CUDA runtime; no local or ROCm fallback")
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
@@ -91,7 +132,10 @@ def validate_runtime(approved_free_t4: bool):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a score-driven tactical policy on the original Override rules engine")
-    parser.add_argument("--approved-free-t4", action="store_true")
+    approval = parser.add_mutually_exclusive_group()
+    approval.add_argument("--approved-free-t4", action="store_true")
+    approval.add_argument("--approved-nebius-gpu", choices=sorted(APPROVED_NEBIUS_GPUS))
+    parser.add_argument("--approved-max-cost-usd", type=float)
     parser.add_argument("--seed", type=int, default=731001)
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--max-seconds", type=int, default=300)
@@ -187,7 +231,7 @@ def atomic_torch_save(value, path: Path):
 
 def main():
     args = parse_args()
-    runtime = validate_runtime(args.approved_free_t4)
+    runtime = validate_runtime(args.approved_free_t4, args.approved_nebius_gpu, args.approved_max_cost_usd)
     if args.output.exists() or args.output.is_symlink():
         raise FileExistsError("Refusing to overwrite a previous tactical training run")
     args.output.mkdir(parents=True)

@@ -25,9 +25,10 @@ dispatched to a live robot.
 
 ## Remote training only
 
-Training intentionally refuses CPU, ROCm, non-Linux, and non-T4 runtimes. Run
-only in the approved private Colab T4 notebook after transferring the reviewed
-project sources. A bounded pilot command is:
+Training intentionally refuses CPU, ROCm and non-Linux runtimes, and any GPU
+other than an approved free T4 or a separately approved Nebius L40S (below).
+For the T4, run only in the approved private Colab T4 notebook after
+transferring the reviewed project sources. A bounded pilot command is:
 
 ```bash
 python -m roboproof.tactical_learning.train \
@@ -44,6 +45,39 @@ The output path must not already exist. The worker writes `run.json`,
 hash it, and copy it to the approved private RoboProof Drive folder before
 disconnecting the ephemeral runtime. Model weights and run artifacts are not
 committed to Git.
+
+### Nebius AI Cloud Serverless AI job (paid, separately approved)
+
+Because the free Colab T4 was not allocated, the same trainer has a second,
+separately named opt-in: `--approved-nebius-gpu L40S --approved-max-cost-usd <usd>`.
+It requires Linux, CUDA PyTorch, exactly one real NVIDIA L40S (capability 8.9,
+at least 40 GiB) and Node.js, and records `provider: nebius-serverless-ai-job`,
+the approved cost ceiling and `providerBillingVerified: false` (the trainer
+cannot see billing). The T4 path is unchanged, and the two opt-ins are mutually
+exclusive.
+
+- [`tools/nebius-tactical-job.sh`](../../tools/nebius-tactical-job.sh) is the
+  job entrypoint. It predeclares the one fit (seed 731201, 100 episodes, at most
+  600 s, 8 evaluation episodes). It clones the public
+  `nvidia-nebius-global-ai-hackathon` branch, pins the exact commit, installs
+  Node.js 20.19.0 after checking its SHA-256, and runs the trainer. It always
+  packages `run/` (`run.json`, `episodes.jsonl`, `exposure.jsonl`,
+  `training.jsonl`, `evaluation.json`, `latest.pt`), `stdout.txt` (stdout and
+  stderr), `nvidia-smi.txt` and `job.json`, including failed or partial runs. It
+  writes a `SHA256SUMS` manifest and a `.tar.gz` with its own `.sha256`, then
+  copies them to the private results bucket mounted at `/output`. The manifest
+  and archive hash are also printed to the job log. It refuses to run if the
+  bucket already has the seed's folder.
+- [`tools/nebius-tactical-launch.sh`](../../tools/nebius-tactical-launch.sh)
+  creates the job (`gpu-l40s-a`, `1gpu-8vcpu-32gb`, on-demand, 1 h timeout,
+  50 GiB disk, PyTorch 2.8.0/CUDA 12.8 image pinned by digest). It only runs
+  `--dry-run` unless you pass `--launch`, and it refuses a commit that is not on
+  `origin/nvidia-nebius-global-ai-hackathon` or an approved cost below the
+  timeout ceiling (about $1.60).
+
+Retrieve the archive from the bucket, using the console's pre-signed "Get link"
+or the S3 API. Check its SHA-256 against the job log, then preserve it locally
+and in the private RoboProof Drive folder.
 
 `status: completed` means only that the configured pilot budget ran. Both
 `learnedImprovementVerified` and `independentQualificationPerformed` remain
