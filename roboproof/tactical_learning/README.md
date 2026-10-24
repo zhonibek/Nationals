@@ -73,7 +73,9 @@ exclusive.
   50 GiB disk, PyTorch 2.8.0/CUDA 12.8 image pinned by digest). It only runs
   `--dry-run` unless you pass `--launch`, and it refuses a commit that is not on
   `origin/nvidia-nebius-global-ai-hackathon` or an approved cost below the
-  timeout ceiling (about $1.60).
+  timeout ceiling (about $1.60). Only free bonus credits may pay for it.
+  `--free-credit-balance-usd`, read from the Billing page, must cover the
+  approved cost, because Nebius charges a card on file automatically.
 
 Retrieve the archive from the bucket, using the console's pre-signed "Get link"
 or the S3 API. Check its SHA-256 against the job log, then preserve it locally

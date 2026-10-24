@@ -5,6 +5,8 @@
 # Without --launch it only validates the request (`nebius ai job create --dry-run`) and creates nothing.
 # Use --launch only after the user has approved the GPU type, the maximum cost and the credits in chat.
 # This script never buys credits, changes billing or enables automatic top-ups.
+# The user allows only free bonus credits to pay. A card on file is charged automatically once usage
+# crosses a threshold, so the bonus balance read from the Billing page must cover the approved ceiling.
 set -Eeuo pipefail
 
 readonly BRANCH="nvidia-nebius-global-ai-hackathon"
@@ -17,24 +19,28 @@ readonly CEILING_USD="1.60" MAX_APPROVABLE_USD="10"
 readonly JOB_SCRIPT="tools/nebius-tactical-job.sh"
 
 usage() {
-  echo "usage: $0 --commit <sha> --bucket <private-bucket> --approved-max-cost-usd <usd> [--subnet-id <id>] [--launch]" >&2
+  echo "usage: $0 --commit <sha> --bucket <private-bucket> --approved-max-cost-usd <usd>" \
+    "--free-credit-balance-usd <usd> [--subnet-id <id>] [--launch]" >&2
   exit 64
 }
 
-commit="" bucket="" cost="" subnet="" launch=0
+commit="" bucket="" cost="" credits="" subnet="" launch=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --commit) commit=${2:-}; shift 2 ;;
     --bucket) bucket=${2:-}; shift 2 ;;
     --approved-max-cost-usd) cost=${2:-}; shift 2 ;;
+    --free-credit-balance-usd) credits=${2:-}; shift 2 ;;
     --subnet-id) subnet=${2:-}; shift 2 ;;
     --launch) launch=1; shift ;;
     *) usage ;;
   esac
 done
-[[ $commit =~ ^[0-9a-f]{40}$ && -n $bucket && $cost =~ ^[0-9]+(\.[0-9]+)?$ ]] || usage
+[[ $commit =~ ^[0-9a-f]{40}$ && -n $bucket && $cost =~ ^[0-9]+(\.[0-9]+)?$ && $credits =~ ^[0-9]+(\.[0-9]+)?$ ]] || usage
 awk -v cost="$cost" -v low="$CEILING_USD" -v high="$MAX_APPROVABLE_USD" 'BEGIN { exit !(cost >= low && cost <= high) }' ||
   { echo "approved maximum cost must cover the \$$CEILING_USD timeout ceiling and stay at most \$$MAX_APPROVABLE_USD" >&2; exit 65; }
+awk -v cost="$cost" -v credits="$credits" 'BEGIN { exit !(credits >= cost) }' ||
+  { echo "free bonus credits (\$$credits) do not cover the approved ceiling (\$$cost); only free credits may pay" >&2; exit 65; }
 command -v nebius > /dev/null || { echo "Nebius CLI not found (https://docs.nebius.com/cli/install)" >&2; exit 69; }
 
 cd "$(git rev-parse --show-toplevel)"
@@ -49,13 +55,15 @@ arguments=(ai job create --name "$JOB_NAME" --image "$IMAGE" --platform "$PLATFO
   --volume "$bucket:/output:rw" --inject-file "$JOB_SCRIPT:/opt/roboproof/nebius-tactical-job.sh"
   --env "ROBOPROOF_EXPECTED_COMMIT=$commit" --env "ROBOPROOF_APPROVED_MAX_COST_USD=$cost"
   --env "ROBOPROOF_IMAGE=$IMAGE" --env "ROBOPROOF_PLATFORM=$PLATFORM" --env "ROBOPROOF_PRESET=$PRESET"
+  --env "ROBOPROOF_PAYMENT_SOURCE=free-bonus-credits-only" --env "ROBOPROOF_FREE_CREDIT_BALANCE_USD=$credits"
   --container-command bash --args /opt/roboproof/nebius-tactical-job.sh)
 [[ -z $subnet ]] || arguments+=(--subnet-id "$subnet")
 if [[ $launch -eq 0 ]]; then
   arguments+=(--dry-run)
   echo "Validating only (no job is created). Approved ceiling: \$$cost; timeout ceiling: \$$CEILING_USD."
 else
-  echo "Creating ONE on-demand $PLATFORM/$PRESET job, timeout $TIMEOUT, approved ceiling \$$cost."
+  echo "Creating ONE on-demand $PLATFORM/$PRESET job, timeout $TIMEOUT, approved ceiling \$$cost," \
+    "paid only from \$$credits of free bonus credits."
 fi
 printf '+ nebius'; printf ' %q' "${arguments[@]}"; printf '\n'
 nebius "${arguments[@]}"

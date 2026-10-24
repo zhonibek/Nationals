@@ -39,6 +39,8 @@ record = {"schemaVersion": 1, "provider": "nebius-serverless-ai-job", "runName":
           "declaredImage": environment.get("ROBOPROOF_IMAGE"), "declaredPlatform": environment.get("ROBOPROOF_PLATFORM"),
           "declaredPreset": environment.get("ROBOPROOF_PRESET"), "approvedGpu": environment["GPU"],
           "approvedMaxCostUsd": float(environment["ROBOPROOF_APPROVED_MAX_COST_USD"]), "providerBillingVerified": False,
+          "declaredPaymentSource": environment.get("ROBOPROOF_PAYMENT_SOURCE"),
+          "declaredFreeCreditBalanceUsd": environment.get("ROBOPROOF_FREE_CREDIT_BALANCE_USD"),
           "seed": int(environment["SEED"]), "episodes": int(environment["EPISODES"]),
           "maxSeconds": int(environment["MAX_SECONDS"]), "evaluationEpisodes": int(environment["EVALUATION_EPISODES"]),
           "node": {"version": environment["NODE_VERSION"], "sha256": environment["NODE_SHA256"]},
