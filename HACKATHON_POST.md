@@ -107,7 +107,22 @@ We report learned-motion improvement as **not verified** (`learnedImprovementVer
 
 ### Tactical AI results
 
-_Filled in from the measured tactical evaluation (fixed seeds, rules-engine score margin)._
+One driver period (red alliance, seeds 101 and 102, 2026-10-24), scored by the Override rules engine in the abstract tactical model. Margin = own score − opponent score; the opponent robots are idle.
+
+| Coordinator | Mean margin | Match loads scored | Decision time |
+| :--- | ---: | ---: | :--- |
+| Field greedy (best points/second, no match loads) | 228 | 0 | — |
+| **Loading-zone cycles** (team tactic) | 182 | 8 | — |
+| **Nemotron Super 120B** on Nebius Token Factory | 181 | 5 | 1.6 s |
+| Greedy over all actions | 173 | 5 | — |
+| **Nemotron 3.5 Lightning** on Nebius Token Factory | 163 | 6 | 0.6–0.8 s |
+| Random legal action | 79 | 4 | — |
+
+What this shows, honestly:
+
+- Nemotron plays a full match through tool calls with no invalid choice, and the larger model plays on par with the team's loading-zone tactic. It does not beat the best baseline yet.
+- In this abstract model, field scoring beats loading-zone cycles. On the real robot the team finds the loading zone faster. The model does not yet capture why: lying Pins need re-orienting, field objects are contested, and both robots act at the same time. Action times are configurable (`actionSeconds`), so measured robot cycle times can be plugged in; even a 4-second field pickup leaves field greedy ahead (191 vs 167), so the gap is mostly about which objects score, not only time.
+- Next: calibrate cycle times on the robot, model parallel robots, and evaluate the trained actor-critic against `loader-cycle` on held-out seeds (built into the trainer).
 
 ---
 
