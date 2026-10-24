@@ -1,124 +1,124 @@
-# Восстановление Nationals-work3 — 19 сентября 2026
+# Nationals-work3 recovery — 19 September 2026
 
-## Результат и границы
+## Result and scope
 
-В competition flow X-drive используется постоянный каскад:
+The X-drive competition flow uses a persistent cascade:
 
-`point / quintic spline / Pedro Bézier → LTV-LQR → четыре задания скорости → PID + kS/kV/kA → напряжение моторов`.
+`point / quintic spline / Pedro Bézier → LTV-LQR → four wheel-velocity targets → PID + kS/kV/kA → motor voltage`.
 
-LTV-LQR здесь — один внешний регулятор: модель линеаризуется вдоль опорного движения, коэффициенты LQR вычисляются через DARE. Это не переключение между отдельными LTV, LQR и PID. Четыре внутренних регулятора работают при каждом обновлении внешнего контура. По умолчанию D=0: PI + feedforward, как в предоставленном примере 1516X. Переход к удержанию конечной позы сохраняет тот же каскад.
+LTV-LQR here is a single outer controller: the model is linearized along the reference motion and the LQR gains are computed through DARE. It is not switching between separate LTV, LQR and PID controllers. The four inner controllers run on every update of the outer loop. By default D=0: PI + feedforward, as in the supplied 1516X example. The transition to holding the final pose keeps the same cascade.
 
-**Работа над полной копией Override не завершена.** Получены исполняемый стенд с производственным C++-ядром, модель движения и исправленный игровой слой. Точная CAD-геометрия, полноценная динамика стопок, механизмы робота и вся прошивка V5 в браузере не воспроизведены. Испытаний на физическом роботе не было.
+**Work on a full copy of Override is not finished.** The result is an executable test bench with the production C++ core, a motion model and a corrected game layer. Exact CAD geometry, full stack dynamics, the robot's mechanisms and the whole V5 firmware are not reproduced in the browser. No tests on the physical robot were performed.
 
-## Что сравнивалось
+## What was compared
 
-- Исправлялась папка `scratch/Nationals-work3`, исходная версия `e93922f`.
-- `scratch/Nationals` и `scratch/successful models` использовались как источники для чтения.
-- Проверена удалённая исходная версия Nationals `a9113ca` в `origin/main`. Истории этого репозитория и текущей локальной копии work3 не имеют общего предка; поэтому результат следует хранить отдельной веткой, без принудительной замены `main`.
-- В исходном Nationals spline уже использовал `LTVPathFollower → VelocityController`. Другие helpers выбирали отдельные контроллеры. Поэтому утверждать, что весь оригинал всегда был постоянным каскадом, неверно. Новая архитектура выполняет более строгое уточнённое требование пользователя.
-- В `successful models/LTV-LQR + PID/push_back_x-main` изучен двухколёсный контур скорости. Для X-drive нужна трёхвходовая модель движения и четыре регулятора колёс; двухвходовый регулятор танкового шасси не может управлять независимым стрейфом без изменения модели.
-- Сравнена геометрия Java PedroPathing и C++ Bézier. Численная проверка C++ выполнена независимой формулой Бернштейна. Исполнение Java и полный дифференциальный тест всего Pedro follower **не выполнены**.
+- The folder `scratch/Nationals-work3` was fixed, starting from version `e93922f`.
+- `scratch/Nationals` and `scratch/successful models` were used as read-only sources.
+- The remote original Nationals version `a9113ca` on `origin/main` was checked. The histories of that repository and the current local work3 copy have no common ancestor; therefore the result should be kept on a separate branch without force-replacing `main`.
+- In the original Nationals, the spline already used `LTVPathFollower → VelocityController`. Other helpers selected separate controllers. So claiming that the whole original was always a persistent cascade is incorrect. The new architecture meets the user's stricter, clarified requirement.
+- The two-wheel velocity loop in `successful models/LTV-LQR + PID/push_back_x-main` was studied. An X-drive needs a three-input motion model and four wheel controllers; a two-input tank-drive controller cannot command independent strafing without changing the model.
+- The geometry of the Java Pedro Pathing library and the C++ Bézier implementation was compared. The C++ numbers were checked against an independent Bernstein formula. Running the Java code and a full differential test of the whole Pedro follower were **not performed**.
 
-Ранее существовавшие удаления `PedroPathing-main/**` не включены в исправление. Оригинальные каталоги не переписывались.
+Pre-existing deletions of `PedroPathing-main/**` are not part of this fix. The original directories were not rewritten.
 
-## Ошибки и изменения
+## Defects and changes
 
-| Важность | Проблема | Исправление и основные файлы |
+| Severity | Problem | Fix and main files |
 |---|---|---|
-| Высокая | В рабочем `main.cpp` отсутствовало включение LTV-каскада в competition flow | Добавлены экземпляр `LTVPathFollower`, автономная последовательность, отмена между шагами, LCD-выбор маршрута; `src/main.cpp`, `include/autonomous.hpp` |
-| Высокая | LTV отклонял X-drive; двухвходовая tank-модель не умеет независимый стрейф | Отдельная трёхвходовая LTV-модель X-drive и четыре внутренних контура; `Cascade.hpp`, `HolonomicMotion.cpp`, `ltv.cpp` |
-| Высокая | Point/turn/Pedro могли обходить каскад | Helpers и Pedro-геометрия ведут в один C++-контур. Предварительный `turnFirst` для X-drive также использует этот контур; `main.cpp`, `ltv.cpp`, `BezierReference.hpp` |
-| Высокая | Симулятор проверял собственную устаревшую JS-версию управления | Производственный C++ компилируется в `control.wasm`; JS передаёт измерения и получает вольты. Хеши исходников проверяются тестом; `simulator/native/control.cpp`, `control-runtime.js`, `tools/build-wasm.ps1` |
-| Высокая | Координаты одометрии зависели от истинного движения модели | Одометрия получает скорости колёс, интегрирует собственную оценку и может ошибаться при скольжении; `simulator/simulator.js` |
-| Высокая | Модель могла оставаться неподвижной при ненулевых командах четырём моторам | Удержание покоя проверяет фактические задания колёс. Убран повторный учёт инерции шасси в динамике ротора; тяга ограничивает ускорение ротора; `simulator.js` |
-| Высокая | Напряжение проходило через API команд мощности | Добавлены `voltage` и `wheelVoltages` с проверками и единственным владельцем вывода; LTV пишет вольты напрямую; `safety.hpp`, `safety.cpp`, `ltv.cpp` |
-| Высокая | Исчерпание времени могло выглядеть как успешное завершение | Успех требует малой ошибки и скорости в течение 150 мс. Тайм-аут/ошибка останавливают очередь; `HolonomicMotion.cpp`, `simulator.js` |
-| Средняя | Ошибка создания PROS-задачи проверялась только по указателю C++-объекта | Проверяется внутренний task handle; возвращается `Busy`, ожидание не остаётся в `Running`; `ltv.cpp` |
-| Средняя | Пройденное расстояние считалось как смещение от исходной точки | Накопление длины последовательных отрезков; `ltv.cpp` |
-| Средняя | Экспорт планировщика ссылался на отсутствующие helpers | Генерируются вызовы существующих `autoPose` / `autoSpline` с проверкой результата; `simulator.js` |
-| Средняя | Симулятор увеличивал явный timeout и поворачивал относительную диагональ по конечному heading | Явный срок соблюдается; демонстрации получают срок по профилю. Относительный перенос использует исходную ориентацию, конечный heading независим; `simulator.js`, `control-core.test.js` |
-| Средняя | «Шаг» не продвигал физику при паузе | Выполняется один тик с возвратом в паузу; `simulator.js` |
-| Высокая для счёта | Автономный бонус пересчитывался после водительской части | Снимок на границе 15 секунд; итоговый счёт фиксируется отдельно; `override.js`, `test_override.js` |
-| Средняя для счёта | Cups моделировались отдельными непрозрачными/прозрачными предметами; состав поля и видимость были неверны | 63 Pins, 56 Cups, обе половины у каждого Cup, начальные стеки и расположение по FO-1/FO-2; проверка чередования и видимых половин; `override.js` |
-| Средняя для счёта | Контакт с midfield проверялся как квадрат; контакт с бортом задавался флагом | SAT для повёрнутого прямоугольника и ромба; контакт с бортом вычисляется из геометрии. Начальные роботы действительно касаются борта; `override.js` |
-| Средняя | 3D показывал прежние игровые элементы | 2D и 3D отображают одно состояние Override; добавлены Pins, Cups, девять целей, Toggle, loaders, четыре робота и кнопки действий; `override-view.js`, `index.html` |
+| High | The working `main.cpp` did not include the LTV cascade in the competition flow | Added an `LTVPathFollower` instance, the autonomous sequence, cancellation between steps and LCD route selection; `src/main.cpp`, `include/autonomous.hpp` |
+| High | LTV rejected the X-drive; the two-input tank model cannot strafe independently | A separate three-input X-drive LTV model and four inner loops; `Cascade.hpp`, `HolonomicMotion.cpp`, `ltv.cpp` |
+| High | Point/turn/Pedro could bypass the cascade | Helpers and Pedro geometry feed one C++ loop. The preliminary `turnFirst` for the X-drive also uses this loop; `main.cpp`, `ltv.cpp`, `BezierReference.hpp` |
+| High | The simulator tested its own outdated JS version of the controller | The production C++ is compiled to `control.wasm`; JS passes measurements and receives volts. Source hashes are checked by a test; `simulator/native/control.cpp`, `control-runtime.js`, `tools/build-wasm.ps1` |
+| High | Odometry coordinates depended on the model's true motion | Odometry receives wheel velocities, integrates its own estimate and can drift during slip; `simulator/simulator.js` |
+| High | The model could stay still under non-zero commands to four motors | The rest hold checks the actual wheel targets. Double counting of chassis inertia in the rotor dynamics was removed; traction limits rotor acceleration; `simulator.js` |
+| High | Voltage went through the power-command API | Added `voltage` and `wheelVoltages` with checks and a single output owner; LTV writes volts directly; `safety.hpp`, `safety.cpp`, `ltv.cpp` |
+| High | Running out of time could look like a successful finish | Success requires a small error and speed for 150 ms. Timeout/error stops the queue; `HolonomicMotion.cpp`, `simulator.js` |
+| Medium | A PROS task creation failure was checked only through the C++ object pointer | The internal task handle is checked; `Busy` is returned and waiting does not stay `Running`; `ltv.cpp` |
+| Medium | Travelled distance was computed as displacement from the start point | Lengths of consecutive segments are accumulated; `ltv.cpp` |
+| Medium | The planner export referenced missing helpers | Calls to the existing `autoPose` / `autoSpline` with result checks are generated; `simulator.js` |
+| Medium | The simulator increased an explicit timeout and rotated a relative diagonal by the final heading | Explicit deadlines are respected; demonstrations get a profile-based deadline. Relative translation uses the initial orientation, the final heading is independent; `simulator.js`, `control-core.test.js` |
+| Medium | **Step** did not advance physics while paused | One tick runs and the simulation returns to pause; `simulator.js` |
+| High for scoring | The autonomous bonus was recalculated after the driver period | Snapshot at the 15-second boundary; the final score is frozen separately; `override.js`, `test_override.js` |
+| Medium for scoring | Cups were modelled as separate opaque/transparent objects; field contents and visibility were wrong | 63 Pins, 56 Cups, both halves on every Cup, starting stacks and placement per FO-1/FO-2; checks of alternation and visible halves; `override.js` |
+| Medium for scoring | Midfield contact was checked as a square; wall contact was a flag | SAT for a rotated rectangle and a diamond; wall contact is computed from geometry. Starting robots really touch the wall; `override.js` |
+| Medium | 3D showed the previous game elements | 2D and 3D render one Override state; added Pins, Cups, nine goals, Toggles, loaders, four robots and action buttons; `override-view.js`, `index.html` |
 
-Защита владения приводом, watchdog, проверка competition mode и отмена присутствовали в work3 до этой правки. Они сохранены, расширены для напряжения и проверены тестами; это не следует приписывать целиком новой работе.
+Drive ownership protection, the watchdog, the competition-mode check and cancellation existed in work3 before this change. They were kept, extended for voltage and covered by tests; they should not be attributed entirely to the new work.
 
-## Проверки и измерения
+## Checks and measurements
 
-Команды для повторения перечислены в корневом README. Полный численный результат: [control-results.json](control-results.json).
+The commands to reproduce are listed in the root README. Full numeric results: [control-results.json](control-results.json).
 
-| Проверка | Результат |
+| Check | Result |
 |---|---|
-| `node tests/control-core.test.js` | 17 сценариев: стрейф в обе стороны при 0/90/180/270°, вперёд/назад, совместный поворот и перенос, переход 359→1°, spline, Bézier, увеличение массы и снижение сцепления |
-| Граничные случаи C++-ядра | Неверный dt, NaN, насыщение, сброс, ограничение скоростей колёс, явный короткий/неверный timeout, актуальность WASM |
-| Геометрия | C++ quintic и Bézier; P/P′/P″ сопоставлены с независимой формулой на двух кривых в шести точках |
-| `tools/test-safety.ps1` | Настоящие `safety.cpp` и `HolonomicMotion.cpp`, подменён только аппаратный слой: токены, stop, disable, смена режима, watchdog, NaN, отказ мотора, тайм-аут, занятый привод, смена epoch одометрии и задержка цикла |
-| `node simulator/test_override.js` | Инвентарь, владение, стеки, видимость, автономный снимок, финальный счёт, midfield, борт, размеры, match loads и манипуляции |
-| `test_holonomic_drive.js` / `test_physics.js` | 3 проверки движения и 7 регрессионных проверок приблизительной физики. Старый JS PID в последнем тесте — библиотечная проверка, не доказательство совпадения активного C++-контура |
-| ARM | Компиляция всех 39 C++ translation units и линковка с PROS-библиотеками. Загрузка на V5 не выполнялась; проверочный ELF не заменяет штатный процесс `pros make` / `pros upload` |
-| Браузер | Загрузка WASM, 2D/3D и robot.stl; Bézier завершён через UI со статусом `Settled`; проверены запрет ручных действий в autonomous и drop/pickup в driver. Исправлено обрезание в узкой панели: при ширине 757 px ширина документа также 757 px, горизонтального сдвига нет. Точная геометрия CAD робота не участвует в столкновениях: используются приближённые контуры |
+| `node tests/control-core.test.js` | 17 scenarios: strafing both ways at 0/90/180/270°, forward/backward, combined turn and translation, 359→1° wrap, spline, Bézier, increased mass and reduced traction |
+| C++ core edge cases | Invalid dt, NaN, saturation, reset, wheel speed limits, explicit short/invalid timeout, WASM freshness |
+| Geometry | C++ quintic and Bézier; P/P′/P″ compared with an independent formula on two curves at six points |
+| `tools/test-safety.ps1` | The real `safety.cpp` and `HolonomicMotion.cpp` with only the hardware layer replaced: tokens, stop, disable, mode change, watchdog, NaN, motor failure, timeout, busy drive, odometry epoch change and loop delay |
+| `node simulator/test_override.js` | Inventory, ownership, stacks, visibility, autonomous snapshot, final score, midfield, wall, dimensions, match loads and manipulation |
+| `test_holonomic_drive.js` / `test_physics.js` | 3 motion checks and 7 regression checks of the approximate physics. The old JS PID in the last test is a library check, not proof that it matches the active C++ loop |
+| ARM | All 39 C++ translation units compile and link with the PROS libraries. Nothing was uploaded to the V5; the verification ELF does not replace the normal `pros make` / `pros upload` process |
+| Browser | WASM loading, 2D/3D and robot.stl; a Bézier path finished through the UI with status `Settled`; manual actions are blocked in autonomous and drop/pickup work in driver control. Clipping in a narrow panel was fixed: at a 757 px width the document is also 757 px wide with no horizontal scroll. Exact robot CAD geometry does not take part in collisions: approximate outlines are used |
 
-Выбранные результаты модели, координаты в дюймах, угол в градусах:
+Selected model results, coordinates in inches, angle in degrees:
 
-| Тест | Истинная поза модели | Оценка одометрии |
+| Test | True model pose | Odometry estimate |
 |---|---|---|
-| Прямо 24″ | `(0, 24.048, 0)` | `(0, 24.116, 0)` |
-| Spline к `(20,40,45°)` | `(19.638, 40.279, 44.138°)` | `(20.047, 40.129, 44.988°)` |
-| Bézier к `(24,24,90°)` | `(23.543, 24.330, 88.204°)` | `(23.990, 24.108, 89.772°)` |
-| Прямо 24″, слабое сцепление | `(0, 22.133, 0)` | `(0, 24.115, 0)` |
+| Straight 24″ | `(0, 24.048, 0)` | `(0, 24.116, 0)` |
+| Spline to `(20,40,45°)` | `(19.638, 40.279, 44.138°)` | `(20.047, 40.129, 44.988°)` |
+| Bézier to `(24,24,90°)` | `(23.543, 24.330, 88.204°)` | `(23.990, 24.108, 89.772°)` |
+| Straight 24″, low traction | `(0, 22.133, 0)` | `(0, 24.115, 0)` |
 
-Последний случай показывает существенное ограничение: `Settled` относится к оценке датчиков. При скольжении ошибка реальной позиции здесь около 1.87″, хотя одометрия считает цель достигнутой. Нельзя исправить ненаблюдаемое скольжение одним выбором LQR вместо PID. При нулевой тяге корпус остаётся на месте, а энкодерная оценка продолжает двигаться — это также проверяется.
+The last case shows an important limitation: `Settled` refers to the sensor estimate. With slip, the true position error here is about 1.87″, although odometry considers the target reached. Unobservable slip cannot be fixed by choosing LQR instead of PID. With zero traction the body stays in place while the encoder estimate keeps moving — this is also tested.
 
-## Что сохранено, но не подключено и не сертифицировано этой проверкой
+## Kept but not connected or certified by this check
 
-LemLib PID/LQR/Hybrid, прежний PedroFollower/GVF, дифференциальный LTV, EKF, MCL, FLC, ColorSorter и прочие исходные библиотеки остаются в проекте. Их наличие не означает, что они активны. Competition flow X-drive не выбирает PID/LQR/Hybrid. Joystick и тест отдельных колёс — ручной режим и диагностика.
+LemLib PID/LQR/Hybrid, the earlier PedroFollower/GVF, the differential LTV, EKF, MCL, FLC, ColorSorter and the other original libraries remain in the project. Their presence does not mean they are active. The X-drive competition flow does not select PID/LQR/Hybrid. The joystick and the single-wheel test are manual mode and diagnostics.
 
-Текущая конфигурация использует моторные энкодеры, без IMU и внешних tracking wheels; intake и другие механизмы не подключены в `main.cpp`. Старые автономки с mobile goals сохранены в симуляторе как исторические сценарии, а не объявлены рабочими автономками Override. Все старые библиотеки не прошли полный независимый аудит в рамках этой проверки.
+The current configuration uses motor encoders, without an IMU or external tracking wheels; the intake and other mechanisms are not connected in `main.cpp`. Old mobile-goal autonomous routines are kept in the simulator as historical scenarios, not declared working Override autonomous routines. The old libraries did not receive a full independent audit in this check.
 
-Параметры kS/kV/kA, Q/R, PI, сцепления, массы и батареи требуют измерений на роботе. Фактическое время DARE на V5, jitter задач и физический останов при обрыве связи с мотором не измерялись. Одометрия браузера не воспроизводит полностью задержки, фильтрацию и планировщик PROS. Контроллер использует тот же C++-код, но это не полная эмуляция firmware.
+The kS/kV/kA, Q/R, PI, traction, mass and battery parameters need measurements on the robot. Actual DARE time on the V5, task jitter and the physical stop when a motor connection is lost were not measured. Browser odometry does not fully reproduce PROS delays, filtering and scheduling. The controller uses the same C++ code, but this is not a full firmware emulation.
 
-## Следующие этапы до полной симуляции
+## Next steps towards a full simulation
 
-1. Проверить порты, направления колёс, геометрию и источники одометрии физического робота. Измерить kS/kV/kA, PI, сцепление, массу, инерцию, задержки и напряжение под нагрузкой; приложить логи.
-2. Добавить replay этих логов в тесты и измерить длительность цикла LTV на V5. Подключать внешние датчики только после подтверждения их портов и ориентации.
-3. Загрузить официальный CAD поля и сверить размеры/контакты. Официальная ссылка Field CAD была найдена, но автоматическое скачивание в этой среде вернуло HTTP 403; текущая геометрия построена по схемам и остаётся приближённой.
-4. Реализовать предметы как физические тела: контакт с роботом и друг с другом, свободное падение, опрокидывание, снятие/перенос стеков, фактическую геометрию и пределы манипулятора.
-5. Подключить автономную программу каждого из четырёх роботов и реальные механизмы. Сейчас UI позволяет управлять одним выбранным роботом, остальные статичны; первые 15 секунд игрового режима не исполняют автономки четырёх роботов.
-6. Довести проверку правил Override по нормативному PDF: ограничения владения/зон, защиты, нарушения и исключения. Добавить игровые replay с ожидаемым счётом и независимую сверку. Программный scorer сейчас не является полноценным судьёй.
-7. Провести дифференциальные тесты Java PedroPathing / C++ на общем наборе кривых и явно задокументировать поддерживаемую часть API. Добавить полноценный аппаратный слой симуляции, если требуется запуск всего PROS-приложения, а не общего ядра.
+1. Check the physical robot's ports, wheel directions, geometry and odometry sources. Measure kS/kV/kA, PI, traction, mass, inertia, delays and voltage under load; attach logs.
+2. Add replay of those logs to the tests and measure the LTV loop duration on the V5. Connect external sensors only after confirming their ports and orientation.
+3. Load the official field CAD and verify dimensions/contacts. The official Field CAD link was found, but automatic download in this environment returned HTTP 403; the current geometry is built from drawings and remains approximate.
+4. Implement objects as physical bodies: contact with the robot and each other, free fall, tipping, removing/carrying stacks, real geometry and manipulator limits.
+5. Connect the autonomous program of each of the four robots and the real mechanisms. Currently the UI controls one selected robot and the others are static; the first 15 seconds of the game mode do not run the four robots' autonomous routines.
+6. Complete the Override rule checks against the authoritative PDF: possession/zone limits, protections, violations and exceptions. Add game replays with expected scores and independent reconciliation. The software scorer is not a full referee yet.
+7. Run Java Pedro Pathing / C++ differential tests on a shared set of curves and document the supported part of the API. Add a full simulated hardware layer if the whole PROS application, not just the shared core, needs to run.
 
-Источники игры: [официальное веб-руководство](https://www.vexrobotics.com/override-manual), [нормативный PDF](https://link.vex.com/docs/26-27/v5rc/game-manual), [Field CAD](https://link.vex.com/docs/26-27/v5rc/field-cad). Веб-руководство использовано как источник FO-1/FO-2; полнота всех правил не заявляется.
+Game sources: [official web manual](https://www.vexrobotics.com/override-manual), [authoritative PDF](https://link.vex.com/docs/26-27/v5rc/game-manual), [Field CAD](https://link.vex.com/docs/26-27/v5rc/field-cad). The web manual was used as the FO-1/FO-2 source; completeness of all rules is not claimed.
 
-## Python-файлы и предыдущий чат
+## Python files and the previous chat
 
-Файлы `scratch/work/patch_*.py` — одноразовые скрипты изменения исходников. В частности, `patch_main.py` заменяет `main.cpp` целиком; это объясняет технический способ упрощения, но не доказывает, какая модель исполнила скрипт. `get_zig.py` / `resume_zig.py` относятся к загрузке компилятора. Они не являются движком игры и не нужны для запуска готового симулятора. Повторно эти скрипты не запускались.
+The files `scratch/work/patch_*.py` are one-off scripts that modified sources. In particular, `patch_main.py` replaces `main.cpp` entirely; this explains the technical method of the simplification but does not prove which model ran the script. `get_zig.py` / `resume_zig.py` relate to downloading the compiler. They are not the game engine and are not needed to run the finished simulator. These scripts were not run again.
 
-Прочитаны предоставленные сообщения и файлы контекста. Надёжно распределить прежние изменения между Astra и Luna по одним файлам/коммитам нельзя: для этого нужны достоверные записи конкретных запусков. Этот отчёт описывает проверяемые изменения кода, не приписывая неизвестные действия модели.
-
-
-## Доработка поля и взаимодействий — 20 сентября 2026
-
-[Robostem](https://sim.robostem.org/) использован как визуальный ориентир сцены и тренировки. Расположение и ориентации предметов сверены с FO-2 [официального веб-руководства](https://www.vexrobotics.com/override-manual). Код и модели Robostem не копировались; геометрия здесь процедурная.
-
-- `override.js`: 16 лежащих Pins получили направление цветной половины наружу; ещё 16 стартовых Pins связаны с поддерживающими Cups. Общая функция `objectPose` учитывает вложение на 3.25″, стопки на целях и предметы в захвате. Установка preload теперь меняет его расположение на `goal`, поэтому он не исчезает из сцены. Владение синхронизировано со статусом предметов. Cup с вложенным Pin переносится парой при свободных слотах; Pin можно снять отдельно.
-- `override-geometry.js`, `simulator.js`: контакт повёрнутого прямоугольника с бортом, круговыми приближениями целей и прямоугольниками других роботов. Коррекция затрагивает корпус и скорость, сохраняя независимое интегрирование энкодеров. Радиус основания цели 4.25″ — приближение; свободные Cups/Pins, loaders и механизмы пока не являются динамическими препятствиями. Контакт не моделирует угловой удар, деформацию или толкание других роботов.
-- `override-view.js`: размеры Pin/Cup согласованы между 2D/3D, лежащие Pins направлены по полю, половины Cups прозрачные/непрозрачные, стопки вложены по общим позам. Светло-серые плитки и стойки loaders делают сцену различимее. Это не точная CAD-копия.
-- `index.html`, `override.js`, `simulator.js`: добавлена тренировка без лимита времени с немедленным ручным управлением и без автономного бонуса. Матч 15+105 секунд сохранён.
-
-Проверено: новый `test_override_geometry.js` (инвентарь/ориентации/опоры, захват пары, установка, preload, тренировка дольше 120 секунд, повёрнутые контакты и полное вложение препятствия в корпус, реальный цикл симулятора у борта); прежний `test_override.js`; 17 сценариев C++-каскада, 3 holonomic-теста, 7 проверок приближённой физики и актуальность конфигурации. В браузере проверены 3D, `PRACTICE ∞` и действие «Положить»; ошибок/предупреждений JavaScript при проверке не получено. C++ в этой доработке не менялся, повторная ARM-сборка не выполнялась.
-
-В тесте упора при команде ехать от Y=58″ ещё 24″: корпус Y=64.95″, одометрия Y≈68.45″; результат `TimedOut`. Это проверка различия корпуса и энкодеров при контакте, а не измерение реального робота. Полная динамика падающих предметов, манипулятор, четыре автономных робота и полное судейство остаются следующими этапами.
+The supplied messages and context files were read. Earlier changes cannot be reliably split between Astra and Luna by files/commits alone: that requires reliable records of specific runs. This report describes verifiable code changes without attributing unknown actions to a model.
 
 
-## Игровой цикл — 25 сентября 2026
+## Field and interaction improvements — 20 September 2026
 
-Добавлены свободное падение и контакт предметов, подъёмник с конечной скоростью, вложение через физическое отпускание, распад падающей пары и потеря опоры. Четыре робота исполняют автономки на независимых экземплярах неизменённого C++-каскада. В демо два preload дают по 5 очков; после равной автономки с бонусом счёт 11:11. Переключение управляемого робота сохраняет состояния всех четырёх.
+[Robostem](https://sim.robostem.org/) was used as a visual reference for the scene and practice mode. Object placement and orientation were checked against FO-2 of the [official web manual](https://www.vexrobotics.com/override-manual). Robostem code and models were not copied; the geometry here is procedural.
 
-Исправлена фиксация счёта: после 0:00 предметам даётся до пяти секунд на остановку. Нулевая скорость только что отпущенного предмета не считается покоем, если он находится в воздухе. Конец автономки останавливает задания подъёмника вместе с приводом; DQ блокирует оба. Ввод текста в судейский журнал не управляет шасси, потеря фокуса сбрасывает клавиши.
+- `override.js`: 16 lying Pins now point their coloured half outward; another 16 starting Pins are linked to supporting Cups. The shared `objectPose` function accounts for 3.25″ nesting, stacks on goals and held objects. Placing a preload now changes its location to `goal`, so it no longer disappears from the scene. Ownership is synchronized with object status. A Cup holding a Pin is carried as a pair when both slots are free; the Pin can be taken separately.
+- `override-geometry.js`, `simulator.js`: contact of a rotated rectangle with the wall, circular approximations of goals and other robots' rectangles. The correction affects the body and its velocity while keeping independent encoder integration. The goal base radius of 4.25″ is an approximation; free Cups/Pins, loaders and mechanisms are not yet dynamic obstacles. Contact does not model angular impacts, deformation or pushing other robots.
+- `override-view.js`: Pin/Cup dimensions are consistent between 2D and 3D, lying Pins point along the field, Cup halves are transparent/opaque, and stacks nest according to shared poses. Light grey tiles and loader posts make the scene easier to read. This is not an exact CAD copy.
+- `index.html`, `override.js`, `simulator.js`: added practice without a time limit, with immediate manual control and no autonomous bonus. The 15+105 second match is kept.
 
-Добавлены выбор автономок, визуализация четырёх подъёмников, судейский журнал и экспорт JSON-протокола. Полный статус реализации, тесты и оставшиеся ограничения описаны в [SIMULATOR.md](SIMULATOR.md). Предыдущие записи о неподвижных трёх роботах и отсутствии падения относятся к прошлому этапу. Полное автоматическое судейство, точные CAD-контакты и разрушение засчитанных стопок остаются незавершёнными; наличие журнала не подменяет их реализацию.
+Checked: the new `test_override_geometry.js` (inventory/orientations/supports, grabbing a pair, placement, preload, practice longer than 120 seconds, rotated contacts and full nesting of an obstacle in the body, a real simulator loop at the wall); the previous `test_override.js`; 17 C++ cascade scenarios, 3 holonomic tests, 7 approximate-physics checks and configuration freshness. In the browser, 3D, `PRACTICE ∞` and the **Put down** action were checked; no JavaScript errors or warnings were observed. C++ was not changed in this round, and the ARM build was not repeated.
+
+In the wall-contact test, commanding a 24″ drive from Y=58″: body Y=64.95″, odometry Y≈68.45″; result `TimedOut`. This checks the difference between the body and the encoders during contact, not a measurement of the real robot. Full dynamics of falling objects, the manipulator, four autonomous robots and full refereeing remain next steps.
 
 
-Проверка этого этапа: полный двухминутный матч и обе новые группы физических тестов прошли; сохранены 17 сценариев C++-каскада, 3 holonomic-проверки и 7 plant-регрессий. В браузере все четыре программы показали `Complete`, после 0:00 счёт 11:11 зафиксирован и подъёмник отвергает новые команды. C++-исходники и WASM не менялись; повторная ARM-сборка не требовалась.
+## Game loop — 25 September 2026
+
+Added free fall and object contact, a lift with finite speed, nesting through physical release, breaking of a falling pair and loss of support. Four robots run autonomous routines on independent instances of the unchanged C++ cascade. In the demo, two preloads score 5 points each; after an equal autonomous period with the bonus the score is 11:11. Switching the controlled robot keeps the states of all four.
+
+Score freezing was fixed: after 0:00 objects get up to five seconds to settle. Zero velocity of a just-released object does not count as rest while it is in the air. The end of autonomous stops lift tasks together with the drive; a DQ blocks both. Typing in the referee log does not drive the chassis, and losing focus releases keys.
+
+Added autonomous routine selection, visualization of the four lifts, the referee log and JSON match-record export. Full implementation status, tests and remaining limitations are described in [SIMULATOR.md](SIMULATOR.md). Earlier notes about three stationary robots and no falling objects refer to the previous stage. Full automatic refereeing, exact CAD contacts and the collapse of scored stacks remain unfinished; the presence of the log does not replace their implementation.
+
+
+Check for this stage: the full two-minute match and both new groups of physics tests passed; the 17 C++ cascade scenarios, 3 holonomic checks and 7 plant regressions are kept. In the browser all four programs showed `Complete`, after 0:00 the score was frozen at 11:11 and the lift rejected new commands. C++ sources and WASM were not changed; a repeated ARM build was not needed.

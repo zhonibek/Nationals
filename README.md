@@ -1,7 +1,7 @@
 # Nationals-work3
 
-> 🏆 **Хакатон / Hackathon Submission**: Подробное описание проекта, архитектура Physical AI, результаты тестов и демонстрация оформлены в [**HACKATHON_POST.md**](HACKATHON_POST.md).
-> 🚀 **Быстрый запуск в 1 клик**: Запустите `start.bat` для открытия 3D-симулятора поля (порт 8765), RoboProof Mission Control (порт 8766) и Мастер-портала.
+> 🏆 **Nebius × NVIDIA Global AI Hackathon — Physical AI track.** Project description, architecture, results and feedback: [**HACKATHON_POST.md**](HACKATHON_POST.md). Plan and progress: [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).
+> 🚀 **One-click start:** run `start.bat` to open the 3D field simulator (port 8765), RoboProof Mission Control (port 8766) and the portal.
 
 **Nationals-work3** is a VEX V5 robotics project and experimental robotics-AI workspace. It brings together PROS firmware, a browser-based VEX game simulator, the original Simulator/iraLIB motion environment, and RoboProof tools for inspecting and experimenting with robot movement.
 
@@ -18,6 +18,7 @@ The repository contains both working engineering components and research-stage f
 - [Limitations and safety](#limitations-and-safety)
 - [Project map](#project-map)
 - [Further documentation](#further-documentation)
+- [License, attribution and originality](#license-attribution-and-originality)
 
 ## Quick start
 
@@ -59,7 +60,7 @@ The AI Studio (simulator) and the RoboProof Nemotron workspace call `nvidia/Nemo
 .\start.bat
 ```
 
-The key is saved only to the Git-ignored `.cache/robotai-nemotron/nebius-api-key.txt`; `start.bat` uses it automatically. Alternatively set `$env:NEBIUS_API_KEY` before `node roboproof/server.js`, or click **⚡ Подключить Nebius Token Factory** in the simulator's AI Studio. Without a key, the simulator and controller still work; only Nemotron planning is unavailable. Details and limits: [roboproof/NEMOTRON.md](roboproof/NEMOTRON.md#nebius-token-factory).
+The key is saved only to the Git-ignored `.cache/robotai-nemotron/nebius-api-key.txt`; `start.bat` uses it automatically. Alternatively set `$env:NEBIUS_API_KEY` before `node roboproof/server.js`, or click **⚡ Connect Nebius Token Factory** in the simulator's AI Studio. Without a key, the simulator and controller still work; only Nemotron planning is unavailable. Details and limits: [roboproof/NEMOTRON.md](roboproof/NEMOTRON.md#nebius-token-factory).
 
 ## Project architecture
 
@@ -225,3 +226,15 @@ This is a verification build and does not flash the robot. For the normal PROS w
 - [Simulator implementation and limitations](docs/recovery/SIMULATOR.md)
 - [Recovery report and verification evidence](docs/recovery/REPORT.md)
 - [Development progress and experiment history](docs/progress.md)
+- [Hackathon plan and progress](docs/HACKATHON_PLAN.md)
+
+## License, attribution and originality
+
+The project's own code is licensed under the [MIT License](LICENSE), Copyright (c) 2026 Kassymkhan and Nationals contributors.
+
+- **Pedro Pathing** is an FTC path-following library originally written in **Java**. The code in [`include/subsystems/pedro/`](include/subsystems/pedro/NOTICE.md) and [`src/subsystems/pedro/`](src/subsystems/pedro/NOTICE.md) is an independent **C++ rewrite** for VEX V5 based on its design; no Java code is included. Pedro Pathing's BSD-3-Clause notice is retained.
+- **LemLib** (MIT) is included in `include/lemlib/` and `src/lemlib/`; its copyright notice is kept in [LICENSE](LICENSE).
+- **PROS** (MPL-2.0), **Eigen** (MPL-2.0) and **{fmt}** (MIT) are included unmodified; **Three.js** (MIT) is loaded from a CDN.
+- NVIDIA Nemotron and Cosmos models are used through APIs; no model weights are redistributed.
+
+The complete list and license texts are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

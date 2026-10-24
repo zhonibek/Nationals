@@ -7,7 +7,7 @@ Status legend: `[x]` done and verified · `[~]` in progress · `[ ]` not started
 
 ## 1. Branch and publication
 
-- [ ] Create `nvidia-nebius-global-ai-hackathon` from the `Хакатон` branch, including the verified Nebius Token Factory integration.
+- [ ] Create `nvidia-nebius-global-ai-hackathon` from the previous hackathon working branch, including the verified Nebius Token Factory integration.
 - [ ] Push it and make it the default branch on GitHub, so judges see the hackathon code first.
 
 ## 2. English-only documentation

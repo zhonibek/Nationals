@@ -1,47 +1,47 @@
-# Симулятор Nationals-work3
+# Nationals-work3 simulator
 
-Запуск из корня: `powershell -File tools/start-simulator.ps1`, затем http://127.0.0.1:8765.
+Run from the repository root: `powershell -File tools/start-simulator.ps1`, then open http://127.0.0.1:8765.
 
-`control.wasm` исполняет тот же C++ LTV-LQR → PID + feedforward, что используется в competition flow. Режимы регуляторов не переключаются. `Competition` в списке повторяет текущую последовательность `autonomous()`; Bézier и quintic используют производственный C++.
+`control.wasm` executes the same C++ LTV-LQR → PID + feedforward cascade that the competition flow uses. Controller modes are not switched. `Competition` in the routine list replays the current `autonomous()` sequence; Bézier and quintic paths use the production C++ code.
 
-Тесты: `node tests/control-core.test.js`, `node simulator/test_override.js` из корня проекта. Подробные инструкции и ограничения — в [README проекта](../README.md) и [отчёте](../docs/recovery/REPORT.md).
+Tests: `node tests/control-core.test.js` and `node simulator/test_override.js` from the repository root. Detailed instructions and limitations are in the [project README](../README.md) and the [recovery report](../docs/recovery/REPORT.md).
 
-Управление: W/S — вперёд/назад; A/D — стрейф; стрелки влево/вправо — поворот; пробел — пауза. В игре удерживайте E для подъёма, Q для опускания; отпустите клавишу для остановки. В отдельном тесте движения Q/E остаются дополнительными клавишами стрейфа. «Шаг» выполняет один шаг 10 мс. «Начать игру» включает обычное поле, не учебную сцену. Тренировка начинается сразу; в матче первые 15 секунд работает автономка. Можно выбирать одного из четырёх роботов; остальные стоят. Максимум один Pin и один Cup, захват требует близости и высоты; это абстракция манипулятора.
+Controls: W/S — forward/backward; A/D — strafe; Left/Right arrows — turn; Space — pause. In the game, hold E to raise the lift and Q to lower it; release the key to stop. In the separate motion test, Q/E remain extra strafe keys. **Step** runs one 10 ms step. **Start game** enables the normal field, not a tutorial scene. Practice starts immediately; in a match, the autonomous routine runs for the first 15 seconds. You can select any of the four robots; the others stand still. Each robot holds at most one Pin and one Cup, and grabbing requires proximity and the right height; this is an abstraction of the manipulator.
 
-Физика шасси и геометрия предметов приближённые. 3D использует Three.js с CDN; 2D и контроллер работают локально. Порты/размеры берутся из сгенерированного `robot-config.js`. Данные истинной позиции используются для картинки и столкновений, а контроллер получает только энкодерную одометрию и скорости колёс.
+Chassis physics and object geometry are approximations. The 3D view loads Three.js from a CDN; the 2D view and the controller run locally. Ports and dimensions come from the generated `robot-config.js`. Ground-truth pose is used only for rendering and collisions; the controller receives only encoder odometry and wheel velocities.
 
-Источник игровых данных: [VEX manual v2.0](https://www.vexrobotics.com/override-manual), схемы FO-1/FO-2. [Официальный PDF](https://link.vex.com/docs/26-27/v5rc/game-manual) является нормативным документом. CAD, детальная динамика стопок, полноценная эмуляция прошивки и автоматическое судейство не завершены.
+Game data source: [VEX manual v2.0](https://www.vexrobotics.com/override-manual), field drawings FO-1/FO-2. The [official PDF](https://link.vex.com/docs/26-27/v5rc/game-manual) is authoritative. CAD for game elements, detailed stack dynamics, full firmware emulation and automatic refereeing are not finished.
 
-## Игровой режим и очки — 2026-10-04
+## Game mode and scoring — 2026-10-04
 
-- «Начать игру» включает контакты предметов и манипулятор. «Запуск маршрута» отдельно проверяет движение шасси и не включает игру. Продолжение игры больше не запускает маршрут и не сбрасывает поле.
-- Отдельных учебных кнопок больше нет. В тренировке по умолчанию свободные захваты; снятые стартовые Pins возвращаются в запас своего альянса без изменения остальных предметов поля. Можно включить «Preload Pin при старте тренировки»; официальный матч всегда сохраняет исходные preloads.
-- WASD — движение, стрелки — поворот, E/Q — подъёмник вверх/вниз. F — взять ближайший доступный Pin, Cup или связку Cup + Pin; рядом с Toggle та же F переключает его. Подсказка и единственная кнопка показывают выбранное действие; если доступны оба, выбирается ближний к роботу. G — поставить, R — отпустить, T — перевернуть. Физические клавиши работают при русской раскладке. В матче занятый preload Pin надо сначала поставить или отпустить перед захватом другой связки.
-- Подсказки показывают удерживаемые предметы, расстояние до вилки, ошибку высоты и допустимую высоту следующего слоя. Недоступные действия отключены. Подъёмник движется с ограниченной скоростью; захват не переносит удалённые предметы.
-- Pin падает и учитывается только после попадания в цель. Стопки чередуют Pin/Cup. Табло объясняет видимые половинки, жёлтое владение, роботов в центре и автономный бонус; ручной калькулятор не изменяет поле. Протокол JSON включает разбивку очков.
-- В 2D можно показать контактные прокси, включая полную длину лежащих деталей. Физика учитывает взаимные контакты, передачу скорости от робота, гравитацию, трение пола и стены. Пространственная сетка ограничивает проверку пар соседними ячейками.
-- Режим непрозрачного отображения включён для читаемости. Физическая прозрачность не является переключателем коллизий, а визуальный переключатель не меняет правила видимости половинок для подсчёта очков.
+- **Start game** enables object contacts and the manipulator. **Run** separately tests chassis motion and does not start the game. Continuing a game no longer starts a route or resets the field.
+- There are no separate tutorial buttons. Practice allows free grabbing by default; preload Pins taken from the start return to their alliance's stock without changing the rest of the field. You can enable **Preload Pin at practice start**; an official match always keeps the original preloads.
+- WASD — move, arrows — turn, E/Q — lift up/down. F — take the nearest available Pin, Cup or Cup + Pin stack; next to a Toggle the same F key switches it. The hint and the single action button show the selected action; if both are available, the one closest to the robot wins. G — place, R — release, T — flip. Physical key positions work with any keyboard layout. In a match, a held preload Pin must be placed or released before grabbing another stack.
+- Hints show held objects, distance to the fork, height error and the allowed height of the next layer. Unavailable actions are disabled. The lift moves at a limited speed; grabbing does not teleport distant objects.
+- A Pin falls and counts only after it lands in a goal. Stacks alternate Pin/Cup. The scoreboard explains visible halves, yellow ownership, robots in midfield and the autonomous bonus; the manual calculator does not change the field. The JSON match record includes the score breakdown.
+- The 2D view can show contact proxies, including the full length of lying parts. Physics handles object-to-object contacts, velocity transfer from the robot, gravity, floor friction and walls. A spatial grid limits pair checks to neighbouring cells.
+- Opaque rendering is on by default for readability. Physical transparency is not a collision switch, and the visual toggle does not change the half-visibility rules used for scoring.
 
-Размеры, источники и границы достоверности: [OVERRIDE_ELEMENTS.md](../docs/OVERRIDE_ELEMENTS.md). Это улучшенная приближённая симуляция, **не полная копия физики реального поля**: CAD не импортирован, массы/трение/удары требуют измерений, столкновения с удерживаемыми предметами и разрушение размещённых стопок ещё не моделируются полностью.
+Dimensions, sources and accuracy limits: [OVERRIDE_ELEMENTS.md](../docs/OVERRIDE_ELEMENTS.md). This is an improved approximate simulation, **not a full copy of real field physics**: game-element CAD is not imported, masses, friction and impacts need measurement, and collisions with held objects and the collapse of placed stacks are not fully modelled yet.
 
-## CAD робота и производительность — 2026-10-05
+## Robot CAD and performance — 2026-10-05
 
-Для робота подключён облегчённый вариант предоставленного `main.glb`: 166 МБ → 5,07 МБ, 117 612 примитивов в сцене → 366, 6,40 млн треугольников → 407 тыс. Оригинал не изменён. CAD игровых элементов по-прежнему не импортирован. Это визуальная модель, не автоматическое подключение механики захвата, массы или коллизий реального робота.
+The robot uses a lightweight version of the supplied `main.glb`: 166 MB → 5.07 MB, 117,612 scene primitives → 366, 6.40 M triangles → 407 k. The original is unchanged. Game-element CAD is still not imported. This is a visual model; it does not automatically provide the real robot's grabbing mechanics, mass or collisions.
 
-Обновите страницу и откройте 3D: автоматически загрузится `robot.preview.glb`. Не импортируйте тяжёлый оригинал; файлы выше 32 МиБ блокируются до чтения. По умолчанию выбран режим «Быстро · без теней · 30 FPS»; рядом показываются реальные FPS и стоимость отрисовки всего поля. В 2D CAD не загружается. При необходимости используйте процедурную модель или оставайтесь в 2D. Физика и C++ регулятор продолжают работать с прежним шагом 10 мс.
+Reload the page and open 3D: `robot.preview.glb` loads automatically. Do not import the heavy original; files above 32 MiB are rejected before reading. The default quality is **Fast · no shadows · 30 FPS**; the measured FPS and full-field render cost are shown next to it. CAD is not loaded in 2D. If needed, use the procedural model or stay in 2D. Physics and the C++ controller keep their 10 ms step.
 
-Подготовка, источники, хеши, ограничения и воспроизведение: [ROBOT_CAD.md](../docs/ROBOT_CAD.md). Фактическая плавность и внешний вид в браузере ещё не проверены.
+Preparation, sources, hashes, limitations and reproduction: [ROBOT_CAD.md](../docs/ROBOT_CAD.md). Real-browser smoothness and appearance have not been checked yet.
 
-## Захват Cup — 2026-10-05
+## Cup grabbing — 2026-10-05
 
-Исправлен выбор кандидата: Cup с вложенным Pin больше не скрывает соседний доступный пустой Cup. При занятом захвате Pin пустой Cup разрешён, но Cup + Pin требует сначала поставить/отпустить preload. Вместо общего сообщения теперь показывается конкретная причина отказа. Лимит одного Pin и одного Cup не отменён.
+Candidate selection is fixed: a Cup holding a Pin no longer hides a neighbouring free empty Cup. While the Pin slot is occupied an empty Cup is allowed, but a Cup + Pin stack requires placing or releasing the preload first. Instead of a generic message, the specific reason for a refusal is shown. The limit of one Pin and one Cup still applies.
 
-В «Авто» одна F / «Взять» работает со всеми типами без переключения списка. Удерживаемая связка Cup + Pin поднимается и движется вместе, G/R отпускают её целиком. Для снятия только верхнего Pin выберите «Только Pin». Для Match Load можно явно выбрать Pin или Cup (в «Авто» загружается Pin). Подробные подсказки обоих типов доступны в раскрывающемся блоке. CAD робота не задаёт реальную кинематику захвата.
+In **Auto** mode a single F / **Take** works with all object types without switching the list. A held Cup + Pin stack is lifted and moved together; G/R release it as a whole. To take only the top Pin, choose **Pin only**. For a Match Load you can explicitly choose Pin or Cup (Auto loads a Pin). Detailed hints for both types are in the expandable block. The robot CAD does not define real grabbing kinematics.
 
-Для проверки обновите страницу **Ctrl+F5 → «Тренировка ∞» → «Начать игру»**, оставьте захват «Авто». Подведите переднюю вилку к детали, дождитесь подсказки «Можно взять» и нажмите F. E/Q плавно двигают подъёмник в пределах 0–40″; «Высота для цели» задаёт высоту следующего слоя, а не телепортирует механизм. Cup ставится поверх Pin; пустая цель принимает сначала Pin. Очки появляются после физического попадания в цель. При отпускании высоко над полом связка может развалиться от удара — она не склеена навсегда. Подготовленные сценарии подсчёта очков оставлены только в тестах, не в интерфейсе пользователя.
+To check: reload with **Ctrl+F5 → Practice ∞ → Start game** and keep grabbing on **Auto**. Bring the front fork to an object, wait for the **Can take** hint and press F. E/Q move the lift smoothly within 0–40″; **Height for goal** sets the height of the next layer instead of teleporting the mechanism. A Cup is placed on top of a Pin; an empty goal accepts a Pin first. Points appear after the object physically lands in the goal. Released high above the floor, a stack can break apart on impact — it is not glued together. Prepared scoring scenarios exist only in tests, not in the user interface.
 
-## Калькулятор — 2026-10-05
+## Score calculator — 2026-10-05
 
-Компактное табло закреплено внизу окна и ссылается на полный калькулятор. Оба показывают одну разбивку игрового движка, включая замороженный итоговый счёт; текущее значение явно помечено предварительным. Считаются видимые половинки Pin, а не целые детали; Cup сам по себе даёт 0 очков.
+A compact scoreboard is pinned to the bottom of the window and links to the full calculator. Both show the same score breakdown from the game engine, including the frozen final score; the live value is explicitly marked preliminary. Visible Pin halves are counted, not whole parts; a Cup on its own scores 0 points.
 
-Ручной калькулятор пересчитывается при загрузке, вводе чисел и смене бонуса. Пустые, дробные, отрицательные и слишком большие значения дают ошибку и очищают старый результат, а не становятся нулём. Отдельно показана арифметическая формула. Кнопки красных/синих копируют снимок соответствующих игровых значений; «Обнулить расчёт» сбрасывает только ручные поля. Эти действия не меняют поле, владение или игровой счёт.
+The manual calculator recalculates on load, on number input and when the bonus changes. Empty, fractional, negative and oversized values produce an error and clear the old result instead of becoming zero. The arithmetic formula is shown separately. The red/blue buttons copy a snapshot of that alliance's game values; **Reset calculation** clears only the manual fields. These actions do not change the field, ownership or the game score.

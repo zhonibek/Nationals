@@ -12,7 +12,7 @@ Run these PowerShell commands from the repository root unless stated otherwise. 
 From your chosen parent folder:
 
 ```powershell
-git clone --branch Хакатон https://github.com/zhonibek/Nationals.git Nationals-work3
+git clone --branch nvidia-nebius-global-ai-hackathon https://github.com/zhonibek/Nationals.git Nationals-work3
 Set-Location .\Nationals-work3
 git status --short
 git rev-parse HEAD

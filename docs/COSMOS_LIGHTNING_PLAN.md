@@ -2,7 +2,7 @@
 
 ## Verified setup — 2026-10-11
 
-The authorized Lightning organization showed 5.00 credits. Its existing `scratch-studio-devbox` was started on the machine explicitly marked **Free, 4 CPU**, with the existing ten-minute inactivity sleep. The published `Хакатон` branch was cloned into `/teamspace/studios/this_studio/Nationals-work3` at `c88626d`. The original `motion-check` reported `readyForBoundedCpuExperiment: true`. PyTorch imports; its CUDA build is installed, but `cudaAvailable` is false on this CPU machine. No GPU workload, Cosmos inference or AMD result is established by that check.
+The authorized Lightning organization showed 5.00 credits. Its existing `scratch-studio-devbox` was started on the machine explicitly marked **Free, 4 CPU**, with the existing ten-minute inactivity sleep. The published hackathon working branch was cloned into `/teamspace/studios/this_studio/Nationals-work3` at `c88626d`. The original `motion-check` reported `readyForBoundedCpuExperiment: true`. PyTorch imports; its CUDA build is installed, but `cudaAvailable` is false on this CPU machine. No GPU workload, Cosmos inference or AMD result is established by that check.
 
 The machine chooser advertised single-device L4 24 GB at 1.68 credits/hour, A100 40 GB at 2.19, L40S 48 GB at 3.54, H100 80 GB at 5.68 and H200 141 GB at 4.50. These are observations in this account, not guaranteed prices or availability. Only the CPU was requested. Both the saved Hugging Face login and configured token were absent in the inspected environment; no credential was read or created.
 

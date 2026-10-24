@@ -39,7 +39,7 @@ The interface is conversation-first, not a claim of ChatGPT/Claude model quality
 
 ## Tactical adviser, not autonomous play
 
-Under Robot tools, **Explain game rules & tactics** invokes the fifth skill. In the original Simulator served through RoboProof, start Override and click **Спросить тактический AI** to explicitly supply a compact current snapshot. The adviser reads `get_game_rules` and `get_game_snapshot` before finishing through read-only analysis. It uses a reviewed Override v2.0 subset and original engine constants/source hashes, not unrestricted manual ingestion or a learned winning strategy. The full normative PDF could not be fetched during this update.
+Under Robot tools, **Explain game rules & tactics** invokes the fifth skill. In the original Simulator served through RoboProof, start Override and click **Ask tactical AI** to explicitly supply a compact current snapshot. The adviser reads `get_game_rules` and `get_game_snapshot` before finishing through read-only analysis. It uses a reviewed Override v2.0 subset and original engine constants/source hashes, not unrestricted manual ingestion or a learned winning strategy. The full normative PDF could not be fetched during this update.
 
 Snapshots are bounded, fresh at submission and structurally checked, but browser-supplied—not independently authenticated/replayed facts. Nearby objects are partial visibility; state may change during slow inference. The model cannot access another board, dispatch motion/manipulation/perception, run a game, predict verified score or approve a snapshot as movement. The simulator displays advice as plain text and has Stop AI; replay/standalone-file views cannot call this workflow. [Hierarchy and remaining gates](../docs/TACTICAL_AI_PLAN.md).
 
@@ -75,7 +75,7 @@ Provide a key in one of these ways (never in a prompt, URL or committed file):
 .\start.bat                         # picks up the saved key automatically
 ```
 
-or set `NEBIUS_API_KEY` (or `ROBOTAI_NEMOTRON_API_KEY`) before `node roboproof/server.js`; `ROBOTAI_NEMOTRON_BASE_URL` / `ROBOTAI_NEMOTRON_MODEL` override the defaults. The simulator's **⚡ Подключить Nebius Token Factory** button and the portal's Nebius badge post the key to the local server, which checks it against `/v1/models` first and saves it only if the configured model is served. `.cache/` is ignored by Git.
+or set `NEBIUS_API_KEY` (or `ROBOTAI_NEMOTRON_API_KEY`) before `node roboproof/server.js`; `ROBOTAI_NEMOTRON_BASE_URL` / `ROBOTAI_NEMOTRON_MODEL` override the defaults. The simulator's **⚡ Connect Nebius Token Factory** button and the portal's Nebius badge post the key to the local server, which checks it against `/v1/models` first and saves it only if the configured model is served. `.cache/` is ignored by Git.
 
 A successful check only proves that the endpoint lists the configured model (`liveInferenceVerified: false`). GPU identity and weights are controlled by Nebius and are not verified by this project (`hardwareVerified: false`). The movement controller, simulator physics and approval gates are unchanged: Nemotron still only prepares a task proposal.
 
@@ -100,7 +100,7 @@ A second real request through the dashboard proposed `(0,0,0°) -> (24,0,0°)` c
 
 The full Node/controller/Simulator suite passed 85 tests with zero failures and one existing external-Java test skipped because a usable Java compiler was unavailable. Generated robot configuration checked successfully. Focused integration/engine tests passed 26/26 without skips. Browser validation found and corrected a WASM-specific CSP loading restriction; the corrected original Simulator loaded the real C++ controller. The local model rejects unauthenticated inference with HTTP 401. Model weights, API key and generated sessions are ignored by Git.
 
-On 2026-10-24, the Nebius Token Factory endpoint listed `nvidia/Nemotron-3_5-Lightning` (model check 474 ms). A real request "Подъехать вперёд на 24 дюйма, старт (0,0,0), цель (0,24,0), курс 0°" ran `load_skill → get_motion_contract → prepare_reach_pose` and prepared `(0,0,0°) -> (0,24,0°)` with a 10-second deadline. An underspecified request ("Drive forward 24 inches to (0, 24, 0)") ended with `ask_clarification` in about 0.9 s instead of a guessed task. These are smoke checks of connectivity and latency, not a model-quality benchmark, and no movement was executed by them.
+On 2026-10-24, the Nebius Token Factory endpoint listed `nvidia/Nemotron-3_5-Lightning` (model check 474 ms). A real request written in Russian ("drive forward 24 inches, start (0,0,0), goal (0,24,0), heading 0°") ran `load_skill → get_motion_contract → prepare_reach_pose` and prepared `(0,0,0°) -> (0,24,0°)` with a 10-second deadline. An underspecified request ("Drive forward 24 inches to (0, 24, 0)") ended with `ask_clarification` in about 0.9 s instead of a guessed task. These are smoke checks of connectivity and latency, not a model-quality benchmark, and no movement was executed by them.
 
 Automated fixtures in `tests/nemotron.test.js` cover transport, validation, budgets, approval, persistence, original-engine execution and replay. Their mocked provider responses are explicitly labeled fixtures; only the retained live sessions establish actual model execution.
 

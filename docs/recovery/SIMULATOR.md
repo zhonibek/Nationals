@@ -1,60 +1,60 @@
-# Игровой симулятор Nationals-work3
+# Nationals-work3 game simulator
 
-Состояние реализации: 25 сентября 2026. Контроллер движения остаётся постоянным каскадом LTV-LQR → четыре PID скорости с feedforward. Новые механики относятся к браузерной модели; прошивка PROS и её аппаратная конфигурация в этой доработке не изменялись.
+Implementation status: 25 September 2026. The motion controller remains the persistent cascade LTV-LQR → four velocity PIDs with feedforward. The new mechanics belong to the browser model; the PROS firmware and its hardware configuration were not changed in this work.
 
-## Как проверить
+## How to check
 
-Запустить `tools/start-simulator.ps1`, открыть http://127.0.0.1:8765/. Выбрать «Матч 2:00», при необходимости раскрыть настройки четырёх автономок, нажать Override. По умолчанию red-1/blue-1 подъезжают к собственным целям, поднимают preload и отпускают его; red-2/blue-2 немного отъезжают от борта. Это проверочные игровые программы, а не готовая соревновательная стратегия.
+Run `tools/start-simulator.ps1` and open http://127.0.0.1:8765/. Choose **Match 2:00**, optionally expand the settings of the four autonomous routines, and press Override. By default red-1/blue-1 drive to their own goals, lift the preload and release it; red-2/blue-2 move slightly away from the wall. These are test game programs, not a ready competition strategy.
 
-После 15 секунд ручное управление доступно выбранному роботу. WASD/QE — перенос, стрелки влево/вправо — поворот. Подъёмник ±2″ изменяет заданную высоту, а не телепортирует механизм. При смене выбранного робота сохраняются позиции, энкодеры, моторы и механизм каждого. В режиме тренировки автономки не запускаются, ограничения таймера нет.
+After 15 seconds, manual control is available for the selected robot. WASD/QE — translation, Left/Right arrows — turn. A lift step of ±2″ changes the target height instead of teleporting the mechanism. Switching the selected robot keeps every robot's pose, encoders, motors and mechanism. In practice mode, autonomous routines do not run and there is no time limit.
 
-Для захвата передняя вилка должна находиться не дальше 3″ от центра предмета по горизонтали и 3″ по высоте. Это допуски модельного захвата, не размеры официального механизма. Для установки совместить в пределах 1.1″ с осью цели и выставить высоту у верхушки стопки. Действие «Поставить в цель» освобождает предмет; вложение определяется при падении. Удерживать можно один Pin и один Cup. При переносе вложенной пары оба слота заняты.
+To grab, the front fork must be within 3″ of the object's centre horizontally and within 3″ vertically. These are model grabbing tolerances, not the dimensions of an official mechanism. To place, align within 1.1″ of the goal axis and set the height at the top of the stack. **Place in goal** releases the object; nesting is determined when it falls. A robot can hold one Pin and one Cup. While carrying a nested pair, both slots are occupied.
 
-Пустой Cup на полу может принять падающий Pin. При опрокидывании Cup Pin теряет опору. Сильное падение пары разъединяет её. После 0:00 привод и механизм больше не принимают команды; пассивное движение предметов продолжается до остановки или пяти секунд, затем счёт фиксируется.
+An empty Cup on the floor can accept a falling Pin. When a Cup tips over, its Pin loses support. A hard fall separates a pair. After 0:00 the drive and mechanism no longer accept commands; passive object motion continues until it stops or for five seconds, then the score is frozen.
 
-## Устройство
+## Architecture
 
-| Файл | Назначение |
+| File | Purpose |
 |---|---|
-| `simulator/control-runtime.js` | Создание независимых WASM-инстансов одного производственного C++-контроллера |
-| `simulator/override-autonomy.js` | Четыре моторные модели, отдельные очереди команд, точные границы периодов, выбор наблюдаемого робота, протокол |
-| `simulator/override-dynamics.js` | Гравитация, конечные скорости, контактные приближения предметов, удар о пол, опрокидывание, потеря опоры, вложение |
-| `simulator/override.js` | Инвентарь, механизм, доступность действий, счёт и судейские решения |
-| `simulator/override-view.js` | 2D/3D-изображение общей позы предметов и четырёх подъёмников |
-| `simulator/simulator.js` | Связь игрового цикла с моделью привода и интерфейсом |
+| `simulator/control-runtime.js` | Creates independent WASM instances of the same production C++ controller |
+| `simulator/override-autonomy.js` | Four motor models, separate command queues, exact period boundaries, observed-robot selection, match record |
+| `simulator/override-dynamics.js` | Gravity, finite velocities, approximate object contacts, floor impact, tipping, loss of support, nesting |
+| `simulator/override.js` | Inventory, mechanism, action availability, scoring and referee rulings |
+| `simulator/override-view.js` | 2D/3D rendering of shared object poses and the four lifts |
+| `simulator/simulator.js` | Connects the game loop with the drive model and the interface |
 
-`OverrideFleet` исполняет шаги `pose`, `drive`, `strafe`, `turn`, `spline`, `bezier`, `diagonal`, `lift` и `game`. Движение следующего шага разрешено после `Settled`; ошибка останавливает программу этого робота. При 15.000 с отменяются незавершённые движения и задания подъёмника. Для тестов/API `startGame(mode, choices)` принимает карту идентификаторов роботов на имена программ или массивы шагов. UI предлагает проверенные демонстрации.
+`OverrideFleet` executes the steps `pose`, `drive`, `strafe`, `turn`, `spline`, `bezier`, `diagonal`, `lift` and `game`. The next step's motion is allowed after `Settled`; an error stops that robot's program. At 15.000 s unfinished motions and lift tasks are cancelled. For tests and the API, `startGame(mode, choices)` accepts a map from robot IDs to program names or step arrays. The UI offers verified demonstrations.
 
-В JSON-протокол входят программы, итоговое состояние, события захвата/установки и решения судьи; выборка позы, одометрии, напряжений и статуса каждого робота записывается каждые 0.5 с, максимум 600 выборок. Это диагностический журнал, не побитовый replay всей прошивки или всех контактов.
+The JSON match record contains programs, the final state, grab/place events and referee rulings; pose, odometry, voltages and status for each robot are sampled every 0.5 s, up to 600 samples. It is a diagnostic log, not a bit-exact replay of the whole firmware or all contacts.
 
-## Покрытие правил
+## Rule coverage
 
-Источник: [веб-руководство VEX Override v2.0](https://www.vexrobotics.com/override-manual), сверенное при реализации; [нормативный PDF](https://link.vex.com/docs/26-27/v5rc/game-manual) имеет приоритет. Правила не воспроизводятся здесь дословно.
+Source: [VEX Override v2.0 web manual](https://www.vexrobotics.com/override-manual), checked during implementation; the [authoritative PDF](https://link.vex.com/docs/26-27/v5rc/game-manual) takes precedence. Rules are not reproduced verbatim here.
 
-| Область | Реализовано | Ограничение |
+| Area | Implemented | Limitation |
 |---|---|---|
-| SC1 | Остановка команд, до 5 с пассивного движения, фиксация счёта | Оценка спорного состояния на границе остаётся за судьёй |
-| SC2–SC6 | Чередование вложений, видимость половин, ownership по Toggle/местоположению, midfield | Частичные/косые вложения и непрерывный контакт с Toggle упрощены |
-| SC7–SC8 | Снимок автономного счёта, bonus, AWP, перенос награды по подтверждённому решению | Пограничные контакты требуют проверки журнала |
-| SG1–SG6 | Начальная расстановка, preload, размеры модели, один Pin + один Cup | Осмотр реального робота и намеренный выброс не моделируются; борт удерживает предметы |
-| SG7–SG8 | Отметка пересечения границы; 28 исходных общих предметов; учёт запрещённого захвата предмета другой стороны | Не все косвенные контакты и исключения распознаются автоматически |
-| SG9–SG10 | Запрет кнопочной установки на чужую цель; из закреплённых стопок предметы не снимаются | Столкновения манипулятора с защищённой стопкой не воспроизведены |
-| SG11 | Свой loader, водительский период, падение через loader | Контакт с руками оператора и корпус loader упрощены |
-| SG12 | Запрет установки в центральную цель в endgame; журнал фактического позднего вложения | Спорные эпизоды оценивает судья |
-| SG13 / GG / S | Можно записать правило, основание, warning/minor/major, DQ робота | Умысел, trapping, tipping, load-zone interference не имеют полного автоматического классификатора |
+| SC1 | Command stop, up to 5 s of passive motion, score freeze | Disputed states at the boundary are left to the referee |
+| SC2–SC6 | Alternating nesting, half visibility, ownership by Toggle/location, midfield | Partial/angled nesting and continuous Toggle contact are simplified |
+| SC7–SC8 | Autonomous score snapshot, bonus, AWP, award transfer by a confirmed ruling | Borderline contacts require checking the log |
+| SG1–SG6 | Starting layout, preload, model dimensions, one Pin + one Cup | Real robot inspection and intentional ejection are not modelled; walls retain objects |
+| SG7–SG8 | Boundary-crossing marker; 28 initial shared objects; tracking of illegal grabbing of the other side's objects | Not all indirect contacts and exceptions are detected automatically |
+| SG9–SG10 | Button placement on the opponent's goal is blocked; objects cannot be removed from locked stacks | Manipulator collisions with a protected stack are not reproduced |
+| SG11 | Own loader, driver period, object drop through the loader | Contact with operators' hands and the loader body are simplified |
+| SG12 | No placement in the centre goal during the endgame; log of actual late nesting | Disputed episodes are judged by the referee |
+| SG13 / GG / S | A rule, reason, warning/minor/major and robot DQ can be recorded | Intent, trapping, tipping and load-zone interference have no complete automatic classifier |
 
-Судейский журнал позволяет явно перенести автономный бонус и, при соответствующем основании, AWP. DQ отключает привод и действия указанного робота. Набранные предметами очки не превращаются в произвольные штрафные вычитания. Итоговые турнирные WP/SP и последствия DQ для qualification/elimination не вычисляются. Следовательно, это **не полный автоматический судья**.
+The referee log can explicitly transfer the autonomous bonus and, with the corresponding reason, the AWP. A DQ disables the drive and actions of that robot. Points earned by objects are not turned into arbitrary penalty deductions. Final tournament WP/SP and DQ consequences for qualification/elimination are not computed. Therefore this is **not a complete automatic referee**.
 
-## Физическая достоверность
+## Physical fidelity
 
-Свободные предметы используют дюймы/секунды, гравитацию 386.09 in/s² и шаг до 5 мс. Горизонтальные контакты — круговые приближения; корпус робота — повёрнутый прямоугольник. Парные импульсы используют равные эффективные массы. Опрокидывание и разрыв опоры являются сокращённой моделью. Точная контактная геометрия лежащих предметов, трение формы, вращение вокруг всех трёх осей и упругая деформация не реализованы.
+Free objects use inches/seconds, gravity of 386.09 in/s² and a step of up to 5 ms. Horizontal contacts are circular approximations; the robot body is a rotated rectangle. Pair impulses use equal effective masses. Tipping and loss of support are a reduced model. Exact contact geometry of lying objects, shape friction, rotation about all three axes and elastic deformation are not implemented.
 
-Уже вложенные стопки на целях закреплены; они не разрушаются от удара. Поле не является полным CAD rigid-body world. Подъёмник — кинематический привод с ограничением скорости, без собственной моторной модели/нагрузки. Все четыре робота используют параметры одного Nationals-привода. Модель взаимного контакта роботов не моделирует борьбу масс и опрокидывание шасси.
+Stacks already nested on goals are locked; they do not collapse on impact. The field is not a full CAD rigid-body world. The lift is a kinematic actuator with a speed limit and no motor/load model of its own. All four robots use the parameters of the single Nationals drive. Robot-to-robot contact does not model pushing battles or chassis tipping.
 
-## Проверки
+## Checks
 
-`test_override_match.js` исполняет весь двухминутный матч: отдельные WASM-памяти, две физические установки preload, переходы 15/120 с, переключение робота без сброса, команды после конца, cutoff подъёмника, неверный dt, DQ и сериализация протокола.
+`test_override_match.js` runs a full two-minute match: separate WASM memories, two physical preload placements, 15/120 s transitions, robot switching without reset, commands after the end, lift cutoff, invalid dt, DQ and match-record serialization.
 
-`test_override_dynamics.js` проверяет скорость/пределы подъёма, падение относительно формулы гравитации, удар/опрокидывание, захват только перед роботом, вложение на цели и на полу, разрушение падающей пары, потерю опоры, контакт предметов и робота, борт, scoring grace, жёсткий предел пяти секунд и позднее судейское решение.
+`test_override_dynamics.js` checks lift speed and limits, falling against the gravity formula, impact/tipping, grabbing only in front of the robot, nesting on a goal and on the floor, breaking of a falling pair, loss of support, object-robot contact, walls, the scoring grace period, the hard five-second limit and a late referee ruling.
 
-Прежние `test_override.js` и часть `test_override_geometry.js` используют `physical:false` для изолированных фикстур правил. Это не режим браузера: новые интеграционные тесты запускают настоящую игровую физику и C++-контроллеры. Прежние 17 сценариев каскада, проверки holonomic/plant и актуальности WASM сохраняются.
+The older `test_override.js` and part of `test_override_geometry.js` use `physical:false` for isolated rule fixtures. That is not the browser mode: the new integration tests run the real game physics and C++ controllers. The previous 17 cascade scenarios, holonomic/plant checks and WASM freshness checks are kept.

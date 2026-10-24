@@ -1,24 +1,24 @@
-# 🛠️ IRAlib Complete Robot Tuning Guide (Пошаговый туториал по калибровке)
+# 🛠️ IRAlib complete robot tuning guide (step-by-step calibration tutorial)
 
-Данное руководство содержит исчерпывающее пошаговое описание калибровки и настройки всех систем управления **IRAlib** (Track Width, Feedforward $kS/kV$, LQR, PID, FLC, TCS, LTV и EKF) на соревновательном роботе VEX V5.
-
----
-
-## 📋 Чек-лист перед началом калибровки
-
-1. **Заряд батареи:** Не менее 85% (напряжение > 12.4 В).
-2. **Покрытие:** Чистые соревновательные маты (foam tiles).
-3. **Механика:** Проверьте свободный ход колес и натяжение цепей/шестерен.
-4. **Константы в `src/main.cpp`:**
-   - Картриджи моторов: `pros::MotorGearset::blue` (600 RPM) или `pros::MotorGearset::green` (200 RPM).
-   - `DRIVETRAIN_RPM`: Фактическая скорость колес с учетом редукции (например, $600 \times \frac{36}{48} = 450.0\,\text{RPM}$).
-   - `WHEEL_DIAMETER_INCHES`: Диаметр колес (например, `3.25` для новых омни).
+This guide is a complete step-by-step description of calibrating and tuning every **IRAlib** control system (track width, feedforward $kS/kV$, LQR, PID, FLC, TCS, LTV and EKF) on a VEX V5 competition robot.
 
 ---
 
-## 🎮 Интерактивные кнопки калибровки на пульте управления
+## 📋 Checklist before calibration
 
-В режиме **Driver Control (`opcontrol`)** на пульт выведены горячие клавиши для всех тестов:
+1. **Battery charge:** at least 85% (voltage > 12.4 V).
+2. **Surface:** clean competition foam tiles.
+3. **Mechanics:** check that the wheels spin freely and that chains/gears are properly tensioned.
+4. **Constants in `src/main.cpp`:**
+   - Motor cartridges: `pros::MotorGearset::blue` (600 RPM) or `pros::MotorGearset::green` (200 RPM).
+   - `DRIVETRAIN_RPM`: the actual wheel speed including gearing (for example, $600 \times \frac{36}{48} = 450.0\,\text{RPM}$).
+   - `WHEEL_DIAMETER_INCHES`: wheel diameter (for example, `3.25` for new omni wheels).
+
+---
+
+## 🎮 Interactive calibration buttons on the controller
+
+In **Driver Control (`opcontrol`)** mode the controller has hotkeys for every test:
 
 ```
                   ┌──────────────────────┐
@@ -33,85 +33,85 @@
 
 ---
 
-## 📐 ШАГ 1. Калибровка ширины колеи (Track Width) — Кнопка [ A ]
+## 📐 STEP 1. Track width calibration — button [ A ]
 
-Ширина колеи (`TRACK_WIDTH_INCHES`) определяет точность одометрии и согласованность поворотов при раздельном приводе.
+Track width (`TRACK_WIDTH_INCHES`) determines odometry accuracy and turn consistency for a differential drive.
 
-1. Поставьте робота на перекрестье линий соревновательного поля.
-2. Нажмите кнопку **[ A ]**. Робот сделает один полный оборот на 360° на месте.
-3. **Анализ результата:**
-   * Если робот **не довернул** до исходной линии (например, повернул на 345°):  
-     👉 **УМЕНЬШИТЕ** `TRACK_WIDTH_INCHES` в `src/main.cpp` (например, с `10.5` до `10.2`).
-   * Если робот **перекрутил** линию (например, повернул на 375°):  
-     👉 **УВЕЛИЧЬТЕ** `TRACK_WIDTH_INCHES` в `src/main.cpp` (например, с `10.5` до `10.8`).
-4. Повторяйте, пока робот не будет останавливаться с погрешностью меньше $1^\circ$.
+1. Place the robot on a line intersection of the competition field.
+2. Press **[ A ]**. The robot makes one full 360° turn in place.
+3. **Analyse the result:**
+   * If the robot **under-rotates** short of the starting line (for example, turns 345°):
+     👉 **DECREASE** `TRACK_WIDTH_INCHES` in `src/main.cpp` (for example, from `10.5` to `10.2`).
+   * If the robot **over-rotates** past the line (for example, turns 375°):
+     👉 **INCREASE** `TRACK_WIDTH_INCHES` in `src/main.cpp` (for example, from `10.5` to `10.8`).
+4. Repeat until the robot stops within $1^\circ$.
 
 ---
 
-## ⚡ ШАГ 2. Калибровка статического трения ($k_S$) — Кнопка [ DOWN ]
+## ⚡ STEP 2. Static friction calibration ($k_S$) — button [ DOWN ]
 
-Коэффициент $k_S$ — это минимальное напряжение в Вольтах, необходимое для преодоления трения покоя редукторов и шин.
+$k_S$ is the minimum voltage, in volts, needed to overcome the static friction of the gearboxes and tyres.
 
-1. Поставьте робота на ровный участок поля.
-2. Нажмите стрелку **[ ВНИЗ ] (Button DOWN)**.
-3. Робот плавно нарастит напряжение моторов и определит порог страгивания.
-4. На экране пульта отобразится значение: `kS = 0.45 Volts`.
-5. Внесите полученное число в `velConfig.KS_straight` в `src/main.cpp`:
+1. Place the robot on a flat part of the field.
+2. Press the **[ DOWN ]** arrow.
+3. The robot slowly ramps up motor voltage and detects the breakaway threshold.
+4. The controller screen shows the value: `kS = 0.45 Volts`.
+5. Enter the measured number in `velConfig.KS_straight` in `src/main.cpp`:
    ```cpp
-   velConfig.KS_straight = 0.45; // ваше измеренное значение
-   velConfig.KS_turn = 0.35;     // обычно на 20% меньше прямого
+   velConfig.KS_straight = 0.45; // your measured value
+   velConfig.KS_turn = 0.35;     // usually about 20% lower than straight
    ```
 
 ---
 
-## 📏 ШАГ 3. Тюнинг линейного регулятора LQR (24 дюйма) — Кнопка [ B ]
+## 📏 STEP 3. Tuning the linear LQR controller (24 inches) — button [ B ]
 
-Отвечает за быстрый и точный разгон и торможение по прямой (`moveToPoint`).
+Responsible for fast and accurate acceleration and braking in a straight line (`moveToPoint`).
 
-1. Поставьте робота вдоль линии поля и нажмите кнопку **[ B ]**.
-2. Робот проедет 24 дюйма (1 мат). На пульте появится: `Err: +0.15in 580ms`.
-3. **Правила настройки (`lateralLQR` в `src/main.cpp`):**
-   * **$k_P$ (Жесткость / Proportional Gain):**
-     * Если робот останавливается, не доезжая до точки (Under-travel) $\rightarrow$ **увеличьте $k_P$** (с 10.0 до 12.0–14.0).
-     * Если робот вибрирует или резко дергается $\rightarrow$ **уменьшите $k_P$**.
-   * **$k_V$ (Демпфирование по скорости / Velocity Damping):**
-     * Если робот перелетает точку и резко сдает назад (Overshoot) $\rightarrow$ **увеличьте $k_V$** (с 3.2 до 4.0–4.5).
-     * Если робот слишком рано тормозит и «ползет» последние сантиметры $\rightarrow$ **уменьшите $k_V$**.
-
----
-
-## 🔄 ШАГ 4. Тюнинг углового регулятора LQR (Поворот 90°) — Кнопка [ Y ]
-
-Отвечает за мгновенный и чистый поворот на заданный угол (`turnToHeading`).
-
-1. Нажмите кнопку **[ Y ]**. Робот сделает быстрый поворот на 90°.
-2. На пульте отобразится: `Err: 0.4deg 420ms`.
-3. **Правила настройки (`angularLQR` в `src/main.cpp`):**
-   * **$k_P$ (Скорость выхода на угол):**
-     * Если поворот медленный $\rightarrow$ увеличьте $k_P$ (с 1.0 до 1.5–2.0).
-   * **$k_V$ (Гашение инерции поворота):**
-     * Если робот колеблется в конце поворота («рыбий хвост») $\rightarrow$ **увеличьте $k_V$** (с 1.8 до 2.4–2.8).
-     * Если робот вибрирует в процессе поворота $\rightarrow$ **уменьшите $k_V$**.
+1. Place the robot along a field line and press **[ B ]**.
+2. The robot drives 24 inches (one tile). The controller shows: `Err: +0.15in 580ms`.
+3. **Tuning rules (`lateralLQR` in `src/main.cpp`):**
+   * **$k_P$ (stiffness / proportional gain):**
+     * If the robot stops short of the target (under-travel) $\rightarrow$ **increase $k_P$** (from 10.0 to 12.0–14.0).
+     * If the robot vibrates or jerks $\rightarrow$ **decrease $k_P$**.
+   * **$k_V$ (velocity damping):**
+     * If the robot overshoots the target and sharply backs up $\rightarrow$ **increase $k_V$** (from 3.2 to 4.0–4.5).
+     * If the robot brakes too early and creeps over the last centimetres $\rightarrow$ **decrease $k_V$**.
 
 ---
 
-## 🏎️ ШАГ 5. Тестирование антипробуксовки (TCS) и S-траекторий
+## 🔄 STEP 4. Tuning the angular LQR controller (90° turn) — button [ Y ]
 
-### 1. Траектория LTV-LQR — Кнопка [ UP ]
-* Нажмите стрелку **[ ВВЕРХ ]**. Робот выполнит непрерывную S-образную кривую на 2 метра, динамически решая матричное уравнение Риккати (DARE) каждые 10 мс.
+Responsible for a fast, clean turn to a target heading (`turnToHeading`).
 
-### 2. Квинтовый сплайн 5-й степени с ограничением рывка — Кнопка [ RIGHT ]
-* Нажмите стрелку **[ ВПРАВО ]**. Робот построит гладкий сплайн 5-го порядка ($C^2$-непрерывность по рывку $j \le 3.5\,\text{м/с}^3$) и проедет по нему без единого рывка.
-
-### 3. Сравнение LQR и классического PID — Кнопка [ X ]
-* Нажмите **[ X ]**, чтобы переключить шасси на классический PID, и повторите тесты **[ B ]** и **[ Y ]**, чтобы сравнить плавность остановки.
+1. Press **[ Y ]**. The robot makes a fast 90° turn.
+2. The controller shows: `Err: 0.4deg 420ms`.
+3. **Tuning rules (`angularLQR` in `src/main.cpp`):**
+   * **$k_P$ (speed of reaching the heading):**
+     * If the turn is slow $\rightarrow$ increase $k_P$ (from 1.0 to 1.5–2.0).
+   * **$k_V$ (damping of rotational inertia):**
+     * If the robot oscillates at the end of the turn ("fishtailing") $\rightarrow$ **increase $k_V$** (from 1.8 to 2.4–2.8).
+     * If the robot vibrates during the turn $\rightarrow$ **decrease $k_V$**.
 
 ---
 
-## 📊 Мониторинг телеметрии на экране V5 Brain LCD
+## 🏎️ STEP 5. Testing traction control (TCS) and S-curves
 
-Во время работы на экран V5 Brain выводятся:
-* `EKF X, Y, Theta` — Отфильтрованные координаты через 5-состоятельный расширенный фильтр Калмана.
-* `Odom X, Y` — Сырые координаты с энкодеров.
-* `TCS: ACTIVE` — Индикатор работы системы контроля сцепления колес.
-* `FLC: ON` — Индикатор работы адаптивной нечеткой логики.
+### 1. LTV-LQR trajectory — button [ UP ]
+* Press the **[ UP ]** arrow. The robot follows a continuous 2-metre S-curve, solving the discrete algebraic Riccati equation (DARE) every 10 ms.
+
+### 2. Jerk-limited fifth-order quintic spline — button [ RIGHT ]
+* Press the **[ RIGHT ]** arrow. The robot builds a smooth fifth-order spline ($C^2$ continuity with jerk $j \le 3.5\,\text{m/s}^3$) and follows it without jerks.
+
+### 3. Comparing LQR with classic PID — button [ X ]
+* Press **[ X ]** to switch the chassis to classic PID, then repeat tests **[ B ]** and **[ Y ]** to compare how smoothly the robot stops.
+
+---
+
+## 📊 Telemetry on the V5 Brain LCD
+
+While running, the V5 Brain screen shows:
+* `EKF X, Y, Theta` — coordinates filtered by a 5-state extended Kalman filter.
+* `Odom X, Y` — raw encoder coordinates.
+* `TCS: ACTIVE` — traction control system indicator.
+* `FLC: ON` — adaptive fuzzy-logic control indicator.
