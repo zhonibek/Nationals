@@ -5,6 +5,8 @@
 #
 # The fit is predeclared here, so it is bound to the pinned commit. Seed 731201 may be used once:
 # a new fit needs a new committed seed, never a rerun of this script.
+# Shelved 2026-10-24 (see tools/nebius-tactical-launch.sh): seed 731201 now belongs to the free Colab
+# T4 fit, so this script needs a new unused seed before any Nebius use.
 set -Eeuo pipefail
 
 readonly REPO_URL="https://github.com/zhonibek/Nationals.git"

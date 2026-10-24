@@ -9,6 +9,12 @@
 # crosses a threshold, so the bonus balance read from the Billing page must cover the approved ceiling.
 set -Eeuo pipefail
 
+# Shelved 2026-10-24: the user spends no money (only $1 of Token Factory credit, no compute credit) and
+# the free Colab T4 is available again, so seed 731201 belongs to that fit. Re-enabling needs a new
+# unused seed in tools/nebius-tactical-job.sh, free compute credits and the user's approval in chat.
+echo "Nebius tactical job is shelved: no paid compute, and seed 731201 goes to the free Colab T4 fit." >&2
+exit 78
+
 readonly BRANCH="nvidia-nebius-global-ai-hackathon"
 readonly JOB_NAME="roboproof-tactical-seed731201"
 readonly IMAGE="pytorch/pytorch@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385"  # 2.8.0-cuda12.8-cudnn9-runtime, linux/amd64

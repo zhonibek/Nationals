@@ -46,7 +46,12 @@ hash it, and copy it to the approved private RoboProof Drive folder before
 disconnecting the ephemeral runtime. Model weights and run artifacts are not
 committed to Git.
 
-### Nebius AI Cloud Serverless AI job (paid, separately approved)
+### Nebius AI Cloud Serverless AI job (paid, separately approved; shelved)
+
+**Shelved on 2026-10-24.** The user spends no money and the free Colab T4 is
+available again, so seed 731201 is for the T4 fit. The launcher exits
+immediately. Using it again needs a new unused seed in the job script, free
+compute credits and the user's approval.
 
 Because the free Colab T4 was not allocated, the same trainer has a second,
 separately named opt-in: `--approved-nebius-gpu L40S --approved-max-cost-usd <usd>`.
