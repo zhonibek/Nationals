@@ -122,7 +122,8 @@ What this shows, honestly:
 
 - Nemotron plays a full match through tool calls with no invalid choice, and the larger model plays on par with the team's loading-zone tactic. It does not beat the best baseline yet.
 - In this abstract model, field scoring beats loading-zone cycles. On the real robot the team finds the loading zone faster. The model does not yet capture why: lying Pins need re-orienting, field objects are contested, and both robots act at the same time. Action times are configurable (`actionSeconds`), so measured robot cycle times can be plugged in; even a 4-second field pickup leaves field greedy ahead (191 vs 167), so the gap is mostly about which objects score, not only time.
-- Next: calibrate cycle times on the robot, model parallel robots, and evaluate the trained actor-critic against `loader-cycle` on held-out seeds (built into the trainer).
+- **Trained actor-critic (free Colab Tesla T4, seed 731201, 2026-10-24):** a short pilot fit of 100 episodes and 13 updates. On 8 held-out start poses it reaches a mean margin of **102**, while the non-learning tactics on the same seeds score: loader-cycle 176.5, field greedy 225.5, greedy-all 174, random 44. So it beats random play but **not** the loading-zone tactic (`beatsLoaderCycleOnHoldout: false`). Training margins did not trend upward, so this pilot shows no learned improvement.
+- Next: calibrate cycle times on the robot, model parallel robots, and run longer tactical fits.
 
 ---
 
