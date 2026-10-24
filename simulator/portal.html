@@ -475,17 +475,17 @@
       <div class="hero-tag">
         <span>🤖</span> VEX V5 Autonomous Platform · WebAssembly · NVIDIA AI
       </div>
-      <h1>Управление роботом и <span>Physical AI</span> в 1 клик</h1>
+      <h1>Robot control and <span>Physical AI</span> in one click</h1>
       <p>
-        Единый командный центр: 3D интерактивный симулятор соревновательного поля, C++ каскадный LQR контроллер, студия AI-программирования и телеметрия RoboProof.
+        One command centre: interactive 3D competition-field simulator, C++ cascade LQR controller, AI programming studio and RoboProof telemetry.
       </p>
 
       <!-- THE ONE MASTER BUTTON -->
       <div class="master-btn-container">
         <button class="master-btn" id="btnMasterLaunch">
-          <span style="font-size: 1.4rem;">🚀</span> ЗАПУСТИТЬ ВСЁ (App 1 + App 2)
+          <span style="font-size: 1.4rem;">🚀</span> LAUNCH EVERYTHING (App 1 + App 2)
         </button>
-        <span class="btn-subtitle">Открывает обе системы сразу в интерактивном режиме</span>
+        <span class="btn-subtitle">Opens both systems at once in interactive mode</span>
       </div>
     </section>
 
@@ -498,18 +498,18 @@
           <span class="card-badge">PORT 8765</span>
         </div>
         <div class="card-title">
-          <h3>App 1: 3D Симулятор + AI Студия</h3>
-          <p>Интерактивная арена VEX Override с честной физикой предметов, вилочным захватом и новой студией AI-программирования.</p>
+          <h3>App 1: 3D simulator + AI studio</h3>
+          <p>Interactive VEX Override arena with object physics, a fork grabber and the AI programming studio.</p>
         </div>
         <ul class="feature-list">
-          <li><strong>Новинка: AI Программирование</strong> — введите задачу на естественном языке, получите C++ код и запустите в 3D!</li>
-          <li>Честный C++ LTV-LQR контроллер в WebAssembly</li>
-          <li>Ручное управление клавиатурой (W,A,S,D, Q/E lift, F захват)</li>
-          <li>Редактор сплайнов и путевых точек Jerry.io</li>
+          <li><strong>New: AI programming</strong> — describe a task in natural language, get C++ code and run it in 3D!</li>
+          <li>The real C++ LTV-LQR controller in WebAssembly</li>
+          <li>Keyboard control (W, A, S, D, Q/E lift, F grab)</li>
+          <li>Jerry.io spline and waypoint editor</li>
         </ul>
         <div class="card-actions">
-          <button class="btn btn-primary" onclick="switchView('app1')">Открыть здесь</button>
-          <a class="btn btn-secondary" href="http://127.0.0.1:8765/index.html" target="_blank" rel="noopener">В новой вкладке ↗</a>
+          <button class="btn btn-primary" onclick="switchView('app1')">Open here</button>
+          <a class="btn btn-secondary" href="http://127.0.0.1:8765/index.html" target="_blank" rel="noopener">In a new tab ↗</a>
         </div>
       </article>
 
@@ -521,17 +521,17 @@
         </div>
         <div class="card-title">
           <h3>App 2: RoboProof Mission Control</h3>
-          <p>Инженерный кокпит Physical AI, телеметрия траекторий, агентский советник NVIDIA Nemotron и аналитика.</p>
+          <p>Physical AI engineering cockpit, trajectory telemetry, NVIDIA Nemotron agent coordinator and analytics.</p>
         </div>
         <ul class="feature-list">
-          <li><strong>Motion Lab</strong>: графики ошибок траектории и покадровый реплей</li>
-          <li><strong>NVIDIA Nemotron</strong>: агентный разбор конфигураций и правил</li>
-          <li><strong>Cosmos Vision Lab</strong>: инспекция визуальных данных робота</li>
-          <li>Криптографический реестр запусков (AMD MI300X, Colab)</li>
+          <li><strong>Motion Lab</strong>: trajectory error charts and frame-by-frame replay</li>
+          <li><strong>NVIDIA Nemotron</strong>: agentic review of configurations and rules</li>
+          <li><strong>Cosmos Vision Lab</strong>: inspection of the robot visual data</li>
+          <li>Cryptographic run ledger (AMD MI300X, Colab)</li>
         </ul>
         <div class="card-actions">
-          <button class="btn btn-primary" onclick="switchView('app2')">Открыть здесь</button>
-          <a class="btn btn-secondary" href="http://127.0.0.1:8766/" target="_blank" rel="noopener">В новой вкладке ↗</a>
+          <button class="btn btn-primary" onclick="switchView('app2')">Open here</button>
+          <a class="btn btn-secondary" href="http://127.0.0.1:8766/" target="_blank" rel="noopener">In a new tab ↗</a>
         </div>
       </article>
     </section>
@@ -540,13 +540,13 @@
     <section class="workspace-section" id="workspaceSection">
       <div class="workspace-tabs">
         <div class="tabs-group">
-          <button class="tab-btn active" id="tabApp1" onclick="switchView('app1')">🎮 App 1: 3D Симулятор</button>
+          <button class="tab-btn active" id="tabApp1" onclick="switchView('app1')">🎮 App 1: 3D simulator</button>
           <button class="tab-btn" id="tabApp2" onclick="switchView('app2')">🧠 App 2: RoboProof AI</button>
-          <button class="tab-btn" id="tabSplit" onclick="switchView('split')">⚡ Двойной экран (Dual View)</button>
+          <button class="tab-btn" id="tabSplit" onclick="switchView('split')">⚡ Dual view</button>
         </div>
         <div>
           <button class="btn btn-secondary" id="btnOpenCurrentTab" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
-            Открыть во весь экран ↗
+            Open full screen ↗
           </button>
         </div>
       </div>
@@ -559,7 +559,7 @@
   </main>
 
   <div class="toast" id="toast">
-    <span>🚀 Обе системы запущены и готовы к работе!</span>
+    <span>🚀 Both systems are running and ready!</span>
   </div>
 
   <script>
@@ -642,7 +642,7 @@
     }
 
     document.getElementById('badgeNebius')?.addEventListener('click', async () => {
-      const key = prompt('🔑 Введите API ключ Nebius Token Factory (Bearer Token).\nКлюч сохраняется только локально в .cache/ и не попадает в git.');
+      const key = prompt('🔑 Enter a Nebius Token Factory API key (Bearer token).\nThe key is stored only locally in .cache/ and never goes into git.');
       if (!key || !key.trim()) return;
       try {
         const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
@@ -652,13 +652,13 @@
         });
         const data = await res.json();
         if (res.ok && data.available) {
-          alert('🟢 Nebius Token Factory успешно подключен!\nМодель: ' + data.model);
+          alert('🟢 Nebius Token Factory connected!\nModel: ' + data.model);
           checkPortalNebius();
         } else {
-          alert('❌ Ошибка: ' + (data.error || 'Не удалось подключиться к Nebius'));
+          alert('❌ Error: ' + (data.error || 'Could not connect to Nebius'));
         }
       } catch (e) {
-        alert('❌ Ошибка связи с RoboProof (порт 8766): ' + e.message);
+        alert('❌ Could not reach RoboProof (port 8766): ' + e.message);
       }
     });
 

@@ -73,7 +73,7 @@ test('empty Cup is compatible with preload Pin and follows robot pose and finite
 test('loaded Cup correctly requires a free Pin slot and reports why without mutation',()=>{
   const {game,robot,loaded}=cupsAtGripper();game.cups=[loaded];
   const before=game.getState(),hint=game.pickupHint(robot.id,'cup');
-  assert.equal(hint.reachable,false);assert.match(hint.reason,/Cup.*Pin.*поставьте/);
+  assert.equal(hint.reachable,false);assert.match(hint.reason,/Cup.*Pin.*Place/);
   const result=game.interact(robot.id,'pickup','cup');assert.equal(result.ok,false);assert.equal(result.error,hint.reason);
   assert.deepEqual(game.getState(),before);
 });
@@ -113,12 +113,12 @@ test('test-only Cup fixture takes, lifts, drives and physically nests Cup throug
 test('single auto button captures Cup and updates hints and finite lift controls without changing selection',()=>{
   const {sim,element,buttons,update}=uiFixture({setup:'cup'});
   assert.equal(element('gameObject').value,'auto');
-  assert.match(element('cupPickupHint').textContent,/Можно взять/);
+  assert.match(element('cupPickupHint').textContent,/Can take/);
   const useButton=buttons.find(button=>button.dataset.gameAction==='use');assert.equal(useButton.disabled,false);
-  assert.match(useButton.textContent,/Взять Cup \[F\]/);useButton.listeners.click();
+  assert.match(useButton.textContent,/Take Cup \[F\]/);useButton.listeners.click();
   const robot=sim.override.robots.find(candidate=>candidate.id===sim.activeRobotId);
   assert(robot.possession.cupId);assert.equal(element('gameObject').value,'auto');assert.equal(sim.gameObjectKind,'cup');
-  assert.match(element('gameFeedback').textContent,/Cup в захвате/);assert.equal(useButton.disabled,true);
+  assert.match(element('gameFeedback').textContent,/Cup held/);assert.equal(useButton.disabled,true);
   assert.equal(element('gameLiftToGoal').disabled,false);
   element('gameLiftToGoal').listeners.click();assert.equal(robot.manipulator.height,0);assert.equal(robot.manipulator.target,3.25);
   sim.update(.01);update();assert(robot.manipulator.height>0);assert(robot.manipulator.height<3.25);
@@ -133,7 +133,7 @@ test('F grabs an official-field Cup with Pin together and auto R releases both; 
   assert.match(useButton.textContent,/Cup \+ Pin/);
   let prevented=false;current.keyboard.keydown({key:'а',code:'KeyF',preventDefault(){prevented=true;}});
   assert(prevented);assert(current.sim.override.robots[0].possession.cupId);assert(current.sim.override.robots[0].possession.pinId);
-  assert.match(current.element('gameFeedback').textContent,/Cup \+ Pin в захвате/);
+  assert.match(current.element('gameFeedback').textContent,/Cup \+ Pin held/);
   current.attached.action('drop');current.keyboard.keydown({key:'f',preventDefault(){}});
   assert(current.sim.override.robots[0].possession.cupId);
   current.attached.action('drop');assert.equal(current.sim.override.robots[0].possession.cupId,null);assert.equal(current.sim.override.robots[0].possession.pinId,null);
@@ -230,7 +230,7 @@ test('F switches nearby Toggle with the same button and keeps an already-held bu
   const useButton=current.buttons.find(button=>button.dataset.gameAction==='use');assert.equal(useButton.disabled,false);assert.match(useButton.textContent,/Toggle \[F\]/);
   current.keyboard.keydown({key:'а',code:'KeyF',preventDefault(){}});
   assert.equal(game.toggles.find(toggle=>toggle.id==='toggle-north').state,'red');assert.deepEqual(robot.possession,possession);
-  assert.match(current.element('gameFeedback').textContent,/Toggle переключён/);
+  assert.match(current.element('gameFeedback').textContent,/Toggle switched/);
   game.setRobotPose(robot.id,{x:0,y:50,theta:0});assert.equal(game.toggleHint(robot.id).reachable,false);
   const before=game.getState();assert.equal(game.interact(robot.id,'use','auto').ok,false);assert.deepEqual(game.getState(),before);
 });

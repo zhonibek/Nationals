@@ -48,6 +48,10 @@
 .game-score-table { overflow-x: auto; }
 .game-score table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .game-score th, .game-score td { padding: .4rem; border-bottom: 1px solid var(--border-subtle); text-align: left; }
+#tacticalMatchPanel { margin: .75rem 0; }
+#tacticalMatchPanel table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+#tacticalMatchPanel th, #tacticalMatchPanel td { padding: .4rem; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; }
+#tacticalMatchPanel td:nth-child(3) { font-family: monospace; word-break: break-all; }
 .game-score input[type=number] { width: 5rem; background: #14202e; color: #fff; padding: .4rem; border: 1px solid #64748b; border-radius: 4px; }
 .game-score a { color: #67d6fa; }
 #manualPoints { font-weight: 700; align-self: center; }

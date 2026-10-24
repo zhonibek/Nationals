@@ -384,15 +384,15 @@
         const pose=this.objectPose(object),center=pose.centerZ??(pose.lying?pose.z:pose.z+3.25);
         const distance=Math.hypot(pose.x-grip.x,pose.y-grip.y),heightError=Math.abs(center-grip.centerZ);
         const passenger=kind==='cup'?this.pins.find(pin=>pin.supportId===object.id):null;
-        const blocked=robot.possession[kind+'Id']?'Сначала освободите захват: предмет уже удерживается':
-          passenger&&robot.possession.pinId?'В этом Cup есть Pin. Сначала поставьте или отпустите удерживаемый Pin':null;
+        const blocked=robot.possession[kind+'Id']?'Free the grabber first: an object is already held':
+          passenger&&robot.possession.pinId?'This Cup holds a Pin. Place or release the held Pin first':null;
         return {id:object.id,kind,passengerId:passenger?.id||null,distance,heightError,liftTarget:clamp(center-3.25,0,40),
           reachable:!blocked&&distance<=3&&heightError<=3,
-          reason:blocked||(distance>3?'Подведите переднюю вилку ближе к предмету':heightError>3?'Измените высоту подъёмника':'Можно взять')};
+          reason:blocked||(distance>3?'Bring the front fork closer to the object':heightError>3?'Change the lift height':'Can take')};
       }).sort((first,second)=>Number(second.reachable)-Number(first.reachable)||
         Number(second.distance<=3&&second.heightError<=3)-Number(first.distance<=3&&first.heightError<=3)||first.distance-second.distance);
       const closest=candidates[0];
-      if(!closest)return {kind,reachable:false,reason:'На поле нет свободных предметов этого типа'};
+      if(!closest)return {kind,reachable:false,reason:'There are no free objects of this type on the field'};
       return closest;
     }
 
@@ -400,9 +400,9 @@
       const robot=this.robots.find(candidate=>candidate.id===robotId);
       if(!robot)return null;
       const toggle=[...this.toggles].sort((first,second)=>Math.hypot(first.x-robot.x,first.y-robot.y)-Math.hypot(second.x-robot.x,second.y-robot.y))[0];
-      if(!toggle)return {reachable:false,reason:'На поле нет Toggle'};
+      if(!toggle)return {reachable:false,reason:'There is no Toggle on the field'};
       const distance=Math.hypot(toggle.x-robot.x,toggle.y-robot.y);
-      return {id:toggle.id,distance,reachable:distance<=16,reason:distance<=16?'Можно переключить Toggle':'Подъедьте к Toggle у центра борта'};
+      return {id:toggle.id,distance,reachable:distance<=16,reason:distance<=16?'Can switch Toggle':'Drive to the Toggle at the middle of the wall'};
     }
 
     interactionHint(robotId,kind='auto'){
@@ -435,17 +435,17 @@
       const robot=this.robots.find(candidate=>candidate.id===robotId);
       if(!robot||!['pin','cup'].includes(kind))return null;
       const object=this[kind](robot.possession[kind+'Id']);
-      if(!object)return {ready:false,reason:'Сначала возьмите предмет'};
+      if(!object)return {ready:false,reason:'Take an object first'};
       const pose=this.objectPose(object),goal=[...this.goals].sort((first,second)=>Math.hypot(first.x-pose.x,first.y-pose.y)-Math.hypot(second.x-pose.x,second.y-pose.y))[0];
-      if(!goal)return {ready:false,reason:'На поле нет целей'};
+      if(!goal)return {ready:false,reason:'There are no goals on the field'};
       const minimum=Math.max(0,goal.height-3.25+goal.stack.length*3.25),maximum=Math.min(40,minimum+8);
       const distance=Math.hypot(pose.x-goal.x,pose.y-goal.y),top=goal.stack.at(-1);
       const validStack=kind==='cup'?top?.type==='pin':!top||top.type==='cup';
-      const reason=goal.alliance&&goal.alliance!==robot.alliance?'Цель соперника защищена':
-        this.mode==='match'&&this.clock>=110&&goal.id==='g-neutral-tall'?'SG12: нельзя ставить в центральную цель в эндгейме':
-        !validStack?'Стопка должна чередовать Pin → Cup → Pin':distance>1.1?'Совместите центр вилки с отверстием цели':
-        pose.z<minimum||pose.z>maximum?'Поднимите предмет на высоту стопки':'Можно отпустить над целью';
-      return {goalId:goal.id,distance,minimumLift:minimum,maximumLift:maximum,validStack,ready:reason==='Можно отпустить над целью',reason};
+      const reason=goal.alliance&&goal.alliance!==robot.alliance?'The opponent goal is protected':
+        this.mode==='match'&&this.clock>=110&&goal.id==='g-neutral-tall'?'SG12: no placing in the centre goal during the endgame':
+        !validStack?'A stack must alternate Pin → Cup → Pin':distance>1.1?'Line the centre of the fork up with the goal opening':
+        pose.z<minimum||pose.z>maximum?'Raise the object to the stack height':'Can release over the goal';
+      return {goalId:goal.id,distance,minimumLift:minimum,maximumLift:maximum,validStack,ready:reason==='Can release over the goal',reason};
     }
 
     interact(robotId,action,kind="pin",options={}){
@@ -743,7 +743,7 @@
   });
   OverrideGame.calculatePoints=function({coloredHalves=0,yellowHalves=0,midfieldRobots=0,autonomousBonus=0}={}){
     if(![coloredHalves,yellowHalves,midfieldRobots,autonomousBonus].every(Number.isInteger)||
-      coloredHalves<0||yellowHalves<0||coloredHalves+yellowHalves>126||midfieldRobots<0||midfieldRobots>2||![0,6,12].includes(autonomousBonus))throw Error('Введите целые количества половинок (всего до 126), 0–2 робота и бонус 0/6/12');
+      coloredHalves<0||yellowHalves<0||coloredHalves+yellowHalves>126||midfieldRobots<0||midfieldRobots>2||![0,6,12].includes(autonomousBonus))throw Error('Enter whole numbers of halves (up to 126 in total), 0–2 robots and a bonus of 0/6/12');
     return coloredHalves*POINTS.alliancePin+yellowHalves*POINTS.yellowPin+midfieldRobots*POINTS.midfieldRobot+autonomousBonus;
   };
   return OverrideGame;

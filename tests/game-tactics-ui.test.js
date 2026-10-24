@@ -38,7 +38,7 @@ test('Simulator tactics shares a snapshot only after a click and displays advice
   assert.equal(ui.element('tacticsMessage').textContent, '<script>inert fixture advice</script>');
   assert.equal(ui.element('tacticsMessage').innerHTML, undefined);
   assert.equal(ui.element('tacticsReply').hidden, false);
-  assert.match(ui.element('tacticsStatus').textContent, /никаких действий/);
+  assert.match(ui.element('tacticsStatus').textContent, /no actions were run/);
 });
 
 test('replay and standalone Simulator cannot dispatch model requests, and movement results are rejected', async () => {
@@ -53,7 +53,7 @@ test('replay and standalone Simulator cannot dispatch model requests, and moveme
   const ui = fixture(fetch);
   await ui.element('askTactics').listeners.click();
   assert.equal(calls, 1);
-  assert.match(ui.element('tacticsStatus').textContent, /только тактический совет/);
+  assert.match(ui.element('tacticsStatus').textContent, /tactical advice only/);
   assert.equal(ui.element('tacticsReply').hidden, true);
   const unsupported = fixture(fetch);
   unsupported.sim.override.world = 'worlds';
@@ -72,6 +72,6 @@ test('Stop cancels inference without changing game state', async () => {
   ui.element('stopTactics').listeners.click();
   await pending;
   assert.equal(JSON.stringify(ui.sim.override.getState()), before);
-  assert.match(ui.element('tacticsStatus').textContent, /остановлен/);
+  assert.match(ui.element('tacticsStatus').textContent, /stopped/);
   assert.equal(ui.element('askTactics').disabled, false);
 });

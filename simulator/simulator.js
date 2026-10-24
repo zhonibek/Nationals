@@ -770,7 +770,7 @@ class ThreeFieldRenderer {
     this.cadRobot.visible = false;
     this.proceduralRobot.visible = true;
     const badge = document.getElementById('cadStatusBadge');
-    if (badge) badge.textContent = 'CAD недоступен — процедурная модель';
+    if (badge) badge.textContent = 'CAD unavailable — procedural model';
   }
 
   ensureCadLoaded(){
@@ -782,7 +782,7 @@ class ThreeFieldRenderer {
     try{
       RobotCAD.checkSize(file.size);
       const name=file.name,ext=name.split('.').pop().toLowerCase();
-      if(!['glb','gltf','stl','obj'].includes(ext))throw Error('Поддерживаются GLB, GLTF, STL и OBJ');
+      if(!['glb','gltf','stl','obj'].includes(ext))throw Error('GLB, GLTF, STL and OBJ are supported');
       await this.ensureCadLoaded();
       const buffer=ext==='obj'?await file.text():await file.arrayBuffer();
       await this.loadCadFromBuffer(buffer,ext,name);
@@ -795,10 +795,10 @@ class ThreeFieldRenderer {
 
   loadCadFromBuffer(buffer, ext, filename) {
     const badge = document.getElementById('cadStatusBadge');
-    if (badge) badge.textContent = `Загрузка ${ext.toUpperCase()}...`;
+    if (badge) badge.textContent = `Loading ${ext.toUpperCase()}...`;
     return new Promise((resolve,reject)=>{
       const failed=error=>{
-        if(badge)badge.textContent='Ошибка CAD: '+error.message;
+        if(badge)badge.textContent='CAD error: '+error.message;
         reject(error);
       };
       const onModelReady=model=>{
@@ -856,11 +856,11 @@ class ThreeFieldRenderer {
     this.cadRobot.add(modelObject);
     this.cadLoaded=true;this.modelMode='cad';this.cadRobot.visible=true;this.proceduralRobot.visible=false;
     const button=document.getElementById('btnToggleCadModel');
-    if(button)button.textContent='🤖 Режим: CAD';
+    if(button)button.textContent='🤖 Mode: CAD';
     const badge=document.getElementById('cadStatusBadge');
     if(badge){
       badge.textContent=`CAD: ${filename} · ${stats.drawCalls} batches · ${Math.round(stats.triangles/1000)}k triangles`;
-      badge.title='Облегчённая визуальная модель; физика и захват не берутся автоматически из CAD';
+      badge.title='Lightweight visual model; physics and grabbing are not taken from the CAD automatically';
       badge.style.borderColor='#10b981';badge.style.color='#34d399';
     }
   }
@@ -877,12 +877,12 @@ class ThreeFieldRenderer {
       this.modelMode = 'procedural';
       this.cadRobot.visible = false;
       this.proceduralRobot.visible = true;
-      if (btnToggleCad) btnToggleCad.textContent = "⚙️ Режим: Процедурный";
+      if (btnToggleCad) btnToggleCad.textContent = "⚙️ Mode: Procedural";
     } else {
       this.modelMode = 'cad';
       this.cadRobot.visible = true;
       this.proceduralRobot.visible = false;
-      if (btnToggleCad) btnToggleCad.textContent = "🤖 Режим: CAD";
+      if (btnToggleCad) btnToggleCad.textContent = "🤖 Mode: CAD";
     }
   }
 
@@ -1049,7 +1049,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       waypointTableBody.innerHTML = `
         <tr>
           <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1rem;">
-            Кликните по полю, чтобы поставить первую точку!
+            Click the field to place the first point!
           </td>
         </tr>`;
       return;
@@ -1065,15 +1065,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         <td>${wp.theta.toFixed(0)}°</td>
         <td>
           <select data-idx="${idx}" class="wp-type-select" style="background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 4px; font-size: 0.75rem;">
-            <option value="spline" ${wp.type === 'spline' ? 'selected' : ''}>Spline (Кривая)</option>
-            <option value="strafe" ${wp.type === 'strafe' ? 'selected' : ''}>Strafe (Боком)</option>
-            <option value="drive" ${wp.type === 'drive' ? 'selected' : ''}>Drive (Прямо)</option>
-            <option value="turn" ${wp.type === 'turn' ? 'selected' : ''}>Turn (Разворот)</option>
+            <option value="spline" ${wp.type === 'spline' ? 'selected' : ''}>Spline (curve)</option>
+            <option value="strafe" ${wp.type === 'strafe' ? 'selected' : ''}>Strafe (sideways)</option>
+            <option value="drive" ${wp.type === 'drive' ? 'selected' : ''}>Drive (straight)</option>
+            <option value="turn" ${wp.type === 'turn' ? 'selected' : ''}>Turn (rotate)</option>
           </select>
         </td>
         <td>${(wp.speed || 1.0).toFixed(1)}x</td>
         <td style="text-align: right;">
-          <button data-idx="${idx}" class="wp-action-btn btn-del-wp" title="Удалить">✕</button>
+          <button data-idx="${idx}" class="wp-action-btn btn-del-wp" title="Delete">✕</button>
         </td>
       `;
       waypointTableBody.appendChild(tr);
@@ -1232,7 +1232,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let code = `/**\n * @brief Autonomous Routine Generated by IRAlib Jerry.io Planner\n */\nvoid autoJerryCustomRoutine() {\n`;
 
     if (wps.length === 0) {
-      code += `    // Нет путевых точек. Добавьте точки на поле!\n`;
+      code += `    // No waypoints. Add points on the field!\n`;
     } else {
       code += `    chassis.setPose(${wps[0].x.toFixed(1)}, ${wps[0].y.toFixed(1)}, ${wps[0].theta.toFixed(1)});\n\n`;
 
@@ -1258,8 +1258,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnCopyCode.addEventListener('click', () => {
     navigator.clipboard.writeText(cppCodePreview.textContent);
-    btnCopyCode.textContent = "Скопировано!";
-    setTimeout(() => { btnCopyCode.textContent = "Скопировать в буфер"; }, 1500);
+    btnCopyCode.textContent = "Copied!";
+    setTimeout(() => { btnCopyCode.textContent = "Copy to clipboard"; }, 1500);
   });
 
   // ============================================================
@@ -1287,17 +1287,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function connectNebiusTokenFactory() {
     // The key goes only to the local RoboProof server, which stores it in the git-ignored .cache folder.
     const key = prompt(
-      '🔑 Введите ваш API ключ Nebius Token Factory (Bearer Token):\n\n' +
-      'Его можно создать в консоли Nebius Token Factory (раздел API Keys).\n' +
-      'Ключ сохраняется только локально в .cache/ и не попадает в git.'
+      '🔑 Enter your Nebius Token Factory API key (Bearer token):\n\n' +
+      'You can create it in the Nebius Token Factory console (API Keys).\n' +
+      'The key is stored only locally in .cache/ and never goes into git.'
     );
     if (key === null) return;
     const cleanKey = key.trim();
     if (!cleanKey) {
-      alert('API ключ не может быть пустым.');
+      alert('The API key cannot be empty.');
       return;
     }
-    if (aiStatusText) aiStatusText.textContent = "Подключение к Nebius Token Factory...";
+    if (aiStatusText) aiStatusText.textContent = "Connecting to Nebius Token Factory...";
     try {
       const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
         method: 'POST',
@@ -1308,19 +1308,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (res.ok && data.available) {
         nemotronState = { available: true, liveInferenceVerified: false, isNebius: true, checked: true, details: 'Nebius Token Factory' };
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot online';
-        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Онлайн (NVIDIA Nemotron Cloud)';
-        alert('🎉 Успешное подключение к Nebius Token Factory!\nМодель: ' + data.model + '\nЗапросы AI Студии теперь обрабатывает NVIDIA Nemotron на облачных GPU Nebius.');
+        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Online (NVIDIA Nemotron cloud)';
+        alert('🎉 Connected to Nebius Token Factory!\nModel: ' + data.model + '\nAI Studio requests are now handled by NVIDIA Nemotron on Nebius cloud GPUs.');
       } else {
-        alert('❌ Ошибка подключения: ' + (data.error || 'Проверьте правильность API ключа.'));
+        alert('❌ Connection error: ' + (data.error || 'Check that the API key is correct.'));
         checkNemotronStatus(false);
       }
     } catch (err) {
-      alert('❌ Не удалось связаться с сервером RoboProof (порт 8766): ' + err.message);
+      alert('❌ Could not reach the RoboProof server (port 8766): ' + err.message);
     }
   }
 
   async function checkNemotronStatus(interactive = false) {
-    if (aiStatusText) aiStatusText.textContent = "AI Движок: Проверка соединения с Nemotron...";
+    if (aiStatusText) aiStatusText.textContent = "AI engine: checking the Nemotron connection...";
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2500);
@@ -1344,35 +1344,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (data.available && (data.liveInferenceVerified || isNebius)) {
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot online';
         if (isNebius) {
-          if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Онлайн (NVIDIA Nemotron Cloud)';
+          if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Online (NVIDIA Nemotron cloud)';
           if (interactive) {
-            alert('🟢 Nebius Token Factory активен!\nМодель: ' + (data.model || 'NVIDIA Nemotron') + '\nИнференс offloaded на облачные GPU Nebius (< 1 сек).');
+            alert('🟢 Nebius Token Factory is active!\nModel: ' + (data.model || 'NVIDIA Nemotron') + '\nInference runs on Nebius cloud GPUs (< 1 s).');
           }
         } else {
-          if (aiStatusText) aiStatusText.innerHTML = '<strong>Nemotron T4 LLM:</strong> Подключен (NVIDIA T4)';
+          if (aiStatusText) aiStatusText.innerHTML = '<strong>Nemotron T4 LLM:</strong> Connected (NVIDIA T4)';
           if (interactive) {
-            alert('🟢 Nemotron LLM Coordinator активен на NVIDIA T4!\nВаши промпты транслируются нейросетью Nemotron.');
+            alert('🟢 Nemotron LLM coordinator is active on an NVIDIA T4!\nYour prompts are handled by Nemotron.');
           }
         }
       } else {
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot';
-        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius/Nemotron: Офлайн</strong>. Нажмите «Подключить Nebius Token Factory»';
+        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius/Nemotron: offline</strong>. Click Connect Nebius Token Factory';
         if (interactive) {
           alert(
             '⚠️ Nemotron/Nebius Offline:\n\n' +
-            (data.error || 'Требуется подключение к Nebius Token Factory или NVIDIA T4.') +
-            '\n\nНажмите кнопку «⚡ Подключить Nebius Token Factory» для ввода API ключа.'
+            (data.error || 'Connect to Nebius Token Factory or an NVIDIA T4 first.') +
+            '\n\nClick ⚡ Connect Nebius Token Factory to enter an API key.'
           );
         }
       }
     } catch (e) {
       nemotronState = { available: false, liveInferenceVerified: false, checked: true, details: 'Server offline' };
       if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot offline';
-      if (aiStatusText) aiStatusText.innerHTML = '<strong>Локальный режим:</strong> Встроенный тактический AI + GVF-TD3 RL (WASM)';
+      if (aiStatusText) aiStatusText.innerHTML = '<strong>Local mode:</strong> Built-in tactical AI + GVF-TD3 RL (WASM)';
       if (interactive) {
         alert(
-          'ℹ️ Сервер RoboProof (порт 8766) не запущен или недоступен.\n\n' +
-          'Симулятор работает в полностью автономном локальном режиме (WASM + iraLIB + GVF-TD3 RL).'
+          'ℹ️ The RoboProof server (port 8766) is not running or unreachable.\n\n' +
+          'The simulator runs in a fully local mode (WASM + iraLIB + GVF-TD3 RL).'
         );
       }
     }
@@ -1391,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderAiPlan(plan) {
     currentAiPlan = plan;
     if (aiCppCodeView) aiCppCodeView.textContent = plan.cpp;
-    if (aiStepCount) aiStepCount.textContent = `${plan.steps.length} шага`;
+    if (aiStepCount) aiStepCount.textContent = `${plan.steps.length} steps`;
     if (aiStepsList) {
       aiStepsList.innerHTML = plan.steps.map((step, idx) => `
         <div class="ai-step-item">
@@ -1450,14 +1450,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           { type: 'spline', start: {x:24, y:0, theta:90}, end: {x:0, y:0, theta:0}, maxVel: 1.0, maxAccel: 1.5, desc: 'Return Home (0,0,0)' }
         ],
         steps: [
-          "Стартовая позиция: (0, 0, 0°), запуск роликов захвата",
-          "Квинтик-сплайн вперед на 24″ к центральному элементу (V_max = 1.2 м/с)",
-          "Холономический стрейф вправо-вверх на (24″, 24″) с ориентацией 45°",
-          "Мгновенный разворот LQR на 90° для выравнивания с мобильной целью",
-          "Движение в точку (24″, 0″) для очистки нейтральной зоны",
-          "Возврат сплайном в домашнюю зону (0, 0, 0°) и остановка"
+          "Start pose: (0, 0, 0°), intake rollers on",
+          "Quintic spline forward 24″ to the central element (V_max = 1.2 m/s)",
+          "Holonomic strafe up-right to (24″, 24″) with a 45° heading",
+          "Instant 90° LQR turn to line up with the mobile goal",
+          "Move to (24″, 0″) to clear the neutral zone",
+          "Spline back to the home zone (0, 0, 0°) and stop"
         ],
-        cpp: `/**\n * @file src/main.cpp\n * @brief VEX Override 60-Point Skills Autonomous\n * Generated by RobotAI Autonomous Planner\n */\nvoid autonomous() {\n    // 1. Инициализация одометрии и EKF\n    chassis.setPose(0.0, 0.0, 0.0);\n    intake.move_voltage(12000);\n\n    // 2. Сплайн вперед на 24 дюйма\n    if (autoSpline(0.0, 24.0, 0.0, 1.2) != lemlib::MotionResult::Settled) return;\n\n    // 3. Холономический стрейф на (24, 24)\n    if (autoPose(24.0, 24.0, 45.0) != lemlib::MotionResult::Settled) return;\n\n    // 4. Поворот LQR на 90 градусов\n    chassis.turnToHeading(90.0, 1000);\n\n    // 5. Движение в центр и возврат\n    if (autoPose(24.0, 0.0, 90.0) != lemlib::MotionResult::Settled) return;\n    if (autoSpline(0.0, 0.0, 0.0, 1.0) != lemlib::MotionResult::Settled) return;\n\n    intake.move_voltage(0);\n    controller.print(0, 0, "Skills Routine Done!");\n}`
+        cpp: `/**\n * @file src/main.cpp\n * @brief VEX Override 60-Point Skills Autonomous\n * Generated by RobotAI Autonomous Planner\n */\nvoid autonomous() {\n    // 1. Initialise odometry and EKF\n    chassis.setPose(0.0, 0.0, 0.0);\n    intake.move_voltage(12000);\n\n    // 2. Spline forward 24 inches\n    if (autoSpline(0.0, 24.0, 0.0, 1.2) != lemlib::MotionResult::Settled) return;\n\n    // 3. Holonomic strafe to (24, 24)\n    if (autoPose(24.0, 24.0, 45.0) != lemlib::MotionResult::Settled) return;\n\n    // 4. LQR turn to 90 degrees\n    chassis.turnToHeading(90.0, 1000);\n\n    // 5. Move to the centre and return\n    if (autoPose(24.0, 0.0, 90.0) != lemlib::MotionResult::Settled) return;\n    if (autoSpline(0.0, 0.0, 0.0, 1.0) != lemlib::MotionResult::Settled) return;\n\n    intake.move_voltage(0);\n    controller.print(0, 0, "Skills Routine Done!");\n}`
       };
     } else if (presetKey === 'scurve') {
       plan = {
@@ -1473,11 +1473,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           { type: 'spline', start: {x:18, y:24, theta:35}, end: {x:36, y:48, theta:90}, maxVel: 1.4, maxAccel: 2.0, desc: 'S-Curve Curve 2 to (36, 48)' }
         ],
         steps: [
-          "Старт: (0, 0, 0°), ускорение с ограничением рывка",
-          "Первая фаза сплайна: дуга в (18″, 24″) с касательным углом 35°",
-          "Вторая фаза сплайна: выход в (36″, 48″) на скорости 1.4 м/с под 90°"
+          "Start: (0, 0, 0°), jerk-limited acceleration",
+          "First spline phase: arc to (18″, 24″) with a 35° tangent",
+          "Second spline phase: exit to (36″, 48″) at 1.4 m/s, heading 90°"
         ],
-        cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    // Высокоскоростной квинтик-сплайн через LTV-LQR каскад\n    autoSpline(18.0, 24.0, 35.0, 1.4);\n    autoSpline(36.0, 48.0, 90.0, 1.4);\n}`
+        cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    // High-speed quintic spline through the LTV-LQR cascade\n    autoSpline(18.0, 24.0, 35.0, 1.4);\n    autoSpline(36.0, 48.0, 90.0, 1.4);\n}`
       };
     } else if (presetKey === 'strafe') {
       plan = {
@@ -1497,12 +1497,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           { type: 'pose', targetX: 0, targetY: 0, targetTheta: 0, desc: 'Return Home + 360° yaw' }
         ],
         steps: [
-          "Стрейф вправо на 24″ с одновременным поворотом шасси на 90°",
-          "Стрейф вверх на 24″ с поворотом на 180° (X-Drive 4-wheel kinematics)",
-          "Стрейф влево на 24″ с разворотом на 270°",
-          "Возврат в начальную точку (0, 0) с завершением полного оборота 360°"
+          "Strafe right 24″ while rotating the chassis to 90°",
+          "Strafe up 24″ while rotating to 180° (X-drive 4-wheel kinematics)",
+          "Strafe left 24″ while rotating to 270°",
+          "Return to the start point (0, 0), completing a full 360° turn"
         ],
-        cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    // Холономическое движение с непрерывным вращением\n    autoPose(24.0,  0.0,  90.0);\n    autoPose(24.0, 24.0, 180.0);\n    autoPose( 0.0, 24.0, 270.0);\n    autoPose( 0.0,  0.0,   0.0);\n}`
+        cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    // Holonomic motion with continuous rotation\n    autoPose(24.0,  0.0,  90.0);\n    autoPose(24.0, 24.0, 180.0);\n    autoPose( 0.0, 24.0, 270.0);\n    autoPose( 0.0,  0.0,   0.0);\n}`
       };
     } else if (presetKey === 'pickup') {
       plan = {
@@ -1521,13 +1521,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           { type: 'drive', targetInches: -10, heading: 45, desc: 'Back off safely' }
         ],
         steps: [
-          "Подъезд к Cup/Pin по координатам (12″, 20″)",
-          "Подъем вилочного захвата на 8″ для фиксации элемента",
-          "Выход на позицию цели (24″, 36″) под углом 45°",
-          "Подъем вилки на высоту цели 14.5″ и размещение элемента в стэк",
-          "Безопасный откат назад на 10″ с опусканием вилки"
+          "Approach the Cup/Pin at (12″, 20″)",
+          "Raise the fork 8″ to secure the element",
+          "Move to the goal position (24″, 36″) at 45°",
+          "Raise the fork to the 14.5″ goal height and place the element on the stack",
+          "Safe 10″ back-off while lowering the fork"
         ],
-        cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    // 1. Подъезд к объекту\n    autoPose(12.0, 20.0, 0.0);\n    lift.move_absolute(8.0, 100);\n\n    // 2. Доставка к высокой цели\n    autoPose(24.0, 36.0, 45.0);\n    lift.move_absolute(14.5, 100);\n    pros::delay(600);\n\n    // 3. Откат назад\n    chassis.driveDistance(-10.0, 1000);\n    lift.move_absolute(0.0, 100);\n}`
+        cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    // 1. Approach the object\n    autoPose(12.0, 20.0, 0.0);\n    lift.move_absolute(8.0, 100);\n\n    // 2. Deliver to the high goal\n    autoPose(24.0, 36.0, 45.0);\n    lift.move_absolute(14.5, 100);\n    pros::delay(600);\n\n    // 3. Back off\n    chassis.driveDistance(-10.0, 1000);\n    lift.move_absolute(0.0, 100);\n}`
       };
     } else if (presetKey === 'zigzag') {
       plan = {
@@ -1545,10 +1545,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           { type: 'spline', start: {x:16, y:36, theta:20}, end: {x:0, y:54, theta:0}, maxVel: 1.1, maxAccel: 1.5, desc: 'Center Alignment' }
         ],
         steps: [
-          "Начало маневра уклонения от центральной стойки",
-          "Левая волна сплайна в (-16″, 18″) с наклоном -20°",
-          "Правая волна сплайна в (16″, 36″) с наклоном +20°",
-          "Выход на прямую (0″, 54″) на поле противника"
+          "Start of the manoeuvre around the central post",
+          "Left spline wave to (-16″, 18″) with a -20° tilt",
+          "Right spline wave to (16″, 36″) with a +20° tilt",
+          "Exit onto the straight (0″, 54″) in the opponent half"
         ],
         cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    autoSpline(-16.0, 18.0, -20.0, 1.1);\n    autoSpline( 16.0, 36.0,  20.0, 1.1);\n    autoSpline(  0.0, 54.0,   0.0, 1.1);\n}`
       };
@@ -1570,10 +1570,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           { type: 'pose', targetX: 0, targetY: 0, targetTheta: 0, desc: 'West Strafe Return to (0, 0)' }
         ],
         steps: [
-          "Движение вперед на 30″ на север",
-          "Чистый стрейф вправо на 30″ с постоянным направлением шасси (0°)",
-          "Движение назад на 30″ на юг",
-          "Стрейф влево на 30″ в исходную позицию (0, 0)"
+          "Drive forward 30″ north",
+          "Pure strafe right 30″ with a constant chassis heading (0°)",
+          "Drive backward 30″ south",
+          "Strafe left 30″ back to the start (0, 0)"
         ],
         cpp: `void autonomous() {\n    chassis.setPose(0.0, 0.0, 0.0);\n    autoPose( 0.0, 30.0, 0.0);\n    autoPose(30.0, 30.0, 0.0);\n    autoPose(30.0,  0.0, 0.0);\n    autoPose( 0.0,  0.0, 0.0);\n}`
       };
@@ -1620,7 +1620,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const state = { x: startX, y: startY, theta: startTheta };
     const allActions = [];
     const steps = [
-      `Старт автономного плана в точке (${state.x.toFixed(1)}″, ${state.y.toFixed(1)}″, курс ${state.theta}°).`
+      `Autonomous plan starts at (${state.x.toFixed(1)}″, ${state.y.toFixed(1)}″, heading ${state.theta}°).`
     ];
     const waypoints = [
       { id: 1, x: state.x, y: state.y, theta: state.theta, type: 'start', speed: 1.0 }
@@ -1654,7 +1654,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         allActions.push({ type: 'turn', targetHeading: state.theta, desc: `Turn ${dir > 0 ? 'right' : 'left'} ${deg}° to ${state.theta}°` });
         allActions.push({ type: 'drive', targetInches: dist, heading: state.theta, targetX: nx, targetY: ny, desc: `Drive forward ${dist}" along ${state.theta}°` });
-        steps.push(`Поворот ${dir > 0 ? 'вправо' : 'влево'} на ${deg}° (курс ${state.theta}°) и ускорение вперед на ${dist}″ в (${nx}″, ${ny}″).`);
+        steps.push(`Turn ${dir > 0 ? 'right' : 'left'} by ${deg}° (heading ${state.theta}°) and accelerate forward ${dist}″ to (${nx}″, ${ny}″).`);
         state.x = Math.max(-60, Math.min(60, nx));
         state.y = Math.max(-60, Math.min(60, ny));
         totalLengthIn += dist;
@@ -1672,7 +1672,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const nx = +(state.x + sign * dist * Math.cos(rad)).toFixed(1);
         const ny = +(state.y - sign * dist * Math.sin(rad)).toFixed(1);
         allActions.push({ type: 'strafe', targetInches: sign * dist, heading: state.theta, targetX: nx, targetY: ny, desc: `Strafe ${isLeft ? 'left' : 'right'} ${dist}"` });
-        steps.push(`Холономический стрейф ${isLeft ? 'влево' : 'вправо'} на ${dist}″ в точку (${nx}″, ${ny}″).`);
+        steps.push(`Holonomic strafe ${isLeft ? 'left' : 'right'} ${dist}″ to (${nx}″, ${ny}″).`);
         state.x = Math.max(-60, Math.min(60, nx));
         state.y = Math.max(-60, Math.min(60, ny));
         totalLengthIn += dist;
@@ -1692,7 +1692,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (bearing < 0) bearing += 360;
         state.theta = bearing;
         allActions.push({ type: 'turn', targetHeading: bearing, desc: `Turn to point (${tx}, ${ty}) at ${bearing}°` });
-        steps.push(`Прицеливание на точку (${tx}″, ${ty}″) — доворот шасси на курс ${bearing}°.`);
+        steps.push(`Aim at point (${tx}″, ${ty}″) — rotate the chassis to heading ${bearing}°.`);
         turnCount++;
         waypoints.push({ id: waypoints.length + 1, x: state.x, y: state.y, theta: state.theta, type: 'turn', speed: 1.0 });
         continue;
@@ -1712,7 +1712,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.y = ty;
         state.theta = headingToPoint;
         allActions.push({ type: 'drivePoint', targetX: tx, targetY: ty, targetHeading: headingToPoint, desc: `Move to point (${tx}, ${ty})` });
-        steps.push(`Перемещение в целевую точку (${tx}″, ${ty}″) под углом ${headingToPoint}°.`);
+        steps.push(`Move to target point (${tx}″, ${ty}″) at ${headingToPoint}°.`);
         totalLengthIn += segDist;
         waypoints.push({ id: waypoints.length + 1, x: state.x, y: state.y, theta: state.theta, type: 'drive', speed: 1.3 });
         continue;
@@ -1734,7 +1734,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (newTheta < 0) newTheta += 360;
         state.theta = Math.round(newTheta);
         allActions.push({ type: 'turn', targetHeading: state.theta, desc: `Turn to ${state.theta}°` });
-        steps.push(`Поворот ${isRelRight ? 'направо на ' + deg + '°' : isRelLeft ? 'налево на ' + deg + '°' : 'на курс ' + deg + '°'} (новый курс: ${state.theta}°).`);
+        steps.push(`Turn ${isRelRight ? 'right by ' + deg + '°' : isRelLeft ? 'left by ' + deg + '°' : 'to heading ' + deg + '°'} (new heading: ${state.theta}°).`);
         turnCount++;
         waypoints.push({ id: waypoints.length + 1, x: state.x, y: state.y, theta: state.theta, type: 'turn', speed: 1.0 });
         continue;
@@ -1750,7 +1750,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const nx = +(state.x + sign * dist * Math.sin(rad)).toFixed(1);
         const ny = +(state.y + sign * dist * Math.cos(rad)).toFixed(1);
         allActions.push({ type: 'drive', targetInches: sign * dist, heading: state.theta, targetX: nx, targetY: ny, desc: `Drive ${isBack ? 'backward' : 'forward'} ${dist}"` });
-        steps.push(`Прямолинейный разгон ${isBack ? 'назад' : 'вперед'} на ${dist}″ в точку (${nx}″, ${ny}″).`);
+        steps.push(`Straight acceleration ${isBack ? 'backward' : 'forward'} ${dist}″ to (${nx}″, ${ny}″).`);
         state.x = Math.max(-60, Math.min(60, nx));
         state.y = Math.max(-60, Math.min(60, ny));
         totalLengthIn += dist;
@@ -1763,7 +1763,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const heightM = c.match(/(\d+(?:\.\d+)?)/);
         const h = heightM ? parseFloat(heightM[1]) : 12.0;
         allActions.push({ type: 'lift', height: h, desc: `Lift to ${h}"` });
-        steps.push(`Подъем манипулятора на высоту ${h}″ для взаимодействия с игровым элементом.`);
+        steps.push(`Raise the manipulator to ${h}″ to interact with the game element.`);
         continue;
       }
     }
@@ -1785,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function generateAiFromPrompt(prompt) {
     if (btnAiGenerate) {
       btnAiGenerate.disabled = true;
-      btnAiGenerate.textContent = "⏳ AI расчет...";
+      btnAiGenerate.textContent = "⏳ AI computing...";
     }
 
     let coordinatorLabel = "Local Tactical Planner";
@@ -1816,7 +1816,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } finally {
       if (btnAiGenerate) {
         btnAiGenerate.disabled = false;
-        btnAiGenerate.textContent = "✨ Сгенерировать AI программу";
+        btnAiGenerate.textContent = "✨ Generate AI routine";
       }
     }
 
@@ -2034,11 +2034,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const candidateA = {
       id: 'spline',
-      title: '⚡ Квинтик-сплайн (LTV-LQR)',
-      badge: splineBench ? 'Физический замер' : 'Плавный разгон',
+      title: '⚡ Quintic spline (LTV-LQR)',
+      badge: splineBench ? 'Physical measurement' : 'Smooth acceleration',
       time: `${splineTime} c`,
       effort: `${splineEffort} V²·s`,
-      desc: 'Непрерывная кривизна, сохранение импульса без остановок на промежуточных точках.',
+      desc: 'Continuous curvature, momentum kept without stopping at intermediate points.',
       startPose,
       waypoints: JSON.parse(JSON.stringify(waypoints)),
       actions: splineActions,
@@ -2049,10 +2049,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const candidateB = {
       id: 'gvf-td3',
       title: '🧠 GVF-TD3 (RL Policy)',
-      badge: gvfBench ? 'AMD MI300X RL' : 'Векторное поле',
+      badge: gvfBench ? 'AMD MI300X RL' : 'Vector field',
       time: `${gvfTime} c`,
       effort: `${gvfEffort} V²·s`,
-      desc: 'Нейросетевая коррекция 512×10 (TD3) поверх векторного поля Ляпунова. Рекордная энергоэффективность.',
+      desc: '512×10 neural (TD3) correction on top of a Lyapunov vector field. Lowest energy use.',
       startPose,
       waypoints: JSON.parse(JSON.stringify(waypoints)),
       actions: gvfActions,
@@ -2062,11 +2062,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const candidateC = {
       id: 'strafe',
-      title: '↔ Холономический стрейф',
-      badge: strafeBench ? 'Omni Vector' : 'Постоянный угол',
+      title: '↔ Holonomic strafe',
+      badge: strafeBench ? 'Omni Vector' : 'Constant heading',
       time: `${strafeTime} c`,
       effort: `${strafeEffort} V²·s`,
-      desc: 'Векторное перемещение omni-шасси с независимым удержанием угла обзора цели.',
+      desc: 'Vector motion of the omni chassis while independently holding the heading to the target.',
       startPose,
       waypoints: JSON.parse(JSON.stringify(waypoints)),
       actions: strafeActions,
@@ -2076,11 +2076,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const candidateD = {
       id: 'sprint',
-      title: '🔄 Поворот + Спринт (PID)',
-      badge: sprintBench ? 'Дискретный PID' : 'Высокая тяга',
+      title: '🔄 Turn + sprint (PID)',
+      badge: sprintBench ? 'Discrete PID' : 'High traction',
       time: `${sprintTime} c`,
       effort: `${sprintEffort} V²·s`,
-      desc: 'Дискретный разворот на месте перед каждым отрезком с полной остановкой.',
+      desc: 'Discrete in-place turn before each segment with a full stop.',
       startPose,
       waypoints: JSON.parse(JSON.stringify(waypoints)),
       actions: sprintActions,
@@ -2102,20 +2102,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (isStrafeMajor && actions.length === 1) {
       winnerIndex = 2; // Strafe
-      verdictText = `🏆 Замер физики симулятора: Холономический стрейф — точное боковое смещение (${strafeTime} с) без паразитного разворота шасси!`;
+      verdictText = `🏆 Simulator physics measurement: holonomic strafe — exact sideways displacement (${strafeTime} s) without unwanted chassis rotation!`;
     } else if (sTime <= gTime && sTime <= pTime) {
       winnerIndex = 0; // Spline
       const pctFaster = Math.round(((pTime - sTime) / Math.max(0.1, pTime)) * 100);
-      const isSim = splineBench ? 'Реальный замер физики' : 'Оценка планировщика';
-      verdictText = `🏆 ${isSim}: Квинтик-сплайн LTV-LQR — на ${pctFaster}% быстрее дискретного PID (${splineTime} c vs ${sprintTime} c) за счет плавного прохождения углов без торможения!`;
+      const isSim = splineBench ? 'Real physics measurement' : 'Planner estimate';
+      verdictText = `🏆 ${isSim}: quintic spline LTV-LQR — ${pctFaster}% faster than discrete PID (${splineTime} s vs ${sprintTime} s) by taking corners smoothly without braking!`;
     } else if (gEffort < sEffort * 0.8) {
       winnerIndex = 1; // GVF
       const pctEnergy = Math.round(((sEffort - gEffort) / Math.max(0.1, sEffort)) * 100);
-      const isSim = gvfBench ? 'Реальный замер физики' : 'Оценка RL';
-      verdictText = `🏆 ${isSim}: GVF-TD3 (RL) — экономит ${pctEnergy}% энергии аккумулятора (${gvfEffort} V²·s vs ${splineEffort} V²·s) благодаря векторному полю Ляпунова!`;
+      const isSim = gvfBench ? 'Real physics measurement' : 'RL estimate';
+      verdictText = `🏆 ${isSim}: GVF-TD3 (RL) — saves ${pctEnergy}% battery energy (${gvfEffort} V²·s vs ${splineEffort} V²·s) thanks to the Lyapunov vector field!`;
     } else {
       winnerIndex = 0;
-      verdictText = `🏆 Реальный замер симулятора: Квинтик-сплайн LTV-LQR признан оптимальным компромиссом скорости (${splineTime} с) и энергозатрат (${splineEffort} V²·s)!`;
+      verdictText = `🏆 Real simulator measurement: quintic spline LTV-LQR is the best trade-off between speed (${splineTime} s) and energy (${splineEffort} V²·s)!`;
     }
 
     selectedStrategyIndex = winnerIndex;
@@ -2129,8 +2129,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="strategy-card ${idx === winnerIndex ? 'winner' : ''} ${idx === selectedStrategyIndex ? 'selected' : ''}" data-strategy-idx="${idx}">
           <div class="strat-title">${strat.title}</div>
           <div class="strat-metrics">
-            <span>Время: <strong>${strat.time}</strong></span>
-            <span>Энергия: <strong>${strat.effort}</strong></span>
+            <span>Time: <strong>${strat.time}</strong></span>
+            <span>Energy: <strong>${strat.effort}</strong></span>
           </div>
           <div class="strat-desc">${strat.desc}</div>
         </div>
@@ -2210,8 +2210,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btnAiCopyCpp) {
       btnAiCopyCpp.addEventListener('click', () => {
         navigator.clipboard.writeText(aiCppCodeView.textContent);
-        btnAiCopyCpp.textContent = "Скопировано!";
-        setTimeout(() => { btnAiCopyCpp.textContent = "📋 Копировать C++"; }, 1500);
+        btnAiCopyCpp.textContent = "Copied!";
+        setTimeout(() => { btnAiCopyCpp.textContent = "📋 Copy C++"; }, 1500);
       });
     }
 
@@ -2230,7 +2230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderer.isJerryMode = true;
         if (btnToggleJerry) {
           btnToggleJerry.classList.add('active');
-          btnToggleJerry.textContent = "❌ Закрыть Jerry.io";
+          btnToggleJerry.textContent = "❌ Close Jerry.io";
         }
         sim.renderField(renderer);
       });
@@ -2263,9 +2263,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           sim.queueAction({...action});
         }
 
-        btnAiRunInSim.textContent = "🚀 Выполняется в 3D!";
+        btnAiRunInSim.textContent = "🚀 Running in 3D!";
         setTimeout(() => {
-          btnAiRunInSim.textContent = "▶ Запустить программу на роботе в 3D";
+          btnAiRunInSim.textContent = "▶ Run the routine on the robot in 3D";
         }, 2500);
       });
     }
@@ -2328,7 +2328,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     gameUI.stopLift();
     const mode=document.getElementById('gameMode').value;
     const result=OverrideUI.startGame(sim,mode,choices,{preload:document.getElementById('practicePreload').checked});
-    document.getElementById('gameFeedback').textContent=result.ok?(mode==='match'?'Матч начался: автономки работают первые 15 секунд.':'Игра началась: WASD — движение, E/Q — подъёмник, F — взять / Toggle.'):result.error;
+    document.getElementById('gameFeedback').textContent=result.ok?(mode==='match'?'Match started: autonomous routines run for the first 15 seconds.':'Game started: WASD — move, E/Q — lift, F — take / Toggle.'):result.error;
   });
 
   btnOverrideReset?.addEventListener('click', () => {
@@ -2386,7 +2386,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   NationalsTacticsUI.attach(sim,{replay:!!playback});
   document.getElementById('addRuling')?.addEventListener('click',()=>{
     const result=sim.override.adjudicate(sim.activeRobotId,document.getElementById('refRule').value,document.getElementById('refSeverity').value,document.getElementById('refReason').value,{autonomous:document.getElementById('refAuto').checked,awardAWP:document.getElementById('refAWP').checked});
-    document.getElementById('gameFeedback').textContent=result.ok?'Решение записано':result.error;
+    document.getElementById('gameFeedback').textContent=result.ok?'Ruling recorded':result.error;
   });
   document.getElementById('exportMatch')?.addEventListener('click',()=>{
     if(!sim.fleet)return;
@@ -2478,10 +2478,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const remaining = Math.max(0, overrideState.rules.matchSeconds - overrideState.clock);
         clock.textContent = overrideState.mode==='practice'?'∞':Math.floor(remaining / 60) + ":" + String(Math.floor(remaining % 60)).padStart(2, "0");
       }
-      document.getElementById('ruleLog').textContent=overrideState.ruleEvents.slice(-8).map(e=>`${e.clock.toFixed(1)} с · ${e.robotId} · ${e.rule} · ${e.severity}: ${e.detail}`).join(' | ');
+      document.getElementById('ruleLog').textContent=overrideState.ruleEvents.slice(-8).map(e=>`${e.clock.toFixed(1)} s · ${e.robotId} · ${e.rule} · ${e.severity}: ${e.detail}`).join(' | ');
       const activeRobot=sim.override.robots.find(r=>r.id===sim.activeRobotId);
-      document.getElementById('liftStatus').textContent=`Подъёмник ${activeRobot.manipulator.height.toFixed(1)}″ → ${activeRobot.manipulator.target.toFixed(1)}″`;
-      document.getElementById('matchStatus').textContent=overrideState.matchEnded?(overrideState.scoreFinal?'Счёт зафиксирован':`Ожидание остановки: ${overrideState.settlingSeconds.toFixed(1)} / 5 с`):sim.fleet?[...sim.fleet.entries].map(([id,e])=>`${id}: ${e.status}${e.error?' ('+e.error+')':''}`).join(' · '):'';
+      document.getElementById('liftStatus').textContent=`Lift ${activeRobot.manipulator.height.toFixed(1)}″ → ${activeRobot.manipulator.target.toFixed(1)}″`;
+      document.getElementById('matchStatus').textContent=overrideState.matchEnded?(overrideState.scoreFinal?'Score frozen':`Waiting for objects to settle: ${overrideState.settlingSeconds.toFixed(1)} / 5 s`):sim.fleet?[...sim.fleet.entries].map(([id,e])=>`${id}: ${e.status}${e.error?' ('+e.error+')':''}`).join(' · '):'';
       if (red) red.textContent = String(overrideState.score.red);
       if (blue) blue.textContent = String(overrideState.score.blue);
     }    // Update Telemetry UI

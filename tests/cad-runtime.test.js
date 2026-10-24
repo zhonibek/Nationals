@@ -62,7 +62,7 @@ test('GLB completeness, JSON, hierarchy and rendering budgets fail before model 
   const invalid=Buffer.from(bytes);invalid[20]=0;
   assert.throws(()=>CAD.inspectGlb(invalid),/JSON/);
   document.nodes[1].children=[0];assert.throws(()=>CAD.inspectGlb(glb(document,binary)),/hierarchy/);
-  assert.throws(()=>CAD.checkSize(CAD.LIMITS.bytes+1),/32 МБ/);
+  assert.throws(()=>CAD.checkSize(CAD.LIMITS.bytes+1),/32 MB/);
   assert.throws(()=>CAD.checkCost({drawCalls:1501,triangles:1}),/3D/);
   assert.throws(()=>CAD.checkCost({drawCalls:1,triangles:1000001}),/3D/);
 });
@@ -119,7 +119,7 @@ test('oversized file import never reads, parses or saves the original CAD',async
   const {view,elements}=rendererRealm();
   let touched=false;view.ensureCadLoaded=async()=>{touched=true;};
   await view.loadCadFile({name:'main.glb',size:166172592,arrayBuffer(){touched=true;throw Error('must not read');}});
-  assert.equal(touched,false);assert.match(elements.get('cadStatusBadge').textContent,/32 МБ/);
+  assert.equal(touched,false);assert.match(elements.get('cadStatusBadge').textContent,/32 MB/);
 });
 
 test('CAD parse promises wait for asynchronous success and expose failures',async()=>{

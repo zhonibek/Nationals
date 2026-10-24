@@ -6,10 +6,10 @@
 
   const LIMITS={bytes:32*1024*1024,drawCalls:1500,triangles:1000000};
   function checkSize(bytes){
-    if(bytes>LIMITS.bytes)throw Error('CAD слишком тяжёлый: используйте оптимизированный GLB до 32 МБ');
+    if(bytes>LIMITS.bytes)throw Error('CAD file too large: use an optimized GLB up to 32 MB');
   }
   function checkCost(stats){
-    if(stats.drawCalls>LIMITS.drawCalls||stats.triangles>LIMITS.triangles)throw Error('CAD перегружает 3D: объедините грани по материалам и упростите сетку');
+    if(stats.drawCalls>LIMITS.drawCalls||stats.triangles>LIMITS.triangles)throw Error('CAD overloads 3D: merge faces by material and simplify the mesh');
   }
   function inspectGlb(bytes,{enforceBudget=true}={}){
     const source=ArrayBuffer.isView(bytes)?new Uint8Array(bytes.buffer,bytes.byteOffset,bytes.byteLength):new Uint8Array(bytes);

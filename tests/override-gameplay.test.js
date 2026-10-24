@@ -117,12 +117,12 @@ test('game UI shows hints, disables impossible actions and updates measured calc
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../simulator/override-ui.js'),'utf8'),context);
   const sim=new VexRobotSimulator(Control.fromModule(compiled));scoringFixture(sim);
   const attached=context.module.exports.attach(sim);attached.update();
-  assert.match(element('gameModeStatus').textContent,/физика включена/);
-  assert.match(element('pickupHint').textContent,/Можно взять/);
+  assert.match(element('gameModeStatus').textContent,/physics on/);
+  assert.match(element('pickupHint').textContent,/Can take/);
   assert.equal(buttons.find(button=>button.dataset.gameAction==='pickup').disabled,false);
   assert.equal(buttons.find(button=>button.dataset.gameAction==='place').disabled,true);
   assert.equal(element('goalPoints').children.length,9);
-  element('pointCalculator').listeners.input();assert.equal(element('manualPoints').textContent,'15 очков');
+  element('pointCalculator').listeners.input();assert.equal(element('manualPoints').textContent,'15 points');
   const html=fs.readFileSync(path.join(__dirname,'../simulator/index.html'),'utf8');
-  assert.match(html,/override-ui.js/);assert.doesNotMatch(html,/gameTutorial|gameCupTutorial|Учебная сцена/);assert.match(html,/не меняет поле/);
+  assert.match(html,/override-ui.js/);assert.doesNotMatch(html,/gameTutorial|gameCupTutorial|Учебная сцена/);assert.match(html,/does not change the field/);
 });

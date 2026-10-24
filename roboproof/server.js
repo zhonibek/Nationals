@@ -18,6 +18,8 @@ const {motionEvidence} = require('./skill-evidence');
 const {chatReply, validateConversation} = require('./nemotron-chat');
 const Tactics = require('./tactics');
 const {readResults: readCosmosResults} = require('./cosmos-results');
+const {POLICIES: TACTICAL_POLICIES, playMatch: playTacticalMatch, policyChooser} = require('./tactical_baselines');
+const {playNemotronMatch} = require('./tactical-coordinator');
 
 function createServer({reportPath = path.join(__dirname, 'runs/latest/report.json'), timeout = 120000,
   nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, cosmosDirectory, agentTimeout = 300000} = {}) {
@@ -143,7 +145,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       fs.createReadStream(file).pipe(response);
       return;
     }
-    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/motion/compare-learned', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run', '/api/nemotron/chat'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
+    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/motion/compare-learned', '/api/tactics/match', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run', '/api/nemotron/chat'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
     if (!request.headers['content-type']?.startsWith('application/json')) { reply(415, {error: 'application/json required'}); return; }
     if (activeWorker || activeAgent) { reply(409, {error: 'A simulation or Nemotron request is already running'}); return; }
     try {
@@ -168,6 +170,34 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         } else if (operation === 'replay') workerData.report = motionStore.read(body.id).report;
         const result = await launchWorker('motion-worker.js', workerData, response);
         reply(200, operation === 'run' ? motionStore.create(result) : result);
+        return;
+      }
+      if (pathname === '/api/tactics/match') {
+        // One abstract driver-period match: Nemotron or a non-learning tactic chooses macro-actions; the rules engine scores.
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['coordinator', 'seed', 'alliance'].includes(key))) {
+          throw Error('Unsupported tactical match fields');
+        }
+        if (body.coordinator !== 'nemotron' && !Object.hasOwn(TACTICAL_POLICIES, body.coordinator)) throw Error('Unknown tactical coordinator');
+        if (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > 0xffffffff) throw Error('Tactical match seed must be a uint32');
+        const alliance = body.alliance ?? 'red';
+        if (!['red', 'blue'].includes(alliance)) throw Error('Tactical alliance must be red or blue');
+        const controller = new AbortController();
+        activeAgent = controller;
+        const timer = setTimeout(() => controller.abort(), agentTimeout);
+        const cancelled = () => { if (!response.writableEnded) controller.abort(); };
+        response.once('close', cancelled);
+        try {
+          const result = body.coordinator === 'nemotron'
+            ? await playNemotronMatch({seed: body.seed, alliance, client: nemotronClient, signal: controller.signal})
+            : await playTacticalMatch({seed: body.seed, alliance, signal: controller.signal, chooser: policyChooser(body.coordinator, body.seed)});
+          controller.signal.throwIfAborted();
+          reply(200, {schemaVersion: 1, coordinator: body.coordinator, ...result,
+            scope: 'abstract macro-action model scored by the Override rules engine; no robot, motion or physics simulation was driven'});
+        } finally {
+          clearTimeout(timer);
+          response.removeListener('close', cancelled);
+          if (activeAgent === controller) activeAgent = null;
+        }
         return;
       }
       if (pathname.startsWith('/api/nemotron/')) {

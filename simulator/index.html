@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nationals — LTV-LQR + PID · Override simulator</title>
-  <meta name="description" content="Исследовательский 2D/3D симулятор соревновательного поля VEX V5RC Override и робота Holonomic X-Drive со встроенным интерактивным планировщиком траекторий Jerry.io.">
+  <meta name="description" content="Research 2D/3D simulator of the VEX V5RC Override competition field and a holonomic X-drive robot with a built-in interactive Jerry.io path planner.">
   
   <!-- Three.js, OrbitControls, and 3D Model Loaders -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -35,8 +35,8 @@
     
     <!-- 2D / 3D Mode Switcher -->
     <div class="view-mode-tabs">
-      <a href="portal.html" class="view-tab" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.4rem; background:rgba(99, 102, 241, 0.2); border:1px solid #6366f1; color:#c7d2fe; font-weight:700;">🏠 Главный портал</a>
-      <button id="tab2D" class="view-tab active">🗺️ 2D Тактический</button>
+      <a href="portal.html" class="view-tab" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.4rem; background:rgba(99, 102, 241, 0.2); border:1px solid #6366f1; color:#c7d2fe; font-weight:700;">🏠 Main portal</a>
+      <button id="tab2D" class="view-tab active">🗺️ 2D Tactical</button>
       <button id="tab3D" class="view-tab">🎮 3D</button>
     </div>
 
@@ -59,48 +59,48 @@
       <div class="viewport-toolbar">
         <div class="toolbar-group">
           <!-- Planner vs Match Mode Toggle -->
-          <button id="btnToggleAiStudio" class="btn btn-primary" style="background: linear-gradient(135deg, #6366f1, #a855f7); font-weight: 700; border: none; box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);" title="Открыть интерактивную студию AI программирования робота">
-            🤖 AI Программирование
+          <button id="btnToggleAiStudio" class="btn btn-primary" style="background: linear-gradient(135deg, #6366f1, #a855f7); font-weight: 700; border: none; box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);" title="Open the interactive AI robot programming studio">
+            🤖 AI Programming
           </button>
-          <button id="btnToggleJerry" class="btn btn-secondary" title="Переключить в визуальный планировщик путей Jerry.io">
-            ✏️ Редактор Jerry.io
+          <button id="btnToggleJerry" class="btn btn-secondary" title="Switch to the visual Jerry.io path planner">
+            ✏️ Jerry.io editor
           </button>
 
           <div class="select-wrapper" id="routineSelectWrapper">
-            <select id="routineSelect" title="Выберите автономную программу">
-              <optgroup label="🌟 Holonomic 3-DOF Автономки">
-                <option value="competitionAutonomous" selected>Competition: сплайн → возврат (C++)</option>
+            <select id="routineSelect" title="Choose an autonomous routine">
+              <optgroup label="🌟 Holonomic 3-DOF routines">
+                <option value="competitionAutonomous" selected>Competition: spline → return (C++)</option>
                 <option value="autoHolonomicSkills">Holonomic Skills (Strafes + Splines)</option>
-                <option value="autoHolonomicRedAWP">Старый маршрут Red (стрейф)</option>
-                <option value="autoHolonomicGoalRush">Старый маршрут Rush (диагональ)</option>
+                <option value="autoHolonomicRedAWP">Old Red route (strafe)</option>
+                <option value="autoHolonomicGoalRush">Old Rush route (diagonal)</option>
               </optgroup>
-              <optgroup label="🏆 Классические соревновательные">
-                <option value="autoSkills">Маршрут Skills (каскад)</option>
-                <option value="autoRedAWP">Старый маршрут Red (не AWP Override)</option>
-                <option value="autoBlueAWP">Старый маршрут Blue (не AWP Override)</option>
-                <option value="autoHybridDemo">Сценарий: сплайн и точки (каскад)</option>
+              <optgroup label="🏆 Classic competition routines">
+                <option value="autoSkills">Skills route (cascade)</option>
+                <option value="autoRedAWP">Old Red route (not an Override AWP)</option>
+                <option value="autoBlueAWP">Old Blue route (not an Override AWP)</option>
+                <option value="autoHybridDemo">Scenario: spline and points (cascade)</option>
               </optgroup>
-              <optgroup label="🛠️ Тесты каскадного движения">
-                <option value="testTrackWidth">Поворот 180° и возврат</option>
+              <optgroup label="🛠️ Cascade motion tests">
+                <option value="testTrackWidth">180° turn and return</option>
                 <option value="testLinearDrive">[ B ] 24" Linear Drive Test</option>
                 <option value="testAngularTurn">[ Y ] 90° Turn Snap Test</option>
                 <option value="testQuinticSpline">Quintic spline</option>
                 <option value="testBezier">Pedro Bézier → LTV-LQR → PID</option>
-                <option value="testDiagonal">Диагональ 24″</option>
+                <option value="testDiagonal">Diagonal 24″</option>
               </optgroup>
             </select>
           </div>
 
-          <button id="btnPlay" class="btn btn-primary" title="Запустить программу">▶ Запуск</button>
-          <button id="btnPause" class="btn btn-secondary" title="Пауза">⏸ Пауза</button>
-          <button id="btnStep" class="btn btn-secondary" title="Один шаг симуляции (10 мс)">⏭ Шаг</button>
-          <button id="btnReset" class="btn btn-danger" title="Сброс в (0,0,0)">🔄 Сброс</button>
-          <button id="btnOverrideStart" class="btn btn-primary" title="Включить физику предметов, захват и подсчёт очков">🏁 Начать игру</button>
-          <button id="btnOverrideReset" class="btn btn-secondary" title="Сбросить матч Override">⏱ Сброс матча</button>
+          <button id="btnPlay" class="btn btn-primary" title="Run the routine">▶ Run</button>
+          <button id="btnPause" class="btn btn-secondary" title="Pause">⏸ Pause</button>
+          <button id="btnStep" class="btn btn-secondary" title="One simulation step (10 ms)">⏭ Step</button>
+          <button id="btnReset" class="btn btn-danger" title="Reset to (0,0,0)">🔄 Reset</button>
+          <button id="btnOverrideStart" class="btn btn-primary" title="Enable object physics, grabbing and scoring">🏁 Start game</button>
+          <button id="btnOverrideReset" class="btn btn-secondary" title="Reset the Override match">⏱ Reset match</button>
         </div>
 
         <div class="toolbar-group">
-          <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim);">Скорость:</span>
+          <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim);">Speed:</span>
           <div class="speed-selector">
             <div class="speed-opt" data-speed="0.25">0.25x</div>
             <div class="speed-opt active" data-speed="0.5">0.5x</div>
@@ -117,53 +117,53 @@
           <div class="ai-studio-title">
             <span class="ai-icon">🤖</span>
             <div>
-              <h4>AI Студия автономного программирования робота</h4>
-              <p>Введите задачу на естественном языке (русский/английский) или выберите готовый пресет — AI сгенерирует путь, C++ код и запустит робота в 3D!</p>
+              <h4>AI studio for autonomous robot programming</h4>
+              <p>Describe a task in natural language (English or Russian) or pick a preset — the AI generates a path and C++ code and runs the robot in 3D.</p>
             </div>
           </div>
-          <button id="btnAiClose" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">✕ Скрыть</button>
+          <button id="btnAiClose" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">✕ Hide</button>
         </div>
 
         <!-- AI Engine Status Strip -->
         <div class="ai-engine-status-strip">
           <div class="engine-status-info">
             <span class="status-indicator-dot" id="aiStatusDot"></span>
-            <span id="aiStatusText">AI Движок: Проверка соединения с Nemotron...</span>
+            <span id="aiStatusText">AI engine: checking the Nemotron connection...</span>
           </div>
           <div style="display: flex; gap: 8px;">
             <button type="button" id="btnConnectNebius" class="btn-check-nemotron" style="background: linear-gradient(135deg, #06b6d4, #6366f1); border-color: rgba(6, 182, 212, 0.5); color: #fff; font-weight: 600;">
-              ⚡ Подключить Nebius Token Factory
+              ⚡ Connect Nebius Token Factory
             </button>
             <button type="button" id="btnCheckNemotron" class="btn-check-nemotron">
-              🔄 Проверить статус
+              🔄 Check status
             </button>
           </div>
         </div>
 
         <!-- AI Prompt Input Bar -->
         <div class="ai-input-bar">
-          <input type="text" id="aiPromptInput" placeholder="Например: Проехать вперед 36 дюймов, повернуть на 90°, поднять вилку на 12&quot; и забить Cup..." />
+          <input type="text" id="aiPromptInput" placeholder="For example: drive forward 36 inches, turn 90°, raise the fork 12&quot; and score a Cup..." />
           <button type="button" id="btnAiGenerate" class="btn btn-primary" style="background: linear-gradient(135deg, #6366f1, #a855f7);">
-            ✨ Сгенерировать AI программу
+            ✨ Generate AI routine
           </button>
         </div>
 
         <!-- 1-Click AI Presets (Instant test buttons) -->
         <div class="ai-presets">
-          <span class="presets-label">⚡ Готовые AI пресеты:</span>
+          <span class="presets-label">⚡ AI presets:</span>
           <button type="button" class="ai-chip" data-preset="skills">🏆 Skills 60-Point Routine</button>
           <button type="button" class="ai-chip" data-preset="scurve">🎯 S-Curve Quintic Spline</button>
           <button type="button" class="ai-chip" data-preset="strafe">🔄 360° Holonomic Spin & Strafe</button>
-          <button type="button" class="ai-chip" data-preset="pickup">📦 Захват Cup + Подъем в цель</button>
-          <button type="button" class="ai-chip" data-preset="zigzag">⚡ Зигзаг объезд препятствий</button>
-          <button type="button" class="ai-chip" data-preset="box">📐 Квадратный патруль (Box)</button>
+          <button type="button" class="ai-chip" data-preset="pickup">📦 Grab Cup + lift to goal</button>
+          <button type="button" class="ai-chip" data-preset="zigzag">⚡ Zigzag around obstacles</button>
+          <button type="button" class="ai-chip" data-preset="box">📐 Square patrol (Box)</button>
         </div>
 
         <!-- PPO / Multi-Strategy Trajectory Optimizer Comparison -->
         <div id="aiOptimizerSection" class="ai-optimizer-section" style="display: none;">
           <div class="optimizer-header">
             <span class="optimizer-badge">🧠 GVF-TD3 & Multi-Strategy Optimizer</span>
-            <span id="aiOptimizerVerdict" class="optimizer-verdict">Запуск физических rollouts в симуляторе...</span>
+            <span id="aiOptimizerVerdict" class="optimizer-verdict">Running physical rollouts in the simulator...</span>
           </div>
           <div class="strategy-cards-grid" id="aiStrategyCards">
             <!-- Dynamic strategy cards: Spline vs GVF-TD3 vs Strafe vs SnapTurn -->
@@ -175,20 +175,20 @@
           <!-- C++ Code Viewer -->
           <div class="ai-code-card">
             <div class="code-card-header">
-              <span>💻 Сгенерированный PROS C++ код (src/main.cpp)</span>
-              <button type="button" id="btnAiCopyCpp" class="btn-sm">📋 Копировать C++</button>
+              <span>💻 Generated PROS C++ code (src/main.cpp)</span>
+              <button type="button" id="btnAiCopyCpp" class="btn-sm">📋 Copy C++</button>
             </div>
-            <pre id="aiCppCodeView" class="ai-code-editor">// Нажмите готовый пресет выше или введите свою команду для генерации...</pre>
+            <pre id="aiCppCodeView" class="ai-code-editor">// Press a preset above or type your own command to generate code...</pre>
           </div>
 
           <!-- Action Steps Timeline -->
           <div class="ai-plan-card">
             <div class="code-card-header">
-              <span>📋 План действий робота (Шаги автономки)</span>
-              <span id="aiStepCount" class="badge-count">0 шагов</span>
+              <span>📋 Robot action plan (autonomous steps)</span>
+              <span id="aiStepCount" class="badge-count">0 steps</span>
             </div>
             <div id="aiStepsList" class="ai-steps-list">
-              <div class="step-empty">Выберите команду для планирования маршрута</div>
+              <div class="step-empty">Choose a command to plan a route</div>
             </div>
           </div>
         </div>
@@ -196,28 +196,28 @@
         <!-- Execution Toolbar -->
         <div class="ai-studio-actions">
           <button type="button" id="btnAiRunInSim" class="btn btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); font-size: 0.95rem; font-weight: 700; padding: 0.6rem 1.4rem;">
-            ▶ Запустить программу на роботе в 3D
+            ▶ Run the routine on the robot in 3D
           </button>
           <button type="button" id="btnAiSendJerry" class="btn btn-secondary">
-            ✏️ Передать точки в Jerry.io редактор
+            ✏️ Send points to the Jerry.io editor
           </button>
           <button type="button" id="btnAiResetRobot" class="btn btn-secondary">
-            🔄 Сброс робота в (0,0,0)
+            🔄 Reset robot to (0,0,0)
           </button>
         </div>
       </div>
 
-      <section class="game-guide" aria-label="Как играть">
-        <div><h2>Игровая песочница Override</h2><p>Начни игру → подведи вилку к Pin, Cup или Cup + Pin → F. E/Q — подъёмник вверх/вниз. Рядом с Toggle кнопка F переключает его.</p></div>
-        <div class="game-guide-actions"><button id="gameFinish" class="btn btn-secondary" disabled>Завершить и зафиксировать счёт</button></div>
-        <p id="gameModeStatus" role="status">Игровая физика включается кнопкой «Начать игру».</p>
-        <label><input id="gameSolid" type="checkbox" checked> Непрозрачное отображение деталей (на очки не влияет)</label>
-        <label><input id="gameColliders" type="checkbox"> Показать контуры коллизий в 2D</label>
+      <section class="game-guide" aria-label="How to play">
+        <div><h2>Override game sandbox</h2><p>Start the game → bring the fork to a Pin, Cup or Cup + Pin → F. E/Q — lift up/down. Next to a Toggle, F switches it.</p></div>
+        <div class="game-guide-actions"><button id="gameFinish" class="btn btn-secondary" disabled>Finish and freeze the score</button></div>
+        <p id="gameModeStatus" role="status">Game physics is enabled with the Start game button.</p>
+        <label><input id="gameSolid" type="checkbox" checked> Opaque rendering of game elements (does not affect scoring)</label>
+        <label><input id="gameColliders" type="checkbox"> Show collision outlines in 2D</label>
       </section>
       <!-- Jerry.io Banner Hint -->
       <div id="jerryBanner" class="mode-banner jerry-active" style="display: none;">
-        <span>🎯 <strong>Режим Jerry.io активен:</strong> Кликайте в любое место поля, чтобы добавить точку пути! Перетаскивайте точки мышью, настраивайте угол стрелки и запускайте путь робота!</span>
-        <button id="btnExitJerry" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">Закрыть редактор</button>
+        <span>🎯 <strong>Jerry.io mode is active:</strong> Click anywhere on the field to add a path point. Drag points with the mouse, adjust the heading arrow and run the robot's path.</span>
+        <button id="btnExitJerry" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">Close editor</button>
       </div>
 
       <!-- Canvas Field Container (2D & 3D) -->
@@ -231,22 +231,22 @@
         <!-- 3D Camera Presets & CAD Model Controls (Visible only in 3D Mode) -->
         <div class="camera-controls-3d" id="camera3DControls" style="display: none;">
           <div class="cam-group">
-            <span class="cam-label">Камера:</span>
-            <button id="camIso" class="cam-btn active">📐 Изометрия</button>
-            <button id="camTop" class="cam-btn">⬆️ Сверху</button>
-            <button id="camFollow" class="cam-btn">🎥 Слежение</button>
+            <span class="cam-label">Camera:</span>
+            <button id="camIso" class="cam-btn active">📐 Isometric</button>
+            <button id="camTop" class="cam-btn">⬆️ Top</button>
+            <button id="camFollow" class="cam-btn">🎥 Follow</button>
           </div>
           <div class="cam-divider"></div>
           <div class="cam-group">
-            <span class="cam-label">CAD робота:</span>
-            <button id="btnToggleCadModel" class="cam-btn" title="Переключить: CAD Onshape / Процедурный X-Drive">🤖 Режим: CAD</button>
-            <label for="cadFileInput" class="cam-btn cam-btn-upload" title="Загрузить .glb / .gltf / .stl / .obj файл робота из Onshape">
-              📂 Импорт CAD
+            <span class="cam-label">Robot CAD:</span>
+            <button id="btnToggleCadModel" class="cam-btn" title="Switch: Onshape CAD / procedural X-drive">🤖 Mode: CAD</button>
+            <label for="cadFileInput" class="cam-btn cam-btn-upload" title="Load a .glb / .gltf / .stl / .obj robot file from Onshape">
+              📂 Import CAD
             </label>
             <input type="file" id="cadFileInput" accept=".glb,.gltf,.stl,.obj" style="display: none;">
-            <button id="btnRotateCad" class="cam-btn" title="Повернуть CAD модель на 90° по часовой стрелке">🔄 90°</button>
+            <button id="btnRotateCad" class="cam-btn" title="Rotate the CAD model 90° clockwise">🔄 90°</button>
             <span id="cadStatusBadge" class="cad-badge">CAD: VEX V5RC Override</span>
-            <label>3D <select id="renderQuality"><option value="fast">Быстро · без теней · 30 FPS</option><option value="detail">Тени · до 60 FPS</option></select></label>
+            <label>3D <select id="renderQuality"><option value="fast">Fast · no shadows · 30 FPS</option><option value="detail">Shadows · up to 60 FPS</option></select></label>
             <span id="renderPerformance" role="status"></span>
           </div>
         </div>
@@ -255,9 +255,9 @@
         <div id="cadDropOverlay" class="cad-drop-overlay" style="display: none;">
           <div class="cad-drop-modal">
             <div class="drop-icon">🤖</div>
-            <h3>Перетащите CAD файл робота</h3>
-            <p>Экспортируйте из Onshape в <strong>.GLB</strong>, <strong>.GLTF</strong>, <strong>.STL</strong> или <strong>.OBJ</strong> и отпустите здесь</p>
-            <span class="drop-hint">Модель автоматически отмасштабируется под стартовый лимит 18" VEX V5RC Override и привяжется к одометрии</span>
+            <h3>Drop the robot CAD file</h3>
+            <p>Export from Onshape as <strong>.GLB</strong>, <strong>.GLTF</strong>, <strong>.STL</strong> or <strong>.OBJ</strong> and drop it here</p>
+            <span class="drop-hint">The model is scaled automatically to the 18" VEX V5RC Override starting size limit and attached to odometry</span>
           </div>
         </div>
         
@@ -269,71 +269,83 @@
       </div>
 
       <details class="viewport-toolbar" style="display:block">
-        <summary>Автономки четырёх роботов (первые 15 с матча)</summary>
-        <label>red-1 <select data-auto-robot="red-1"><option value="preload">Поставить preload</option><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
-        <label>red-2 <select data-auto-robot="red-2"><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
-        <label>blue-1 <select data-auto-robot="blue-1"><option value="preload">Поставить preload</option><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
-        <label>blue-2 <select data-auto-robot="blue-2"><option value="taxi">Отъехать от борта</option><option value="idle">Остановлен</option></select></label>
+        <summary>Autonomous routines of the four robots (first 15 s of the match)</summary>
+        <label>red-1 <select data-auto-robot="red-1"><option value="preload">Place preload</option><option value="taxi">Move away from the wall</option><option value="idle">Stopped</option></select></label>
+        <label>red-2 <select data-auto-robot="red-2"><option value="taxi">Move away from the wall</option><option value="idle">Stopped</option></select></label>
+        <label>blue-1 <select data-auto-robot="blue-1"><option value="preload">Place preload</option><option value="taxi">Move away from the wall</option><option value="idle">Stopped</option></select></label>
+        <label>blue-2 <select data-auto-robot="blue-2"><option value="taxi">Move away from the wall</option><option value="idle">Stopped</option></select></label>
       </details>
       <details class="viewport-toolbar" style="display:block">
-        <summary>Судейский протокол</summary>
-        <p>Автоматический счёт и запреты действий дополнены журналом. Решения об умысле, повторных нарушениях и дисквалификации вносит судья.</p>
-        <label>Правило <select id="refRule"><option>SG7</option><option>SG9</option><option>SG10</option><option>SG11</option><option>SG12</option><option>SG13</option><option>SG6</option><option>SG2</option><option>SG3</option><option>SG4</option><option>GG13</option><option>GG14</option><option>GG15</option><option>S1</option></select></label>
-        <label>Решение <select id="refSeverity"><option value="warning">Предупреждение</option><option value="minor">Minor</option><option value="major">Major / DQ робота</option></select></label>
-        <label>Причина <input id="refReason" maxlength="500" placeholder="Основание решения"></label>
-        <label><input id="refAuto" type="checkbox"> Нарушение автономки</label>
-        <label><input id="refAWP" type="checkbox"> Передать AWP сопернику (SG7e)</label>
-        <button id="addRuling" class="btn btn-secondary">Записать для выбранного робота</button>
+        <summary>Referee log</summary>
+        <p>Automatic scoring and action restrictions are complemented by a log. Rulings on intent, repeated violations and disqualification are made by the referee.</p>
+        <label>Rule <select id="refRule"><option>SG7</option><option>SG9</option><option>SG10</option><option>SG11</option><option>SG12</option><option>SG13</option><option>SG6</option><option>SG2</option><option>SG3</option><option>SG4</option><option>GG13</option><option>GG14</option><option>GG15</option><option>S1</option></select></label>
+        <label>Ruling <select id="refSeverity"><option value="warning">Warning</option><option value="minor">Minor</option><option value="major">Major / robot DQ</option></select></label>
+        <label>Reason <input id="refReason" maxlength="500" placeholder="Basis for the ruling"></label>
+        <label><input id="refAuto" type="checkbox"> Autonomous violation</label>
+        <label><input id="refAWP" type="checkbox"> Award AWP to the opponent (SG7e)</label>
+        <button id="addRuling" class="btn btn-secondary">Record for the selected robot</button>
         <div id="ruleLog" role="log"></div>
       </details>
-      <div class="viewport-toolbar" style="flex-wrap:wrap"><span id="matchStatus" role="status"></span><button id="exportMatch" class="btn btn-secondary">Скачать протокол JSON</button></div>
-      <div class="viewport-toolbar" style="flex-wrap:wrap"><button id="askTactics" class="btn btn-secondary" type="button">Спросить тактический AI</button><button id="stopTactics" class="btn btn-secondary" type="button" disabled>Стоп AI</button></div>
-      <p id="tacticsStatus" role="status" aria-live="polite">Передаётся только компактный снимок игры локальному Nemotron. Это совет, не автопилот.</p>
+      <div class="viewport-toolbar" style="flex-wrap:wrap"><span id="matchStatus" role="status"></span><button id="exportMatch" class="btn btn-secondary">Download JSON match record</button></div>
+      <div class="viewport-toolbar" style="flex-wrap:wrap"><button id="askTactics" class="btn btn-secondary" type="button">Ask tactical AI</button><button id="stopTactics" class="btn btn-secondary" type="button" disabled>Stop AI</button></div>
+      <p id="tacticsStatus" role="status" aria-live="polite">Only a compact game snapshot is sent to Nemotron. This is advice, not an autopilot.</p>
       <div id="tacticsReply" hidden>
-        <h3>Тактический совет · не выполнен</h3>
+        <h3>Tactical advice · not executed</h3>
         <p id="tacticsMessage"></p>
         <div style="display: flex; gap: 0.6rem; margin-top: 0.75rem; flex-wrap: wrap;">
-          <button id="btnTacticsToPpo" class="btn btn-primary" type="button" style="background: linear-gradient(135deg, #10b981, #06b6d4); font-weight: 600;">⚡ Запустить эту тактику в PPO Оптимизаторе</button>
-          <a href="/#nemotron" target="_blank" rel="noopener" class="btn btn-secondary">Открыть координатор · Robot tools → Restore</a>
+          <button id="btnTacticsToPpo" class="btn btn-primary" type="button" style="background: linear-gradient(135deg, #10b981, #06b6d4); font-weight: 600;">⚡ Run this tactic in the PPO optimizer</button>
+          <a href="/#nemotron" target="_blank" rel="noopener" class="btn btn-secondary">Open the coordinator · Robot tools → Restore</a>
         </div>
       </div>
+      <details id="tacticalMatchPanel">
+        <summary>Tactical AI match · Nemotron vs baseline tactics</summary>
+        <p>One driver period in the abstract tactical model, scored by the Override rules engine. Nemotron on Nebius Token Factory (or a baseline tactic) chooses every macro-action, including match loads from the loading zone. Nothing drives a robot.</p>
+        <div class="viewport-toolbar" style="flex-wrap:wrap">
+          <label>Coordinator <select id="tacticalCoordinator"><option value="nemotron">Nemotron (Nebius Token Factory)</option><option value="loader-cycle">Loading-zone cycles</option><option value="field-greedy">Field greedy</option><option value="greedy-all">Greedy, all actions</option><option value="random">Random</option></select></label>
+          <label>Seed <input id="tacticalSeed" type="number" min="0" max="4294967295" step="1" value="101"></label>
+          <label>Alliance <select id="tacticalAlliance"><option value="red">red</option><option value="blue">blue</option></select></label>
+          <button id="runTacticalMatch" class="btn btn-primary" type="button">Run tactical match</button>
+        </div>
+        <p id="tacticalMatchStatus" role="status" aria-live="polite"></p>
+        <div class="game-score-table"><table><thead><tr><th>#</th><th>Clock</th><th>Action</th><th>Points</th><th>Seconds</th><th>Margin</th><th>Reason</th></tr></thead><tbody id="tacticalMatchLog"></tbody></table></div>
+      </details>
       <div class="viewport-toolbar" style="flex-wrap:wrap">
-        <label>Режим <select id="gameMode"><option value="practice">Тренировка ∞</option><option value="match">Матч 2:00</option></select></label>
-        <label><input id="practicePreload" type="checkbox"> Preload Pin при старте тренировки</label>
-        <button class="btn btn-secondary" data-lift="-2">Вниз −2″ [Q]</button>
-        <button class="btn btn-secondary" data-lift="2">Вверх +2″ [E]</button>
-        <button id="gameLiftToGoal" class="btn btn-secondary">Высота для цели</button>
+        <label>Mode <select id="gameMode"><option value="practice">Practice ∞</option><option value="match">Match 2:00</option></select></label>
+        <label><input id="practicePreload" type="checkbox"> Preload Pin at practice start</label>
+        <button class="btn btn-secondary" data-lift="-2">Down −2″ [Q]</button>
+        <button class="btn btn-secondary" data-lift="2">Up +2″ [E]</button>
+        <button id="gameLiftToGoal" class="btn btn-secondary">Height for goal</button>
         <span id="liftStatus" role="status"></span>
-        <label>Робот <select id="gameRobot"><option>red-1</option><option>red-2</option><option>blue-1</option><option>blue-2</option></select></label>
-        <label>Захват <select id="gameObject"><option value="auto">Авто · Pin / Cup / Cup + Pin</option><option value="pin">Только Pin</option><option value="cup">Только Cup / Cup + Pin</option></select></label>
-        <button class="btn btn-primary" data-game-action="use">Взять / Toggle [F]</button>
+        <label>Robot <select id="gameRobot"><option>red-1</option><option>red-2</option><option>blue-1</option><option>blue-2</option></select></label>
+        <label>Grab <select id="gameObject"><option value="auto">Auto · Pin / Cup / Cup + Pin</option><option value="pin">Pin only</option><option value="cup">Cup / Cup + Pin only</option></select></label>
+        <button class="btn btn-primary" data-game-action="use">Take / Toggle [F]</button>
         <button class="btn btn-secondary" data-game-action="load">Match Load</button>
-        <button class="btn btn-secondary" data-game-action="flip">Перевернуть [T]</button>
-        <button class="btn btn-secondary" data-game-action="place">Поставить в цель [G]</button>
-        <button class="btn btn-secondary" data-game-action="drop">Отпустить [R]</button>
-        <span id="gameFeedback" role="status">Нажмите «Начать игру». F работает с ближайшей доступной деталью или Toggle.</span>
+        <button class="btn btn-secondary" data-game-action="flip">Flip [T]</button>
+        <button class="btn btn-secondary" data-game-action="place">Place in goal [G]</button>
+        <button class="btn btn-secondary" data-game-action="drop">Release [R]</button>
+        <span id="gameFeedback" role="status">Press Start game. F works with the nearest available object or Toggle.</span>
       </div>
-      <section class="game-help" aria-label="Подсказки захвата"><p id="actionHint" role="status"></p><p id="possessionStatus"></p><p id="placementHint"></p><label>Мощность ручного движения <input id="gameDrivePower" type="range" min="0.1" max="1" step="0.05" value="0.35"></label><p>Удерживайте E — вверх, Q — вниз; отпустите клавишу, чтобы остановить подъёмник. F берёт Pin, Cup или всю связку Cup + Pin; рядом с Toggle — переключает его. G ставит, R отпускает; связка отпускается вместе. В тренировке захват по умолчанию пустой; в матче сохраняется стартовый preload. Максимум один Pin и один Cup: при занятом Pin сначала освободите его, чтобы взять другую связку. Cup ставится поверх Pin, не в пустую цель; очки появляются после попадания.</p><details><summary>Точные подсказки и Match Load</summary><p id="pickupHint"></p><p id="cupPickupHint"></p><p>Зелёный круг у вилки = можно взять. Захват требует близости и правильной высоты. Для Match Load выберите Pin или Cup; в «Авто» загружается Pin.</p></details></section>
-      <section id="scoreCalculator" class="game-score" aria-label="Калькулятор очков">
-        <h2>Калькулятор очков</h2><p id="scoreState">ТЕКУЩИЙ СЧЁТ</p>
-        <div class="game-score-totals"><article class="score-red"><h3>Красные <strong id="points-red">0</strong></h3><p id="formula-red"></p></article><article class="score-blue"><h3>Синие <strong id="points-blue">0</strong></h3><p id="formula-blue"></p></article></div>
-        <p>Считаются видимые половинки, не целые детали: цветные × 5, жёлтые с владельцем × 10, роботы в центре × 8, плюс бонус автономки. Cup сам очков не даёт.</p><p id="scoreExplanation"></p>
-        <details><summary>Очки по каждой цели</summary><div class="game-score-table"><table><thead><tr><th>Цель</th><th>Стопка снизу вверх</th><th>Красные</th><th>Синие</th></tr></thead><tbody id="goalPoints"></tbody></table></div></details>
-        <details open><summary>Ручной калькулятор — не меняет поле</summary>
-          <div class="game-guide-actions"><button id="calculator-red" class="btn btn-secondary">Взять значения красных</button><button id="calculator-blue" class="btn btn-secondary">Взять значения синих</button><button id="calculatorReset" class="btn btn-secondary">Обнулить расчёт</button></div>
-          <div id="pointCalculator" class="game-guide-actions"><label>Видимые цветные половинки <input id="calc-coloredHalves" type="number" min="0" max="126" step="1" value="0"></label><label>Видимые жёлтые с владельцем <input id="calc-yellowHalves" type="number" min="0" max="126" step="1" value="0"></label><label>Роботы в центре <input id="calc-midfieldRobots" type="number" min="0" max="2" step="1" value="0"></label><label>Бонус автономки <select id="calc-autonomousBonus"><option>0</option><option>6</option><option>12</option></select></label><output id="manualPoints" aria-live="polite">0 очков</output></div>
-          <p id="manualFormula"></p><p id="calculatorError" role="alert"></p><p>Кнопки берут снимок текущих или итоговых значений для одного альянса. Ручной расчёт не изменяет игровой счёт. Пустые и некорректные поля не считаются нулём.</p>
+      <section class="game-help" aria-label="Grabbing hints"><p id="actionHint" role="status"></p><p id="possessionStatus"></p><p id="placementHint"></p><label>Manual drive power <input id="gameDrivePower" type="range" min="0.1" max="1" step="0.05" value="0.35"></label><p>Hold E to raise and Q to lower; release the key to stop the lift. F takes a Pin, a Cup or a whole Cup + Pin stack; next to a Toggle it switches the Toggle. G places, R releases; a stack is released together. In practice the grabber starts empty; in a match the starting preload is kept. At most one Pin and one Cup: if the Pin slot is occupied, free it first to take another stack. A Cup goes on top of a Pin, not into an empty goal; points appear after the object lands.</p><details><summary>Detailed hints and Match Load</summary><p id="pickupHint"></p><p id="cupPickupHint"></p><p>Green circle at the fork = can take. Grabbing requires proximity and the right height. For a Match Load choose Pin or Cup; Auto loads a Pin.</p></details></section>
+      <section id="scoreCalculator" class="game-score" aria-label="Score calculator">
+        <h2>Score calculator</h2><p id="scoreState">CURRENT SCORE</p>
+        <div class="game-score-totals"><article class="score-red"><h3>Red <strong id="points-red">0</strong></h3><p id="formula-red"></p></article><article class="score-blue"><h3>Blue <strong id="points-blue">0</strong></h3><p id="formula-blue"></p></article></div>
+        <p>Visible halves are counted, not whole objects: coloured × 5, owned yellow × 10, robots in midfield × 8, plus the autonomous bonus. A Cup on its own scores nothing.</p><p id="scoreExplanation"></p>
+        <details><summary>Points per goal</summary><div class="game-score-table"><table><thead><tr><th>Goal</th><th>Stack from bottom to top</th><th>Red</th><th>Blue</th></tr></thead><tbody id="goalPoints"></tbody></table></div></details>
+        <details open><summary>Manual calculator — does not change the field</summary>
+          <div class="game-guide-actions"><button id="calculator-red" class="btn btn-secondary">Copy red values</button><button id="calculator-blue" class="btn btn-secondary">Copy blue values</button><button id="calculatorReset" class="btn btn-secondary">Reset calculation</button></div>
+          <div id="pointCalculator" class="game-guide-actions"><label>Visible coloured halves <input id="calc-coloredHalves" type="number" min="0" max="126" step="1" value="0"></label><label>Visible owned yellow halves <input id="calc-yellowHalves" type="number" min="0" max="126" step="1" value="0"></label><label>Robots in midfield <input id="calc-midfieldRobots" type="number" min="0" max="2" step="1" value="0"></label><label>Autonomous bonus <select id="calc-autonomousBonus"><option>0</option><option>6</option><option>12</option></select></label><output id="manualPoints" aria-live="polite">0 points</output></div>
+          <p id="manualFormula"></p><p id="calculatorError" role="alert"></p><p>The buttons copy a snapshot of the current or final values for one alliance. The manual calculation does not change the game score. Empty and invalid fields are not treated as zero.</p>
         </details>
-        <p>Правила и размеры сверены с <a href="https://www.vexrobotics.com/override-manual" target="_blank" rel="noopener">VEX Override v2.0</a>. Контакты и массы приближённые: это ещё не калиброванный цифровой двойник.</p>
+        <p>Rules and dimensions checked against <a href="https://www.vexrobotics.com/override-manual" target="_blank" rel="noopener">VEX Override v2.0</a>. Contacts and masses are approximate: this is not yet a calibrated digital twin.</p>
       </section>
       <!-- Jerry.io Waypoints Panel -->
       <div id="jerryPanel" class="jerry-panel">
         <div class="jerry-header">
-          <h4>📍 Путевые точки маршрута Jerry.io (<span id="wpCount">0</span>)</h4>
+          <h4>📍 Jerry.io route waypoints (<span id="wpCount">0</span>)</h4>
           <div class="jerry-actions">
-            <button id="btnRunJerryPath" class="btn btn-primary" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">▶ Запустить маршрут</button>
-            <button id="btnExportCpp" class="btn btn-secondary" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">📋 Экспорт C++</button>
-            <button id="btnClearJerry" class="btn btn-danger" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">🗑️ Очистить</button>
+            <button id="btnRunJerryPath" class="btn btn-primary" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">▶ Run route</button>
+            <button id="btnExportCpp" class="btn btn-secondary" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">📋 Export C++</button>
+            <button id="btnClearJerry" class="btn btn-danger" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">🗑️ Clear</button>
           </div>
         </div>
 
@@ -342,18 +354,18 @@
             <thead>
               <tr>
                 <th style="width: 45px;">#</th>
-                <th>X (дюймы)</th>
-                <th>Y (дюймы)</th>
-                <th>Угол &theta;</th>
-                <th>Тип хода</th>
-                <th>Скорость</th>
-                <th style="text-align: right;">Действия</th>
+                <th>X (inches)</th>
+                <th>Y (inches)</th>
+                <th>Angle &theta;</th>
+                <th>Move type</th>
+                <th>Speed</th>
+                <th style="text-align: right;">Actions</th>
               </tr>
             </thead>
             <tbody id="waypointTableBody">
               <tr>
                 <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 1rem;">
-                  Кликните по полю, чтобы поставить первую точку!
+                  Click the field to place the first point!
                 </td>
               </tr>
             </tbody>
@@ -364,16 +376,16 @@
       <!-- Layer Toggles -->
       <div class="canvas-layer-toggles">
         <label class="toggle-chip active">
-          <input type="checkbox" id="toggleTarget" checked> Траектория LTV
+          <input type="checkbox" id="toggleTarget" checked> LTV trajectory
         </label>
         <label class="toggle-chip active">
-          <input type="checkbox" id="toggleTrail" checked> Трек робота
+          <input type="checkbox" id="toggleTrail" checked> Robot track
         </label>
         <label class="toggle-chip active">
-          <input type="checkbox" id="toggleEKF" checked> Эллипс EKF
+          <input type="checkbox" id="toggleEKF" checked> EKF ellipse
         </label>
         <label class="toggle-chip active">
-          <input type="checkbox" id="toggleCoord" checked> Сетка координат
+          <input type="checkbox" id="toggleCoord" checked> Coordinate grid
         </label>
       </div>
     </section>
@@ -384,31 +396,31 @@
       <!-- Live Telemetry Stats -->
       <div class="panel-card">
         <div class="panel-title">
-          Телеметрия в реальном времени <span>100 Hz</span>
+          Real-time telemetry <span>100 Hz</span>
         </div>
         <div class="stats-grid">
           <div class="stat-item">
-            <div class="stat-label">Позиция X</div>
+            <div class="stat-label">Position X</div>
             <div class="stat-val highlight" id="statX">0.0"</div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Позиция Y</div>
+            <div class="stat-label">Position Y</div>
             <div class="stat-val highlight" id="statY">0.0"</div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Угол (Theta)</div>
+            <div class="stat-label">Heading (theta)</div>
             <div class="stat-val" id="statTheta">0.0°</div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Скорость (v)</div>
+            <div class="stat-label">Speed (v)</div>
             <div class="stat-val" id="statVel">0.00 m/s</div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Напряжение L</div>
+            <div class="stat-label">Voltage L</div>
             <div class="stat-val" id="statLeftVolt">0.0 V</div>
           </div>
           <div class="stat-item">
-            <div class="stat-label">Напряжение R</div>
+            <div class="stat-label">Voltage R</div>
             <div class="stat-val" id="statRightVolt">0.0 V</div>
           </div>
         </div>
@@ -421,7 +433,7 @@
       <!-- V5 Brain LCD Display Replica -->
       <div class="panel-card">
         <div class="panel-title">
-          Экран V5 Brain LCD <span>480x272 px</span>
+          V5 Brain LCD screen <span>480x272 px</span>
         </div>
         <div class="brain-lcd">
           <div class="lcd-line" id="brainLcd0">EKF X:   0.0 in | Odom:   0.0</div>
@@ -434,7 +446,7 @@
       <!-- Virtual V5 Controller Gamepad -->
       <div class="panel-card">
         <div class="panel-title">
-          Пульт управления V5 Controller <span>Интерактивный стенд</span>
+          V5 Controller <span>Interactive stand</span>
         </div>
         
         <div class="controller-shell" id="controllerShell">
@@ -449,7 +461,7 @@
           <div class="ctrl-btn-grid">
             <button class="ctrl-btn" id="btnCtrlA">
               [ A ]
-              <small>Стоп</small>
+              <small>Stop</small>
             </button>
             <button class="ctrl-btn" id="btnCtrlB">
               [ B ]
@@ -461,7 +473,7 @@
             </button>
             <button class="ctrl-btn" id="btnCtrlX">
               [ X ]
-              <small>Стрейф 24″</small>
+              <small>Strafe 24″</small>
             </button>
 
             <button class="ctrl-btn" id="btnCtrlUP">
@@ -474,7 +486,7 @@
             </button>
             <button class="ctrl-btn" id="btnCtrlDOWN">
               [ DOWN ]
-              <small>Диагональ</small>
+              <small>Diagonal</small>
             </button>
             <button class="ctrl-btn" id="btnCtrlL1" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white;">
               [ L1 ]
@@ -492,30 +504,30 @@
   <div id="exportModal" class="modal-overlay">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>📋 Экспорт траектории в C++ код (для src/main.cpp)</h3>
+        <h3>📋 Export the trajectory to C++ code (for src/main.cpp)</h3>
         <button id="btnModalClose" class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-          Скопируйте сгенерированную функцию и вставьте ее в <code>src/main.cpp</code>. Код использует holonomic команды, сплайны и каскадные повороты:
+          Copy the generated function and paste it into <code>src/main.cpp</code>. The code uses holonomic commands, splines and cascade turns:
         </p>
-        <div id="cppCodePreview" class="code-preview-box">// Код генерируется...</div>
+        <div id="cppCodePreview" class="code-preview-box">// Generating code...</div>
       </div>
       <div class="modal-footer">
-        <button id="btnCopyCode" class="btn btn-primary">Скопировать в буфер</button>
-        <button id="btnModalDismiss" class="btn btn-secondary">Закрыть</button>
+        <button id="btnCopyCode" class="btn btn-primary">Copy to clipboard</button>
+        <button id="btnModalDismiss" class="btn btn-secondary">Close</button>
       </div>
     </div>
   </div>
 
   <!-- Footer Keyboard Hints -->
-  <aside class="score-dock" aria-label="Постоянное табло очков"><span id="scoreDockState">Текущий · предварительный</span><div><span class="score-dock-red">Красные <strong id="scoreDock-red">0</strong></span><span class="score-dock-blue">Синие <strong id="scoreDock-blue">0</strong></span><a href="#scoreCalculator">Калькулятор ↓</a></div></aside>
+  <aside class="score-dock" aria-label="Persistent scoreboard"><span id="scoreDockState">Current · preliminary</span><div><span class="score-dock-red">Red <strong id="scoreDock-red">0</strong></span><span class="score-dock-blue">Blue <strong id="scoreDock-blue">0</strong></span><a href="#scoreCalculator">Calculator ↓</a></div></aside>
   <footer class="footer-tips">
     <div>
-      🎮 <strong>Управление:</strong> <span class="kbd">W</span> / <span class="kbd">S</span> — вперёд/назад, <span class="kbd">A</span> / <span class="kbd">D</span> — стрейф, ←/→ — поворот. В игре: <span class="kbd">E</span> — подъёмник вверх, <span class="kbd">Q</span> — вниз, <span class="kbd">F</span> — взять / Toggle, G — поставить, R — отпустить. В тесте движения Q/E также работают как стрейф.
+      🎮 <strong>Controls:</strong> <span class="kbd">W</span> / <span class="kbd">S</span> — forward/backward, <span class="kbd">A</span> / <span class="kbd">D</span> — strafe, ←/→ — turn. In the game: <span class="kbd">E</span> — lift up, <span class="kbd">Q</span> — down, <span class="kbd">F</span> — take / Toggle, G — place, R — release. In the motion test Q/E also strafe.
     </div>
     <div>
-      Пауза / Возобновление: <span class="kbd">Пробел</span>
+      Pause / resume: <span class="kbd">Space</span>
     </div>
   </footer>
 
