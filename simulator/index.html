@@ -130,9 +130,14 @@
             <span class="status-indicator-dot" id="aiStatusDot"></span>
             <span id="aiStatusText">AI Движок: Проверка соединения с Nemotron...</span>
           </div>
-          <button type="button" id="btnCheckNemotron" class="btn-check-nemotron">
-            🔄 Проверить Nemotron
-          </button>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" id="btnConnectNebius" class="btn-check-nemotron" style="background: linear-gradient(135deg, #06b6d4, #6366f1); border-color: rgba(6, 182, 212, 0.5); color: #fff; font-weight: 600;">
+              ⚡ Подключить Nebius Token Factory
+            </button>
+            <button type="button" id="btnCheckNemotron" class="btn-check-nemotron">
+              🔄 Проверить статус
+            </button>
+          </div>
         </div>
 
         <!-- AI Prompt Input Bar -->

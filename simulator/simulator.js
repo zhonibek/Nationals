@@ -1281,7 +1281,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   const aiStatusDot = document.getElementById('aiStatusDot');
   const aiStatusText = document.getElementById('aiStatusText');
   const btnCheckNemotron = document.getElementById('btnCheckNemotron');
+  const btnConnectNebius = document.getElementById('btnConnectNebius');
   let nemotronState = { available: false, liveInferenceVerified: false, checked: false, details: '' };
+
+  async function connectNebiusTokenFactory() {
+    // The key goes only to the local RoboProof server, which stores it in the git-ignored .cache folder.
+    const key = prompt(
+      '🔑 Введите ваш API ключ Nebius Token Factory (Bearer Token):\n\n' +
+      'Его можно создать в консоли Nebius Token Factory (раздел API Keys).\n' +
+      'Ключ сохраняется только локально в .cache/ и не попадает в git.'
+    );
+    if (key === null) return;
+    const cleanKey = key.trim();
+    if (!cleanKey) {
+      alert('API ключ не может быть пустым.');
+      return;
+    }
+    if (aiStatusText) aiStatusText.textContent = "Подключение к Nebius Token Factory...";
+    try {
+      const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: cleanKey })
+      });
+      const data = await res.json();
+      if (res.ok && data.available) {
+        nemotronState = { available: true, liveInferenceVerified: false, isNebius: true, checked: true, details: 'Nebius Token Factory' };
+        if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot online';
+        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Онлайн (NVIDIA Nemotron Cloud)';
+        alert('🎉 Успешное подключение к Nebius Token Factory!\nМодель: ' + data.model + '\nЗапросы AI Студии теперь обрабатывает NVIDIA Nemotron на облачных GPU Nebius.');
+      } else {
+        alert('❌ Ошибка подключения: ' + (data.error || 'Проверьте правильность API ключа.'));
+        checkNemotronStatus(false);
+      }
+    } catch (err) {
+      alert('❌ Не удалось связаться с сервером RoboProof (порт 8766): ' + err.message);
+    }
+  }
 
   async function checkNemotronStatus(interactive = false) {
     if (aiStatusText) aiStatusText.textContent = "AI Движок: Проверка соединения с Nemotron...";
@@ -1296,27 +1332,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       clearTimeout(timeoutId);
       const data = await res.json();
+      const isNebius = data.provider === 'nebius-token-factory' || !!data.cloudEnabled;
       nemotronState = {
         available: !!data.available,
         liveInferenceVerified: !!data.liveInferenceVerified,
+        isNebius,
         checked: true,
-        details: data.error || (data.available ? 'NVIDIA T4 verified' : 'GPU offline')
+        details: data.error || (isNebius ? 'Nebius Cloud GPU' : (data.available ? 'NVIDIA T4 verified' : 'GPU offline'))
       };
 
-      if (data.available && data.liveInferenceVerified) {
+      if (data.available && (data.liveInferenceVerified || isNebius)) {
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot online';
-        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nemotron T4 LLM:</strong> Подключен (NVIDIA T4)';
-        if (interactive) {
-          alert('🟢 Nemotron LLM Coordinator активен на NVIDIA T4!\nВаши промпты транслируются нейросетью Nemotron.');
+        if (isNebius) {
+          if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Онлайн (NVIDIA Nemotron Cloud)';
+          if (interactive) {
+            alert('🟢 Nebius Token Factory активен!\nМодель: ' + (data.model || 'NVIDIA Nemotron') + '\nИнференс offloaded на облачные GPU Nebius (< 1 сек).');
+          }
+        } else {
+          if (aiStatusText) aiStatusText.innerHTML = '<strong>Nemotron T4 LLM:</strong> Подключен (NVIDIA T4)';
+          if (interactive) {
+            alert('🟢 Nemotron LLM Coordinator активен на NVIDIA T4!\nВаши промпты транслируются нейросетью Nemotron.');
+          }
         }
       } else {
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot';
-        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nemotron T4: Офлайн</strong> (требуется GPU T4). Активен тактический AI + GVF-TD3 RL';
+        if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius/Nemotron: Офлайн</strong>. Нажмите «Подключить Nebius Token Factory»';
         if (interactive) {
           alert(
-            '⚠️ Nemotron T4 Offline:\n\n' +
-            (data.error || 'Требуется подключение к выделенному серверу NVIDIA T4.') +
-            '\n\nЛокальный CPU-лаунчер отключен по регламенту AGENTS.md.\nСимулятор использует встроенный тактический парсер и GVF-TD3 RL оптимизатор траекторий.'
+            '⚠️ Nemotron/Nebius Offline:\n\n' +
+            (data.error || 'Требуется подключение к Nebius Token Factory или NVIDIA T4.') +
+            '\n\nНажмите кнопку «⚡ Подключить Nebius Token Factory» для ввода API ключа.'
           );
         }
       }
@@ -1335,6 +1380,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (btnCheckNemotron) {
     btnCheckNemotron.addEventListener('click', () => checkNemotronStatus(true));
+  }
+  if (btnConnectNebius) {
+    btnConnectNebius.addEventListener('click', connectNebiusTokenFactory);
   }
   checkNemotronStatus(false);
 
@@ -1756,9 +1804,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (res.ok) {
         remoteChatRecord = await res.json();
         if (remoteChatRecord.inferencePerformed) {
-          coordinatorLabel = "NVIDIA Nemotron 3 Nano LLM (Verified NVIDIA T4)";
+          coordinatorLabel = remoteChatRecord.provider?.provider === 'nebius-token-factory'
+            ? "NVIDIA Nemotron (Nebius Token Factory Cloud GPU)"
+            : "NVIDIA Nemotron 3 Nano LLM (Verified NVIDIA T4)";
         } else {
-          coordinatorLabel = "Local Tactical Coordinator (Nemotron T4 Offline)";
+          coordinatorLabel = "Local Tactical Coordinator (Nemotron/Nebius Offline)";
         }
       }
     } catch (e) {

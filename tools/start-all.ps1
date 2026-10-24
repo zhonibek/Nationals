@@ -20,6 +20,14 @@ if (-not $simPort) {
 }
 
 # 2. Check or start RoboProof (Port 8766)
+$nebiusKeyFile = Join-Path $repo ".cache\robotai-nemotron\nebius-api-key.txt"
+if (Test-Path $nebiusKeyFile) {
+    $env:ROBOTAI_NEMOTRON_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
+    $env:ROBOTAI_NEMOTRON_MODEL = "nvidia/Nemotron-3_5-Lightning"
+    $env:NEBIUS_API_KEY = (Get-Content $nebiusKeyFile -Raw).Trim()
+    $env:ROBOTAI_NEMOTRON_API_KEY = $env:NEBIUS_API_KEY
+    Write-Host "  -> AI Engine: Nebius Token Factory Cloud GPU ($($env:ROBOTAI_NEMOTRON_MODEL))" -ForegroundColor Cyan
+}
 $roboPort = Get-NetTCPConnection -LocalPort 8766 -ErrorAction SilentlyContinue
 if (-not $roboPort) {
     Write-Host "[2/3] Starting App 2: RoboProof Mission Control on port 8766..." -ForegroundColor Green

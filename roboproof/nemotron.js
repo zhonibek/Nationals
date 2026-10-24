@@ -69,28 +69,59 @@ function objectKeys(value, allowed, label) {
   for (const key of Object.keys(value)) if (!allowed.includes(key)) throw Error(`Unsupported ${label}.${key}`);
 }
 
+// Nebius Token Factory (OpenAI-compatible) and the NVIDIA Nemotron model it serves.
+const NEBIUS_BASE_URL = 'https://api.tokenfactory.nebius.com/v1';
+const NEBIUS_MODEL = 'nvidia/Nemotron-3_5-Lightning';
+const NEBIUS_HOST = /^([a-z0-9-]+\.)*nebius\.(com|ai)$/i;
+
+function isAllowedHost(hostname) {
+  return ['127.0.0.1', 'localhost', '[::1]'].includes(hostname) || NEBIUS_HOST.test(hostname);
+}
+
 function configuration(env = process.env) {
+  const localKeyFile = path.join(__dirname, '../.cache/robotai-nemotron/local-api-key.txt');
+  const nebiusKeyFile = path.join(__dirname, '../.cache/robotai-nemotron/nebius-api-key.txt');
+  const hasNebiusKey = !!(env.NEBIUS_API_KEY || (fs.existsSync(nebiusKeyFile) && fs.readFileSync(nebiusKeyFile, 'utf8').trim()));
+
+  const defaultBase = (!env.ROBOTAI_NEMOTRON_BASE_URL && hasNebiusKey)
+    ? NEBIUS_BASE_URL
+    : 'http://127.0.0.1:8080/v1';
+
   let base;
-  try { base = new URL(env.ROBOTAI_NEMOTRON_BASE_URL || 'http://127.0.0.1:8080/v1'); }
+  try { base = new URL(env.ROBOTAI_NEMOTRON_BASE_URL || defaultBase); }
   catch { throw Error('Invalid Nemotron base URL'); }
-  if (!['http:', 'https:'].includes(base.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname) ||
+  if (!['http:', 'https:'].includes(base.protocol) || !isAllowedHost(base.hostname) ||
       base.username || base.password || base.search || base.hash || base.pathname.replace(/\/$/, '') !== '/v1') {
-    throw Error('Nemotron requires a loopback /v1 endpoint; cloud access is disabled');
+    throw Error('Nemotron requires a loopback or Nebius Token Factory /v1 endpoint');
   }
-  const model = env.ROBOTAI_NEMOTRON_MODEL || 'robotai-nemotron';
+  const isNebius = NEBIUS_HOST.test(base.hostname);
+  if (isNebius && base.protocol !== 'https:') {
+    throw Error('Nebius Token Factory endpoint requires HTTPS');
+  }
+  const defaultModel = isNebius ? NEBIUS_MODEL : 'robotai-nemotron';
+  const model = env.ROBOTAI_NEMOTRON_MODEL || defaultModel;
   if (typeof model !== 'string' || model.length > 200 || !/nemotron/i.test(model) || /[\r\n]/.test(model)) throw Error('Configure a Nemotron model ID or alias');
-  const timeoutMs = Number(env.ROBOTAI_NEMOTRON_TIMEOUT_MS || 120000);
+  const timeoutMs = Number(env.ROBOTAI_NEMOTRON_TIMEOUT_MS || (isNebius ? 60000 : 120000));
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300000) throw Error('Nemotron timeout must be 1000..300000 ms');
-  const keyFile = path.join(__dirname, '../.cache/robotai-nemotron/local-api-key.txt');
   const portableDefault = base.href.replace(/\/$/, '') === 'http://127.0.0.1:8080/v1';
-  const apiKey = env.ROBOTAI_NEMOTRON_API_KEY ?? (portableDefault && fs.existsSync(keyFile) ? fs.readFileSync(keyFile, 'utf8').trim() : '');
-  return {baseUrl: base.href.replace(/\/$/, ''), model, timeoutMs, apiKey};
+
+  let apiKey = env.ROBOTAI_NEMOTRON_API_KEY || env.NEBIUS_API_KEY || '';
+  if (!apiKey) {
+    if (portableDefault && fs.existsSync(localKeyFile)) {
+      apiKey = fs.readFileSync(localKeyFile, 'utf8').trim();
+    } else if (isNebius && fs.existsSync(nebiusKeyFile)) {
+      apiKey = fs.readFileSync(nebiusKeyFile, 'utf8').trim();
+    }
+  }
+  return {baseUrl: base.href.replace(/\/$/, ''), model, timeoutMs, apiKey, isNebius};
 }
 
 async function readJson(response, maximum = 256 * 1024) {
   if (!response.ok) {
-    await response.body?.cancel();
-    throw Error(`Local Nemotron returned HTTP ${response.status}; check the runtime logs`);
+    let errSnippet = '';
+    try { const errBody = await response.text(); errSnippet = errBody ? errBody.slice(0, 300) : ''; } catch {}
+    await response.body?.cancel().catch(() => {});
+    throw Error(`Nemotron endpoint returned HTTP ${response.status}: ${errSnippet || 'check runtime logs'}`);
   }
   const chunks = [];
   let length = 0;
@@ -106,11 +137,23 @@ async function readJson(response, maximum = 256 * 1024) {
 function createClient(config = configuration(), fetchImpl = fetch) {
   configuration({ROBOTAI_NEMOTRON_BASE_URL: config.baseUrl, ROBOTAI_NEMOTRON_MODEL: config.model,
     ROBOTAI_NEMOTRON_TIMEOUT_MS: String(config.timeoutMs)});
-  const metadata = {provider: 'local-openai-compatible', model: config.model, baseUrl: config.baseUrl,
-    cloudEnabled: false, transport: 'loopback-only', hardwarePolicy: 'NVIDIA T4 only', hardwareVerified: false,
+  const isNebius = NEBIUS_HOST.test(new URL(config.baseUrl).hostname);
+  const metadata = {
+    provider: isNebius ? 'nebius-token-factory' : 'local-openai-compatible',
+    model: config.model,
+    baseUrl: config.baseUrl,
+    cloudEnabled: isNebius,
+    transport: isNebius ? 'nebius-token-factory-api' : 'loopback-only',
+    hardwarePolicy: isNebius ? 'NVIDIA GPU Cloud (Nebius Token Factory)' : 'NVIDIA T4 only',
+    hardwareVerified: false,
     cpuFallbackEnabled: false,
-    privacyScope: 'A loopback endpoint may forward to an explicitly approved remote T4; transport does not establish data locality or GPU identity',
-    weightsVerifiedBy: 'Pinned model file verification is separate from T4 admission; an arbitrary endpoint alias alone proves neither'};
+    privacyScope: isNebius
+      ? 'Prompts and tool results are sent over HTTPS to Nebius Token Factory; the provider, not this project, controls GPU identity and data handling'
+      : 'A loopback endpoint may forward to an explicitly approved remote T4; transport does not establish data locality or GPU identity',
+    weightsVerifiedBy: isNebius
+      ? 'Model identity is the provider-served ID; weights are not independently verified by this project'
+      : 'Pinned model file verification is separate from T4 admission; an arbitrary endpoint alias alone proves neither'
+  };
   async function request(route, body, signal) {
     const deadline = AbortSignal.timeout(config.timeoutMs);
     const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -123,6 +166,7 @@ function createClient(config = configuration(), fetchImpl = fetch) {
     } catch (error) {
       if (combined.aborted) throw Error('Nemotron request cancelled or timed out; no task was executed');
       if (error.message.startsWith('Nemotron') || error.message.startsWith('Local Nemotron')) throw error;
+      if (isNebius) throw Error(`Cannot connect to Nebius Token Factory (${config.baseUrl}): ${error.message}`);
       throw Error('Cannot connect to the approved Nemotron T4 runtime. The legacy CPU launcher is disabled; configure an authenticated loopback connection to a verified T4 server');
     }
   }
@@ -130,15 +174,31 @@ function createClient(config = configuration(), fetchImpl = fetch) {
     metadata,
     async check(signal) {
       const result = await request('models', undefined, signal);
-      if (!Array.isArray(result.data) || !result.data.some(row => row.id === config.model)) throw Error('Configured Nemotron model is not served by this endpoint');
+      if (!Array.isArray(result.data)) throw Error('Invalid models list from Nemotron endpoint');
+      if (!result.data.some(row => row.id === config.model)) throw Error(`Configured Nemotron model ${config.model} is not served by this endpoint`);
       return {...metadata, available: true, liveInferenceVerified: false};
     },
-    chat: (messages, signal) => request('chat/completions', {model: config.model, messages,
-      stream: false, max_tokens: 512, temperature: 0.6, top_p: 0.95,
-      chat_template_kwargs: {enable_thinking: false}}, signal),
-    complete: (messages, signal, allowedTools = TOOLS) => request('chat/completions', {model: config.model, messages, tools: allowedTools,
-      tool_choice: 'required', parallel_tool_calls: false, stream: false, max_tokens: MAX_TOKENS,
-      temperature: 0.6, top_p: 0.95, chat_template_kwargs: {enable_thinking: false}}, signal)
+    chat: (messages, signal) => request('chat/completions', {
+      model: config.model,
+      messages,
+      stream: false,
+      max_tokens: 512,
+      temperature: 0.6,
+      top_p: 0.95,
+      ...(!isNebius ? {chat_template_kwargs: {enable_thinking: false}} : {})
+    }, signal),
+    complete: (messages, signal, allowedTools = TOOLS) => request('chat/completions', {
+      model: config.model,
+      messages,
+      tools: allowedTools,
+      tool_choice: isNebius ? 'auto' : 'required',
+      parallel_tool_calls: false,
+      stream: false,
+      max_tokens: MAX_TOKENS,
+      temperature: 0.6,
+      top_p: 0.95,
+      ...(!isNebius ? {chat_template_kwargs: {enable_thinking: false}} : {})
+    }, signal)
   };
 }
 
@@ -261,4 +321,4 @@ async function planTask(prompt, client = createClient(), {signal, registry = cre
   throw Error(`Nemotron reached its ${MAX_TURNS}-turn budget; no task was executed`);
 }
 
-module.exports = {configuration, createClient, planTask, CONTRACT, TOOLS, MAX_TURNS, MAX_TOKENS};
+module.exports = {configuration, createClient, NEBIUS_BASE_URL, NEBIUS_MODEL, planTask, CONTRACT, TOOLS, MAX_TURNS, MAX_TOKENS};

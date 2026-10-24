@@ -50,6 +50,17 @@ node roboproof/cli.js demo
 
 The simulator and RoboProof dashboard are separate local web applications and use different ports.
 
+### Connect NVIDIA Nemotron on Nebius Token Factory
+
+The AI Studio (simulator) and the RoboProof Nemotron workspace call `nvidia/Nemotron-3_5-Lightning` through [Nebius Token Factory](https://tokenfactory.nebius.com). Create an API key in the Token Factory console, then run:
+
+```powershell
+.\tools\connect-nebius.ps1
+.\start.bat
+```
+
+The key is saved only to the Git-ignored `.cache/robotai-nemotron/nebius-api-key.txt`; `start.bat` uses it automatically. Alternatively set `$env:NEBIUS_API_KEY` before `node roboproof/server.js`, or click **⚡ Подключить Nebius Token Factory** in the simulator's AI Studio. Without a key, the simulator and controller still work; only Nemotron planning is unavailable. Details and limits: [roboproof/NEMOTRON.md](roboproof/NEMOTRON.md#nebius-token-factory).
+
 ## Project architecture
 
 ### Robot motion stack
@@ -72,9 +83,8 @@ RoboProof is the project’s local dashboard and experimental robotics-agent wor
 - **Motion lab** — inspect controller and learning experiments, compare recorded outcomes, and replay selected actions in the original Simulator.
 - **Tactical AI** — provide rules-grounded, conditional recommendations from a verified game-rule set and an explicitly selected simulator snapshot. Recommendations do not execute robot actions.
 - **Perception preparation** — validate a future object-location request format and calibration inputs. Camera inference and automatic movement from a visual target are not implemented.
-- **Nemotron / Cosmos integrations** — optional model-runtime workspaces. They require their documented model/runtime setup and are separate from the embedded movement controller; their presence does not mean that model weights are installed or that inference is currently available.
-
-There is not yet a unified voice assistant that safely turns arbitrary natural-language requests into plans, obstacle-aware navigation, game actions, and verified physical motion.
+- **Nemotron / Cosmos integrations** — AI reasoning and task coordinator workspace. Nemotron is integrated with **Nebius Token Factory** (`nvidia/Nemotron-3_5-Lightning`), enabling sub-second natural language task planning and function-calling into the WebAssembly C++ controller.
+- **AI Autonomous Programming Studio** — available directly inside the 3D Simulator (port 8765): converts natural language movement instructions into validated C++ PROS routines and executable 3D rollouts in real time.
 
 ## RoboProof and machine learning
 

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const {configuration, createClient, planTask, MAX_TURNS, TOOLS} = require('../roboproof/nemotron');
+const {configuration, createClient, planTask, MAX_TURNS, TOOLS, NEBIUS_BASE_URL, NEBIUS_MODEL} = require('../roboproof/nemotron');
 const {createStore} = require('../roboproof/nemotron-store');
 const {createServer} = require('../roboproof/server');
 const {replay} = require('../roboproof/motion');
@@ -39,11 +39,27 @@ async function listen(server, context) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-test('Nemotron configuration is local-only and never silently selects another model', () => {
-  assert.equal(configuration({}).model, 'robotai-nemotron');
-  for (const baseUrl of ['https://api.nebius.com/v1', 'http://192.168.1.1/v1', 'file:///v1',
+test('Nemotron configuration permits loopback and Nebius Token Factory endpoints and never silently selects another model', () => {
+  assert.equal(configuration({ROBOTAI_NEMOTRON_BASE_URL: 'http://127.0.0.1:8080/v1'}).model, 'robotai-nemotron');
+  assert.equal(configuration({ROBOTAI_NEMOTRON_BASE_URL: 'https://api.studio.nebius.ai/v1'}).model, 'nvidia/Nemotron-3_5-Lightning');
+  assert.equal(configuration({ROBOTAI_NEMOTRON_BASE_URL: 'https://api.tokenfactory.nebius.com/v1'}).baseUrl, 'https://api.tokenfactory.nebius.com/v1');
+  assert.equal(configuration({ROBOTAI_NEMOTRON_BASE_URL: 'https://api.nebius.com/v1'}).baseUrl, 'https://api.nebius.com/v1');
+  assert.equal(configuration({ROBOTAI_NEMOTRON_BASE_URL: 'https://api.studio.nebius.ai/v1'}).baseUrl, 'https://api.studio.nebius.ai/v1');
+  const nebiusClient = createClient(configuration({
+    ROBOTAI_NEMOTRON_BASE_URL: 'https://api.tokenfactory.nebius.com/v1',
+    ROBOTAI_NEMOTRON_API_KEY: 'test-key'
+  }));
+  assert.equal(nebiusClient.metadata.provider, 'nebius-token-factory');
+  assert.equal(nebiusClient.metadata.model, NEBIUS_MODEL);
+  assert.equal(nebiusClient.metadata.cloudEnabled, true);
+  assert.equal(nebiusClient.metadata.hardwareVerified, false);
+  assert.equal(configuration({ROBOTAI_NEMOTRON_BASE_URL: NEBIUS_BASE_URL}).baseUrl, NEBIUS_BASE_URL);
+  assert.throws(() => configuration({ROBOTAI_NEMOTRON_BASE_URL: 'http://api.tokenfactory.nebius.com/v1'}), /HTTPS/);
+  assert.throws(() => configuration({ROBOTAI_NEMOTRON_BASE_URL: 'https://nebius.com.evil.example/v1'}), /endpoint/);
+
+  for (const baseUrl of ['http://192.168.1.1/v1', 'file:///v1', 'https://evil.example/v1',
     'http://user:secret@127.0.0.1/v1', 'http://127.0.0.1/v1?secret=yes', 'http://127.0.0.1/other']) {
-    assert.throws(() => configuration({ROBOTAI_NEMOTRON_BASE_URL: baseUrl}), /loopback/);
+    assert.throws(() => configuration({ROBOTAI_NEMOTRON_BASE_URL: baseUrl}), /endpoint/);
   }
   assert.throws(() => configuration({ROBOTAI_NEMOTRON_MODEL: 'qwen'}), /Nemotron model/);
   assert.throws(() => configuration({ROBOTAI_NEMOTRON_TIMEOUT_MS: 'Infinity'}), /timeout/);
@@ -129,6 +145,16 @@ test('local transport rejects redirects, mismatched model IDs, oversized or malf
   mode = 'wrong-model'; await assert.rejects(client.check(), /not served/);
   mode = 'huge'; await assert.rejects(client.check(), /exceeds/);
   mode = 'bad'; await assert.rejects(client.check(), /invalid JSON/);
+});
+
+test('Nebius check requires the exact configured model and never claims a live inference run', async () => {
+  const served = ids => async () => new Response(JSON.stringify({data: ids.map(id => ({id}))}));
+  const config = configuration({ROBOTAI_NEMOTRON_BASE_URL: NEBIUS_BASE_URL, ROBOTAI_NEMOTRON_API_KEY: 'test-key'});
+  await assert.rejects(createClient(config, served(['nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B'])).check(), /not served/);
+  const result = await createClient(config, served([NEBIUS_MODEL])).check();
+  assert.equal(result.available, true);
+  assert.equal(result.provider, 'nebius-token-factory');
+  assert.equal(result.liveInferenceVerified, false);
 });
 
 test('cancelled inference cannot execute or persist an approved task', async () => {

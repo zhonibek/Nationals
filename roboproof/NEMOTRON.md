@@ -64,9 +64,24 @@ node roboproof/server.js
 
 The default portable endpoint automatically reads the generated private local key from `.cache/robotai-nemotron/local-api-key.txt`. A separately managed compatible endpoint can use `ROBOTAI_NEMOTRON_API_KEY`; never paste keys into a task prompt, commit them, or put them in browser URLs. Changing the model server port also requires changing the base URL. Other compatible servers must expose the selected Nemotron model ID and native tool calls; those configurations have not been live-tested here.
 
+## Nebius Token Factory
+
+RoboProof can send the same tool-calling workflow to NVIDIA Nemotron served by [Nebius Token Factory](https://tokenfactory.nebius.com) (OpenAI-compatible). Defaults: base URL `https://api.tokenfactory.nebius.com/v1`, model `nvidia/Nemotron-3_5-Lightning`, 60-second request timeout.
+
+Provide a key in one of these ways (never in a prompt, URL or committed file):
+
+```powershell
+.\tools\connect-nebius.ps1          # asks for the key, saves it to .cache/robotai-nemotron/nebius-api-key.txt and lists Nemotron models
+.\start.bat                         # picks up the saved key automatically
+```
+
+or set `NEBIUS_API_KEY` (or `ROBOTAI_NEMOTRON_API_KEY`) before `node roboproof/server.js`; `ROBOTAI_NEMOTRON_BASE_URL` / `ROBOTAI_NEMOTRON_MODEL` override the defaults. The simulator's **⚡ Подключить Nebius Token Factory** button and the portal's Nebius badge post the key to the local server, which checks it against `/v1/models` first and saves it only if the configured model is served. `.cache/` is ignored by Git.
+
+A successful check only proves that the endpoint lists the configured model (`liveInferenceVerified: false`). GPU identity and weights are controlled by Nebius and are not verified by this project (`hardwareVerified: false`). The movement controller, simulator physics and approval gates are unchanged: Nemotron still only prepares a task proposal.
+
 ## Bounds and security
 
-- Model endpoint must be loopback `/v1`; foreign hosts, credentials in URLs, redirects and remote cloud endpoints are rejected. Nebius and paid APIs are disabled, regardless of existing cloud credits.
+- Model endpoint must be loopback `/v1` or an HTTPS Nebius `/v1` endpoint (`*.nebius.com`, `*.nebius.ai`); other hosts, plain-HTTP Nebius, credentials in URLs, redirects and query strings are rejected. With Nebius, task text, skill instructions and requested tool evidence leave this computer and are processed by Nebius.
 - The model runtime has a generated private API key, restricted CORS, disabled web UI and disabled built-in agent/command tools. No key is sent to the browser or saved in sessions.
 - In the separate robot-tool workflow, the catalog is initially metadata-only. `load_skill` activates at most two reviewed skills; their fixed resource/task tools are `get_robot_profile`, `get_saved_motion_evidence`, `get_learning_summary`, `get_motion_contract` and `prepare_reach_pose`. `ask_clarification` safely ends a request without a task; `finish_analysis` requires real tool evidence. Native function calls are required for that workflow, and preparation is hidden until the contract is read. Unloaded tools and plain-text preparation claims fail closed. Only fixed nominal configuration and user-selected compact saved evidence can be read; no arbitrary shell/files/network, custom handlers, motor-voltage output or physical robot endpoint.
 - Prompt: 1..4,000 characters. At most six model turns; 1,024 output tokens per turn; one tool call per turn; no automatic inference retries. Per-request timeout defaults to 120 seconds, configurable from 1..300 seconds. The server's total planning budget is 300 seconds.
@@ -84,6 +99,8 @@ The approved original-engine run reached the benchmark success gate after 2.91 s
 A second real request through the dashboard proposed `(0,0,0°) -> (24,0,0°)` correctly, took 73.7589923 seconds with a warm prompt cache, and also passed the approved original-engine run and exact replay. Session IDs: `4633ddf5-9db8-4f04-8229-68eaac6b9541` and `a66b49c1-9a84-455c-9121-802c7492d838`. Two simple tasks are functional smoke evidence, not a model-quality, motion-efficiency or Qwen comparison benchmark.
 
 The full Node/controller/Simulator suite passed 85 tests with zero failures and one existing external-Java test skipped because a usable Java compiler was unavailable. Generated robot configuration checked successfully. Focused integration/engine tests passed 26/26 without skips. Browser validation found and corrected a WASM-specific CSP loading restriction; the corrected original Simulator loaded the real C++ controller. The local model rejects unauthenticated inference with HTTP 401. Model weights, API key and generated sessions are ignored by Git.
+
+On 2026-10-24, the Nebius Token Factory endpoint listed `nvidia/Nemotron-3_5-Lightning` (model check 474 ms). A real request "Подъехать вперёд на 24 дюйма, старт (0,0,0), цель (0,24,0), курс 0°" ran `load_skill → get_motion_contract → prepare_reach_pose` and prepared `(0,0,0°) -> (0,24,0°)` with a 10-second deadline. An underspecified request ("Drive forward 24 inches to (0, 24, 0)") ended with `ask_clarification` in about 0.9 s instead of a guessed task. These are smoke checks of connectivity and latency, not a model-quality benchmark, and no movement was executed by them.
 
 Automated fixtures in `tests/nemotron.test.js` cover transport, validation, budgets, approval, persistence, original-engine execution and replay. Their mocked provider responses are explicitly labeled fixtures; only the retained live sessions establish actual model execution.
 

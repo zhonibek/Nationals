@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {Worker} = require('node:worker_threads');
 const {validate} = require('./core');
-const {createClient, planTask} = require('./nemotron');
+const {configuration, createClient, planTask, NEBIUS_BASE_URL, NEBIUS_MODEL} = require('./nemotron');
 const {createStore} = require('./nemotron-store');
 const {normalizeTask} = require('../simulator/motion');
 const {readiness: perceptionReadiness} = require('./perception');
@@ -172,7 +172,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       }
       if (pathname.startsWith('/api/nemotron/')) {
         const chatting = pathname === '/api/nemotron/chat';
-        const allowed = chatting ? ['message', 'id'] : pathname.endsWith('/plan') ? ['prompt', 'evidence', 'gameSnapshot'] : pathname.endsWith('/run') ? ['id'] : [];
+        const allowed = chatting ? ['message', 'id'] : pathname.endsWith('/plan') ? ['prompt', 'evidence', 'gameSnapshot'] : pathname.endsWith('/run') ? ['id'] : pathname.endsWith('/check') ? ['apiKey', 'baseUrl', 'model'] : [];
         if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) throw Error('Unsupported Nemotron request fields');
         const conversation = chatting && body.id !== undefined ? validateConversation(chatStore.read(body.id)) : null;
         if (body.gameSnapshot !== undefined) {
@@ -217,10 +217,36 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         response.once('close', cancelled);
         try {
           if (pathname.endsWith('/check')) {
-            try { reply(200, await nemotronClient.check(controller.signal)); }
-            catch (e) {
-              reply(503, {...nemotronClient.metadata, available: false, liveInferenceVerified: false, error: e.message});
+            if (['apiKey', 'baseUrl', 'model'].some(key => body[key] !== undefined && (typeof body[key] !== 'string' || body[key].length > 4096))) {
+              throw Error('Nemotron connection fields must be strings');
             }
+            // Switching endpoints: verify the candidate first, so a bad key never replaces a working client or reaches disk.
+            let candidate = nemotronClient;
+            const apiKey = body.apiKey?.trim();
+            if (apiKey || body.baseUrl || body.model) {
+              const baseUrl = body.baseUrl || NEBIUS_BASE_URL;
+              const {isNebius} = configuration({ROBOTAI_NEMOTRON_BASE_URL: baseUrl, ROBOTAI_NEMOTRON_MODEL: 'nemotron'});
+              candidate = createClient(configuration({
+                ROBOTAI_NEMOTRON_BASE_URL: baseUrl,
+                ROBOTAI_NEMOTRON_MODEL: body.model || (isNebius ? NEBIUS_MODEL : 'robotai-nemotron'),
+                ...(apiKey ? {ROBOTAI_NEMOTRON_API_KEY: apiKey} : {})
+              }));
+            }
+            let checked;
+            try { checked = await candidate.check(controller.signal); }
+            catch (e) {
+              reply(503, {...candidate.metadata, available: false, liveInferenceVerified: false, error: e.message});
+              return;
+            }
+            if (candidate !== nemotronClient) {
+              nemotronClient = candidate;
+              if (apiKey && candidate.metadata.provider === 'nebius-token-factory') {
+                const nebiusKeyFile = path.join(__dirname, '../.cache/robotai-nemotron/nebius-api-key.txt');
+                fs.mkdirSync(path.dirname(nebiusKeyFile), {recursive: true});
+                fs.writeFileSync(nebiusKeyFile, apiKey, {encoding: 'utf8', mode: 0o600});
+              }
+            }
+            reply(200, checked);
           }
           else if (chatting) {
             const record = await chatReply(body.message, conversation, nemotronClient, {signal: controller.signal});

@@ -99,11 +99,12 @@
       : record.status === 'analyzed' ? 'Analysis and read-only evidence saved. No simulation, training or policy promotion was performed.'
       : 'No executable task prepared. Clarify your request and ask again.');
   }
-  element('check').addEventListener('click', () => operation('Checking local model availability…', async () => {
+  element('check').addEventListener('click', () => operation('Checking model availability…', async () => {
     const result = await request('check', {});
-    text('connection', 'LOCAL MODEL AVAILABLE');
-    text('provider', `${result.model} · ${result.baseUrl} · cloud disabled`);
-    text('status', 'Model endpoint is available. Availability is not a verified inference run.');
+    const isNebius = result.provider === 'nebius-token-factory' || result.cloudEnabled;
+    text('connection', isNebius ? 'NEBIUS TOKEN FACTORY ACTIVE' : 'LOCAL MODEL AVAILABLE');
+    text('provider', `${result.model} · ${result.baseUrl} · ${isNebius ? 'cloud GPU accelerated (Nebius Token Factory)' : 'cloud disabled'}`);
+    text('status', isNebius ? 'Nebius Token Factory is connected and ready for fast GPU inference.' : 'Model endpoint is available. Availability is not a verified inference run.');
   }));
   element('restore').addEventListener('click', () => operation('Loading saved session…', async () => {
     const record = await request('latest');
@@ -200,8 +201,11 @@
     }).catch(error => {
       if (error.message !== 'No saved chat yet' && chatRevision === 0) text('status', `Could not restore chat: ${error.message}`);
     });
-    void request('status').then(result => text('provider', `${result.model} · ${result.baseUrl} · cloud disabled`))
-      .catch(() => text('status', 'Start the updated RoboProof server to use Nemotron.'));
+    void request('status').then(result => {
+      const isNebius = result.provider === 'nebius-token-factory' || result.cloudEnabled;
+      text('provider', `${result.model} · ${result.baseUrl} · ${isNebius ? 'Nebius Cloud GPU' : 'cloud disabled'}`);
+      if (isNebius) text('connection', 'NEBIUS TOKEN FACTORY ACTIVE');
+    }).catch(() => text('status', 'Start the updated RoboProof server to use Nemotron.'));
     void request('skills').then(result => {
       element('skills').replaceChildren();
       for (const skill of result.skills) {

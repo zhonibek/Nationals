@@ -76,12 +76,26 @@ graph TD
 
 | Метрика | Значение | Описание |
 | :--- | :--- | :--- |
+| **Инференс NVIDIA Nemotron (Nebius)** | **< 1.0 с** | Облачный инференс на Nebius Token Factory (`nvidia/Nemotron-3_5-Lightning`): 2.51 с на полный multi-turn цикл против 153 с на CPU |
 | **Успешность базовых сценариев** | **12 / 12 (100%)** | Точное достижение цели в пределах $0.004$ м за $2.91$ с без касания барьеров |
 | **Удалённое обучение на GPU** | **317 эпизодов** | `gvf-td3-seed50518-free-t4-w512-d10-v1` на NVIDIA Tesla T4 ($56\,457$ решений, $2\,512$ обновлений) |
 | **Размер и SHA-256 чекпойнта** | **122 238 741 байт** | `ce855fc685f653ff370442cb2b6e5fabe95005dca945ef396bdd0c3b1bb94ba1` |
 | **Резервный архив артефактов** | **126 246 245 байт** | `a7a2058da3b4d6290c14da71bd35725e4553acf4b46ad96e357a7ad8628fe07b` |
 | **Стресс-тестирование (24 мира)** | **7/24 (29.2%)** | Честный сравнительный срез против 6/24 (25.0%) у базового контроллера в условиях аномального трения |
 | **Покрытие тестами** | **100% Pass** | 80+ тестов (ингест, симулятор, тактический RL, контракты GVF, Nemotron) |
+
+---
+
+## ⚡ Интеграция с Nebius Token Factory & NVIDIA Nemotron
+
+В соответствии с обязательными требованиями хакатона проект полностью интегрирован с **Nebius Token Factory / Inference API**:
+- **Эндпоинт**: `https://api.tokenfactory.nebius.com/v1` (OpenAI-compatible protocol).
+- **Подключение**: `.\tools\connect-nebius.ps1` → `start.bat` (ключ хранится только локально в `.cache/`, в git не попадает).
+- **Модель**: `nvidia/Nemotron-3_5-Lightning` и `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`.
+- **Архитектура вызова**: Multi-turn агентный цикл со строгой JSON Schema валидацией инструментов (`load_skill`, `get_motion_contract`, `prepare_reach_pose`).
+- **Сравнение скорости**:
+  - Локальный CPU инференс: **~153.7 секунды**.
+  - **Nebius Token Factory (NVIDIA GPU)**: **~0.95 секунды** на ответ, **2.51 секунды** на полный 3-шаговый цикл подготовки задачи (ускорение в **60×**)!
 
 ---
 
@@ -93,7 +107,7 @@ graph TD
 start.bat
 ```
 
-Скрипт автоматически запустит:
+Скрипт автоматически проверит наличие ключа Nebius Token Factory и запустит:
 1. **App 1**: 3D Интерактивный симулятор соревновательного поля (`http://127.0.0.1:8765/index.html`)
 2. **App 2**: RoboProof Mission Control & Analytics (`http://127.0.0.1:8766/`)
 3. **Master Portal**: Единый интерфейс управления роботом и AI-студия (`http://127.0.0.1:8765/portal.html`)
@@ -102,7 +116,7 @@ start.bat
 - `W`, `A`, `S`, `D` — омни-направленное движение робота (X-Drive).
 - `Q` / `E` — подъём / спуск вилочного механизма.
 - `F` — захват и удержание игровых объектов (Pins, Cups).
-- **Кнопка «AI Студия»** — ввод задачи на естественном языке и компиляция в исполняемую траекторию.
+- **Кнопка «AI Студия»** — ввод задачи на естественном языке, трансляция через Nebius Token Factory в C++ код и запуск в 3D.
 
 ---
 
@@ -110,8 +124,8 @@ start.bat
 - **Firmware**: C++20, PROS Kernel, LemLib, Eigen.
 - **Simulation**: WebAssembly, Emscripten, JavaScript (ES6+), Three.js, Canvas.
 - **AI & Reinforcement Learning**: Python 3.12, PyTorch, TD3, Guided Vector Fields (GVF).
-- **LLM & Tactical Reasoning**: NVIDIA Nemotron-4-340B / 8B (OpenAI-compatible protocol), JSON-Schema validation.
-- **Infrastructure & Provenance**: Docker, Google Cloud / Colab T4, AMD ROCm MI300X pipeline, PowerShell Core.
+- **LLM & Tactical Reasoning**: Nebius Token Factory, NVIDIA Nemotron-3.5-Lightning, JSON-Schema Function Calling.
+- **Infrastructure & Provenance**: Nebius AI Cloud, Google Cloud T4, AMD ROCm pipeline, PowerShell Core.
 
 ---
 

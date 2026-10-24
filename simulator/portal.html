@@ -460,6 +460,9 @@
       <div class="status-badge" id="badgeRobo">
         <span class="dot"></span> App 2: RoboProof AI (:8766)
       </div>
+      <div class="status-badge" id="badgeNebius" style="cursor: pointer;" title="Nebius Token Factory (NVIDIA Nemotron)">
+        <span class="dot" id="dotNebius" style="background: #a855f7; box-shadow: 0 0 8px #a855f7;"></span> <span id="textNebius">Nebius Token Factory</span>
+      </div>
       <div class="status-badge">
         <span class="dot" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span> WebAssembly C++ Core
       </div>
@@ -610,6 +613,56 @@
       // Open split view or dual tabs
       switchView('split');
     });
+
+    // Check Nebius Token Factory status
+    async function checkPortalNebius() {
+      const dot = document.getElementById('dotNebius');
+      const text = document.getElementById('textNebius');
+      try {
+        const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
+        });
+        const data = await res.json();
+        if (res.ok && data.available && (data.cloudEnabled || data.provider === 'nebius-token-factory')) {
+          dot.style.background = '#10b981';
+          dot.style.boxShadow = '0 0 8px #10b981';
+          text.textContent = 'Nebius Token Factory: Online';
+        } else {
+          dot.style.background = '#eab308';
+          dot.style.boxShadow = '0 0 8px #eab308';
+          text.textContent = 'Nebius: Click to Connect';
+        }
+      } catch {
+        dot.style.background = '#64748b';
+        dot.style.boxShadow = 'none';
+        text.textContent = 'Nebius Token Factory';
+      }
+    }
+
+    document.getElementById('badgeNebius')?.addEventListener('click', async () => {
+      const key = prompt('🔑 Введите API ключ Nebius Token Factory (Bearer Token).\nКлюч сохраняется только локально в .cache/ и не попадает в git.');
+      if (!key || !key.trim()) return;
+      try {
+        const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: key.trim() })
+        });
+        const data = await res.json();
+        if (res.ok && data.available) {
+          alert('🟢 Nebius Token Factory успешно подключен!\nМодель: ' + data.model);
+          checkPortalNebius();
+        } else {
+          alert('❌ Ошибка: ' + (data.error || 'Не удалось подключиться к Nebius'));
+        }
+      } catch (e) {
+        alert('❌ Ошибка связи с RoboProof (порт 8766): ' + e.message);
+      }
+    });
+
+    checkPortalNebius();
   </script>
 </body>
 </html>
