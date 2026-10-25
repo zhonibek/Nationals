@@ -247,7 +247,8 @@ def run_episode(environment, model, seed, alliance, device, deterministic=False)
             break
     return trajectory, {"seed": seed, "alliance": alliance, "score": observation["score"],
                         "clock": observation["clock"], "decisions": observation["decisions"],
-                        "episodeReturn": total_reward, "done": observation["done"]}
+                        "episodeReturn": total_reward, "done": observation["done"],
+                        "timing": observation.get("timing")}
 
 
 def write_json_atomic(path: Path, value):
@@ -286,7 +287,8 @@ def main():
            "evaluationEpisodes": args.evaluation_episodes, "featureCount": FEATURE_COUNT,
            "width": model.width, "hiddenLayers": 2, "runtime": runtime, "sourceSha256": source_hashes,
            "reward": "change in exact Override simulator score differential; no LLM-generated reward",
-           "movementAbstraction": "macro-action teleport plus fixed nominal travel-time proxy; no physical motion or path feasibility",
+           "movementAbstraction": "macro-action teleport plus a travel-time proxy; no physical motion or path feasibility",
+           "tacticalTiming": "environment default profile, recorded per episode in episodes.jsonl ('measured' = calibrated to the team robot cycles: loader ~2 s, field ~4 s)",
            "trainingPerformed": True, "learnedImprovementVerified": False,
            "independentQualificationPerformed": False, "promotionAllowed": False,
            "warning": "This pilot can train game-score priorities in an abstract macro-action model only. It is not a physical tactics or scoring qualification."}

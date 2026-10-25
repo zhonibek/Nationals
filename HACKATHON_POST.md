@@ -107,24 +107,24 @@ We report learned-motion improvement as **not verified** (`learnedImprovementVer
 
 ### Tactical AI results
 
-One driver period (red alliance, seeds 101 and 102, 2026-10-24), scored by the Override rules engine in the abstract tactical model. Margin = own score − opponent score; the opponent robots are idle.
+One driver period (red alliance, seeds 101 and 102), scored by the Override rules engine in the abstract tactical model. Margin = own score − opponent score; the opponent robots are idle.
 
-| Coordinator | Mean margin | Match loads scored | Decision time |
+**Timing calibrated to the real robot (2026-10-25).** The team measured about **2 s per loading-zone cycle** and **4 s per field cycle** on the competition robot. The model's speed comes from the drive configuration (X-drive, 3.25″ wheels, 200 rpm: 48.1 in/s), and the pickup times are fitted so that a typical cycle in this field geometry takes the measured time: 0.31 s to take a match load, 2.67 s to approach, align and take a field object, 0.4 s to place. Field objects lie closer to goals than the loaders (22 vs 31 inches), so the difference comes from handling, as the team sees on the field.
+
+| Coordinator (measured timing) | Mean margin | Match loads scored | Decision time |
 | :--- | ---: | ---: | :--- |
-| Field greedy (best points/second, no match loads) | 228 | 0 | — |
-| **Loading-zone cycles** (team tactic) | 182 | 8 | — |
-| **Nemotron Super 120B** on Nebius Token Factory | 181 | 5 | 1.6 s |
-| Greedy over all actions | 173 | 5 | — |
-| **Nemotron 3.5 Lightning** on Nebius Token Factory | 163 | 6 | 0.6–0.8 s |
-| Random legal action | 79 | 4 | — |
+| **Loading-zone cycles** (team tactic) | **246** | 12 | — |
+| **Nemotron 3.5 Lightning** on Nebius Token Factory | **231** | 20 | 0.6 s |
+| Field greedy (best points/second, no match loads) | 218 | 0 | — |
+| Greedy over all actions | 203 | 18 | — |
+| Nemotron Super 120B on Nebius Token Factory | 203 (seed 101) | 18 | 1.7 s |
+| Random legal action | 62.5 | 6 | — |
 
-What this shows, honestly:
-
-- Nemotron plays a full match through tool calls with no invalid choice, and the larger model plays on par with the team's loading-zone tactic. It does not beat the best baseline yet.
-- In this abstract model, field scoring beats loading-zone cycles. On the real robot the team finds the loading zone faster. The model does not yet capture why: lying Pins need re-orienting, field objects are contested, and both robots act at the same time. Action times are configurable (`actionSeconds`), so measured robot cycle times can be plugged in; even a 4-second field pickup leaves field greedy ahead (191 vs 167), so the gap is mostly about which objects score, not only time.
-- **Trained actor-critic (free Colab Tesla T4, seed 731201, 2026-10-24):** a short pilot fit of 100 episodes and 13 updates. On 8 held-out start poses it reaches a mean margin of **102**, while the non-learning tactics on the same seeds score: loader-cycle 176.5, field greedy 225.5, greedy-all 174, random 44. So it beats random play but **not** the loading-zone tactic (`beatsLoaderCycleOnHoldout: false`). Training margins did not trend upward, so this pilot shows no learned improvement.
-- **Longer fit (free Colab Tesla T4, seed 731401, 2026-10-25):** 1200 episodes and 150 updates in about 5 minutes. While training, the sampled policy's margin rose steadily, from 74 over the first 100 episodes to 117.5 over the last 100. Its greedy held-out score did not improve: a mean margin of **99.5** on 8 held-out start poses, against loader-cycle 176.5, field greedy 225.5, greedy-all 175 and random 58.6 on the same seeds. So longer training improved the policy on its own training games but still comes nowhere near the hand-made tactics (`beatsLoaderCycleOnHoldout: false`).
-- Next: calibrate cycle times on the robot, model parallel robots, and give the tactical model richer state before training further.
+- With the robot's real timing, the team's loading-zone tactic is the best one, matching their experience on the field.
+- Nemotron Lightning beats both greedy baselines and field play and scores 20 match loads, but stays 15 points behind the hand-made loading-zone tactic. Super completed seed 101; on seed 102 it returned an invalid tool call at decision 14 and the match stopped by design (fail closed), so it has no two-seed mean.
+- Before calibration (nominal 24 in/s and 1.25 s pickups) the order was the opposite: field greedy 228, loader-cycle 182, Nemotron Super 181, greedy-all 173, Lightning 163, random 79. Measured cycle times changed which tactic wins, which is why the timing is now part of every result.
+- **Trained actor-critic (free Colab Tesla T4, nominal timing).** Pilot: seed 731201, 100 episodes, held-out margin **102** vs loader-cycle 176.5 and field greedy 225.5. Longer fit: seed 731401, 1200 episodes, training margin rose from 74 to 117.5 but held-out margin stayed at **99.5**. Neither beats the loading-zone tactic (`beatsLoaderCycleOnHoldout: false`). Both ran before the timing calibration; the next fit uses the measured profile.
+- Next: a fit on the measured timing profile, parallel robots, and richer match state for the learned policy.
 
 ---
 

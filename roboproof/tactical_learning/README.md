@@ -102,9 +102,13 @@ baseline on held-out scenarios with the actual Simulator/iraLIB motion stack.
   is `override-tactical-actor-critic-v2-loader`.
 - `TacticalEnvironment.previewCandidates()` returns every candidate's exact
   engine-previewed points and seconds (read-only, on a cloned game).
-- Action times are configurable:
-  `new TacticalEnvironment({actionSeconds: {pickup, loaderPickup, load, place, toggle, park}})`.
-  Defaults are nominal; replace them with times measured on the robot.
+- Timing profiles: `measured` (default) is calibrated to the team's robot
+  (about 2 s per loading-zone cycle, about 4 s per field cycle; 48.1 in/s from
+  `config/robot.json`, pickups fitted by `calibrateTiming()` to this field
+  geometry). `nominal` keeps the earlier uncalibrated assumptions. Individual
+  times can still be overridden:
+  `new TacticalEnvironment({timing, actionSeconds: {pickup, loaderPickup, load, place, toggle, park}})`.
+  The profile name is part of every observation and of `episodes.jsonl`.
 - [`../tactical_baselines.js`](../tactical_baselines.js) provides the
   non-learning tactics `loader-cycle` (team tactic), `field-greedy`,
   `greedy-all` and `random`, and one match runner shared with Nemotron.

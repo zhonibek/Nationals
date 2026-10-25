@@ -50,6 +50,39 @@ function loaderOutletBusy(game, loader) {
   return [...game.pins, ...game.cups].some(object => object.location === 'field' && Math.hypot(object.x - loader.x, object.y - loader.y) < 3);
 }
 
+// Straight-line top speed of the X-drive from config/robot.json: wheel rim speed × √2.
+function xDriveTopSpeed(robot = require('../config/robot.json')) {
+  const rim = robot.cartridgeRpm * (robot.externalGearRatio || 1) * Math.PI * robot.wheelDiameterIn / 60;
+  return robot.drive === 'XDRIVE' ? rim * Math.SQRT2 : rim;
+}
+
+// Fits mechanism times so that a typical cycle in this field geometry takes the measured time on the robot.
+// A cycle is a round trip between a goal and its nearest pickup point plus handling; `placeSeconds` is shared.
+function calibrateTiming({loaderCycleSeconds, fieldCycleSeconds, speed = xDriveTopSpeed(), placeSeconds = 0.4} = {}) {
+  const game = new OverrideGame({world: 'head-to-head', physical: false});
+  const distance = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
+  const loaderTrip = Math.min(...game.loaders.map(loader => Math.min(...game.goals
+    .filter(goal => !goal.alliance || goal.alliance === loader.alliance).map(goal => distance(loaderApproach(loader), goal)))));
+  const fieldTrips = [...game.pins, ...game.cups].filter(object => object.location === 'field')
+    .map(object => Math.min(...game.goals.map(goal => distance(game.objectPose(object), goal)))).sort((first, second) => first - second);
+  const fieldTrip = fieldTrips[Math.floor(fieldTrips.length / 2)];
+  const loaderPickup = loaderCycleSeconds - placeSeconds - 2 * loaderTrip / speed;
+  const pickup = fieldCycleSeconds - placeSeconds - 2 * fieldTrip / speed;
+  if (!(loaderPickup >= 0) || !(pickup >= 0)) throw Error('Measured cycle times are shorter than the travel time at this speed');
+  return {movementSpeedInchesPerSecond: Number(speed.toFixed(3)),
+    actionSeconds: {...ACTION_SECONDS, load: 0, loaderPickup: Number(loaderPickup.toFixed(3)), pickup: Number(pickup.toFixed(3)), place: placeSeconds},
+    calibration: {loaderCycleSeconds, fieldCycleSeconds, loaderTripInches: Number(loaderTrip.toFixed(2)),
+      fieldTripInches: Number(fieldTrip.toFixed(2)), placeSeconds}};
+}
+
+// `measured`: the team's robot timing (2026-10-25): about 2 s per loading-zone cycle and about 4 s per field cycle.
+// `nominal`: the earlier uncalibrated assumptions (24 in/s, 1.25 s pickups), kept for comparison.
+const TIMING_PROFILES = Object.freeze({
+  measured: Object.freeze({source: 'team measurement on the competition robot, 2026-10-25',
+    ...calibrateTiming({loaderCycleSeconds: 2, fieldCycleSeconds: 4})}),
+  nominal: Object.freeze({source: 'uncalibrated nominal assumptions', movementSpeedInchesPerSecond: 24, actionSeconds: ACTION_SECONDS})
+});
+
 function bounded(value, denominator) {
   return Math.max(-1, Math.min(1, value / denominator));
 }
@@ -68,7 +101,12 @@ function advanceTime(game, seconds) {
 }
 
 class TacticalEnvironment {
-  constructor({movementSpeedInchesPerSecond = 24, maximumDecisions = 40, actionSeconds = {}} = {}) {
+  constructor({timing = 'measured', movementSpeedInchesPerSecond, maximumDecisions = 60, actionSeconds = {}} = {}) {
+    if (!Object.hasOwn(TIMING_PROFILES, timing)) throw Error(`Unknown tactical timing profile ${timing}`);
+    const profile = TIMING_PROFILES[timing];
+    this.timing = timing;
+    movementSpeedInchesPerSecond ??= profile.movementSpeedInchesPerSecond;
+    actionSeconds = {...profile.actionSeconds, ...actionSeconds};
     if (!Number.isFinite(movementSpeedInchesPerSecond) || movementSpeedInchesPerSecond < 1 || movementSpeedInchesPerSecond > 60) {
       throw Error('Tactical movement-speed assumption must be between 1 and 60 inches per second');
     }
@@ -322,7 +360,7 @@ class TacticalEnvironment {
     this.done = terminal;
     this._prepared = new Map(raw.map(action => [action.id, action]));
     return {schemaVersion: 1, seed: this.seed, alliance: this.alliance, clock: this.game.clock,
-      score, decisions: this.decisions, done: this.done, movementModel: 'teleport macro-actions with explicit nominal travel-time proxy; not a motion/physics result',
+      score, decisions: this.decisions, done: this.done, timing: this.timing, movementModel: 'teleport macro-actions with explicit nominal travel-time proxy; not a motion/physics result',
       actions};
   }
 
@@ -367,4 +405,5 @@ class TacticalEnvironment {
   }
 }
 
-module.exports = {TacticalEnvironment, FEATURE_COUNT, MAX_FIELD_OBJECTS_PER_ROBOT, ACTION_SECONDS, cloneGame, loaderApproach};
+module.exports = {TacticalEnvironment, FEATURE_COUNT, MAX_FIELD_OBJECTS_PER_ROBOT, ACTION_SECONDS, TIMING_PROFILES, calibrateTiming,
+  xDriveTopSpeed, cloneGame, loaderApproach};

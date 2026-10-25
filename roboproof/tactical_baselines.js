@@ -11,7 +11,7 @@ const POLICIES = Object.freeze({
   random: 'Seeded uniformly random legal candidate'
 });
 
-const MATCH_DECISIONS = 40;
+const MATCH_DECISIONS = 60;
 
 function seededRandom(seed) {
   let state = (seed ^ 0x9E3779B9) >>> 0;

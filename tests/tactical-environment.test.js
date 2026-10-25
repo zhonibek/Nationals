@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const OverrideGame = require('../simulator/override');
-const {TacticalEnvironment, FEATURE_COUNT, cloneGame} = require('../roboproof/tactical_environment');
+const {TacticalEnvironment, FEATURE_COUNT, TIMING_PROFILES, calibrateTiming, cloneGame} = require('../roboproof/tactical_environment');
 
 test('tactical episodes start in the driver period with a bounded, finite candidate set', () => {
   const environment = new TacticalEnvironment();
@@ -72,9 +72,22 @@ test('loader macro-actions request a real match load, score it and are previewed
 });
 
 test('tactical action times are configurable and validated', () => {
-  const slow = new TacticalEnvironment({actionSeconds: {pickup: 4}});
+  const slow = new TacticalEnvironment({timing: 'nominal', actionSeconds: {pickup: 4}});
   assert.equal(slow.actionSeconds.pickup, 4);
   assert.equal(slow.actionSeconds.loaderPickup, 1.25);
+  assert.equal(slow.movementSpeedInchesPerSecond, 24);
+  assert.throws(() => new TacticalEnvironment({timing: 'guess'}), /Unknown tactical timing profile/);
   assert.throws(() => new TacticalEnvironment({actionSeconds: {teleport: 0}}), /Invalid tactical action time/);
   assert.throws(() => new TacticalEnvironment({actionSeconds: {pickup: -1}}), /Invalid tactical action time/);
+});
+
+test('the measured timing profile reproduces the team robot cycles (loader ~2 s, field ~4 s)', () => {
+  const {movementSpeedInchesPerSecond: speed, actionSeconds, calibration} = TIMING_PROFILES.measured;
+  const cycle = (trip, pickup) => 2 * trip / speed + pickup + actionSeconds.place + actionSeconds.load * (pickup === actionSeconds.loaderPickup);
+  assert.ok(Math.abs(cycle(calibration.loaderTripInches, actionSeconds.loaderPickup) - 2) < 0.01);
+  assert.ok(Math.abs(cycle(calibration.fieldTripInches, actionSeconds.pickup) - 4) < 0.01);
+  assert.ok(actionSeconds.pickup > actionSeconds.loaderPickup);
+  assert.equal(new TacticalEnvironment().timing, 'measured');
+  assert.equal(new TacticalEnvironment().observe().timing, 'measured');
+  assert.throws(() => calibrateTiming({loaderCycleSeconds: 0.5, fieldCycleSeconds: 4}), /shorter than the travel time/);
 });
