@@ -49,6 +49,36 @@ hash it, and copy it to the approved private RoboProof Drive folder before
 disconnecting the ephemeral runtime. Model weights and run artifacts are not
 committed to Git.
 
+### Optional warm start from the team tactic (off by default)
+
+`--warm-start-demonstration-episodes N` (0–200; the default 0 runs the trainer
+exactly as before) starts the fit from the `loader-cycle` tactic instead of
+from scratch:
+
+1. It plays N demonstration episodes. At each decision, the bridge's
+   `demonstrate` operation returns the candidate `loader-cycle` would pick,
+   the same choice `playMatch` makes. Demonstration seeds are the block right
+   after the training seeds, `seed + episodes + i`, red for even `i` and blue
+   for odd `i`. Each episode is logged to `exposure.jsonl` with
+   `phase: demonstration` and to `warm-start.jsonl`.
+2. It pretrains the actor with cross-entropy on the demonstrated choices and
+   the critic with smooth-L1 on their discounted returns, using the RL
+   discount. Pretraining has its own Adam optimizer (learning rate 1e-3,
+   batch 256, `--warm-start-epochs`, default 200), so the RL optimizer starts
+   fresh. The weights are saved as `warm-start.pt`.
+3. The unchanged RL loop then runs from those weights.
+
+The warm start shares `--max-seconds`. No demonstration starts after 40 % of
+the budget, and pretraining stops at 50 %. With a warm start, RL also stops
+early enough to leave twice the slowest RL episode for each evaluation
+episode, so the evaluation still runs. The baselines after the evaluation are
+outside the budget, as before. `run.json`, every checkpoint and
+`evaluation.json` record the warm start: episodes, seeds, losses and
+imitation accuracy. A warm-started result is therefore not a from-scratch
+comparison with `loader-cycle`. To keep demonstrations cheap, `loader-cycle`
+first previews only the match-load candidates and previews the rest only when
+no load scores; the choice is identical.
+
 ### Nebius AI Cloud Serverless AI job (paid, separately approved; shelved)
 
 **Shelved on 2026-10-24.** The user spends no money and the free Colab T4 is

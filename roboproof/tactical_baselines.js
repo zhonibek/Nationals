@@ -86,6 +86,22 @@ async function playMatch({seed, alliance = 'red', chooser, maximumDecisions = MA
     movementModel: observation.movementModel};
 }
 
+// Deterministic tactics a learner can imitate one decision at a time ('random' needs a per-match seeded stream).
+const DEMONSTRATION_POLICIES = Object.freeze(['loader-cycle', 'field-greedy', 'greedy-all']);
+
+// The candidate `policy` picks in the environment's current state, exactly as playMatch would pick it, or null
+// once the episode is over or nothing is legal. When a match load scores, loader-cycle chooses among the loads
+// alone, so it previews those first and previews the other candidates only when no load scores.
+function demonstrate(environment, policy = 'loader-cycle') {
+  if (!DEMONSTRATION_POLICIES.includes(policy)) throw Error(`Unsupported demonstration policy ${policy}`);
+  if (environment.done) return null;
+  if (policy === 'loader-cycle') {
+    const loads = environment.previewCandidates(isLoad);
+    if (loads.some(row => row.legal && row.points > 0)) return choose(policy, loads);
+  }
+  return choose(policy, environment.previewCandidates());
+}
+
 function policyChooser(policy, seed) {
   if (!POLICIES[policy]) throw Error(`Unknown tactical policy ${policy}`);
   const random = seededRandom(seed);
@@ -109,4 +125,5 @@ async function evaluatePolicies({policies = Object.keys(POLICIES), seeds, allian
   return results;
 }
 
-module.exports = {POLICIES, MATCH_DECISIONS, choose, playMatch, policyChooser, evaluatePolicies, seededRandom};
+module.exports = {POLICIES, MATCH_DECISIONS, DEMONSTRATION_POLICIES, choose, demonstrate, playMatch, policyChooser,
+  evaluatePolicies, seededRandom};

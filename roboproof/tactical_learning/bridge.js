@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const {TacticalEnvironment} = require('../tactical_environment');
-const {evaluatePolicies} = require('../tactical_baselines');
+const {evaluatePolicies, demonstrate} = require('../tactical_baselines');
 
 const environment = new TacticalEnvironment();
 const input = readline.createInterface({input: process.stdin, crlfDelay: Infinity});
@@ -24,6 +24,11 @@ input.on('line', line => {
         .then(results => respond({ok: true, baselines: Object.fromEntries(Object.entries(results).map(([name, value]) =>
           [name, {meanMargin: value.meanMargin, margins: value.matches.map(match => match.finalScore.margin)}]))}))
         .catch(error => respond({ok: false, error: error.message}));
+    } else if (request.operation === 'demonstrate') {
+      // The non-learning tactic's choice in the current state, for behavior cloning; read-only, null when none.
+      const policy = request.policy ?? 'loader-cycle';
+      const candidate = demonstrate(environment, policy);
+      respond({ok: true, policy, actionId: candidate ? candidate.id : null, candidate});
     } else if (request.operation === 'close') {
       // input.close() alone does not end the process while the trainer keeps stdin open: it runs inside
       // stdin's 'data' event, so the stream's read-ahead restarts the pipe read right after the pause

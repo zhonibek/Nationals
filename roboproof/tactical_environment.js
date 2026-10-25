@@ -364,11 +364,12 @@ class TacticalEnvironment {
       actions};
   }
 
-  // Engine preview of every current candidate: points gained (score-margin change) and seconds used.
-  // Read-only: each preview runs on a cloned game.
-  previewCandidates() {
+  // Engine preview of every current candidate, or only of those `include(action)` accepts: points gained
+  // (score-margin change) and seconds used. Read-only: each preview runs on a cloned game.
+  previewCandidates(include = () => true) {
     const rows = [];
     for (const action of this._prepared.values()) {
+      if (!include(action)) continue;
       const preview = this._preview(action);
       rows.push({id: action.id, kind: action.kind, robotId: action.robotId, targetId: action.targetId ?? null,
         loaderId: action.loaderId ?? null, goalId: action.goalId ?? null, legal: Boolean(preview),

@@ -30,6 +30,17 @@ SOURCE_FILES = ("roboproof/tactical_environment.js", "roboproof/tactical_baselin
 # torch device-name fragment -> exact CUDA capability and memory floor of the real device.
 APPROVED_NEBIUS_GPUS = {"L40S": {"capability": (8, 9), "minimumMemoryBytes": 40 * 1024 ** 3}}
 MAX_APPROVED_NEBIUS_COST_USD = 10.0
+# Optional behavior-cloning warm start (off unless --warm-start-demonstration-episodes is given): the actor imitates
+# the non-learning team tactic and the critic fits its returns, then the unchanged RL loop runs from those weights.
+WARM_START_POLICY = "loader-cycle"
+WARM_START_COLLECTION_SHARE = 0.4  # no demonstration episode starts after this share of --max-seconds
+WARM_START_SHARE = 0.5  # pretraining stops after this share; the rest of the budget is for RL and evaluation
+WARM_START_DEFAULT_EPOCHS = 200
+WARM_START_BATCH_SIZE = 256
+WARM_START_LEARNING_RATE = 1e-3
+WARM_START_CRITIC_WEIGHT = 0.5  # the RL loss weighs its critic term the same way
+# With a warm start, RL stops while this many times the slowest RL episode per evaluation episode is still left.
+EVALUATION_RESERVE_FACTOR = 2.0
 
 
 class NodeTacticalEnvironment:
@@ -63,6 +74,10 @@ class NodeTacticalEnvironment:
 
     def baselines(self, seeds, alliance):
         return self.request({"operation": "baselines", "seeds": [int(seed) for seed in seeds], "alliance": alliance})["baselines"]
+
+    def demonstrate(self, policy=WARM_START_POLICY):
+        """The non-learning tactic's candidate ID for the current state, or None when it makes no choice."""
+        return self.request({"operation": "demonstrate", "policy": policy})["actionId"]
 
     def close(self, timeout=10):
         """Shut the bridge down within bounded time and return what happened; never raises on a stuck bridge."""
@@ -170,11 +185,24 @@ def parse_args():
     parser.add_argument("--max-seconds", type=int, default=300)
     parser.add_argument("--evaluation-episodes", type=int, default=12)
     parser.add_argument("--output", type=Path, default=ROOT / "roboproof/runs/tactical/t4-pilot")
+    parser.add_argument("--warm-start-demonstration-episodes", type=int, default=0,
+                        help=f"behavior-clone the {WARM_START_POLICY} tactic from this many episodes before RL (0 = off)")
+    parser.add_argument("--warm-start-epochs", type=int,
+                        help=f"pretraining epochs over the demonstrations (default {WARM_START_DEFAULT_EPOCHS})")
     args = parser.parse_args()
     if not 0 <= args.seed <= 0xFFFFFFFF or not 1 <= args.episodes <= 10000 or not 1 <= args.max_seconds <= 600:
         parser.error("seed, episodes or bounded runtime is outside the allowed range")
     if not 1 <= args.evaluation_episodes <= 100:
         parser.error("evaluation-episodes must be between 1 and 100")
+    if not 0 <= args.warm_start_demonstration_episodes <= 200:
+        parser.error("warm-start-demonstration-episodes must be between 0 and 200")
+    if args.warm_start_epochs is not None:
+        if not args.warm_start_demonstration_episodes:
+            parser.error("warm-start-epochs needs warm-start-demonstration-episodes")
+        if not 1 <= args.warm_start_epochs <= 2000:
+            parser.error("warm-start-epochs must be between 1 and 2000")
+    elif args.warm_start_demonstration_episodes:
+        args.warm_start_epochs = WARM_START_DEFAULT_EPOCHS
     return args
 
 
@@ -193,13 +221,18 @@ def packed_batch(rows, device):
     return features, mask, choices, returns
 
 
-def update(model, optimizer, trajectories, device):
+def discounted_rows(trajectories):
     rows = []
     for trajectory in trajectories:
         discounted_return = 0.0
         for transition in reversed(trajectory):
             discounted_return = transition["reward"] + (0.995 ** transition["durationSeconds"]) * discounted_return
             rows.append({"features": transition["features"], "choice": transition["choice"], "return": discounted_return})
+    return rows
+
+
+def update(model, optimizer, trajectories, device):
+    rows = discounted_rows(trajectories)
     if not rows:
         return {"loss": 0.0, "samples": 0}
     features, mask, choices, returns = packed_batch(rows, device)
@@ -251,6 +284,152 @@ def run_episode(environment, model, seed, alliance, device, deterministic=False)
                         "timing": observation.get("timing")}
 
 
+def run_demonstration_episode(environment, seed, alliance, policy=WARM_START_POLICY):
+    """Play one episode with the non-learning tactic's choices, recording transitions the way run_episode does."""
+    observation = environment.reset(seed, alliance)
+    trajectory = []
+    total_reward = 0.0
+    rejected = 0
+    stop_reason = "episode-complete"
+    while not observation["done"]:
+        actions = observation["actions"]
+        if not actions:
+            break
+        action_id = environment.demonstrate(policy)
+        if action_id is None:
+            stop_reason = "no-choice"
+            break
+        choice = next((index for index, action in enumerate(actions) if action["id"] == action_id), None)
+        if choice is None:
+            raise RuntimeError("The demonstrated action is not in the observed candidate set")
+        result = environment.step(action_id)
+        rejected += bool(result.get("rejectedAction"))
+        trajectory.append({"features": [action["features"] for action in actions], "choice": choice,
+                           "reward": float(result["reward"]), "durationSeconds": float(result["durationSeconds"])})
+        total_reward += float(result["reward"])
+        observation = result["observation"]
+        if len(trajectory) >= 100:
+            stop_reason = "decision-cap"
+            break
+    return trajectory, {"seed": seed, "alliance": alliance, "policy": policy, "score": observation["score"],
+                        "clock": observation["clock"], "decisions": observation["decisions"],
+                        "episodeReturn": total_reward, "done": observation["done"], "timing": observation.get("timing"),
+                        "stopReason": stop_reason, "rejectedActions": rejected}
+
+
+def behavior_cloning_losses(model, features, mask, choices, returns):
+    logits, values = model(features, mask)
+    actor_loss = torch.nn.functional.cross_entropy(logits, choices)
+    critic_loss = torch.nn.functional.smooth_l1_loss(values, returns)
+    accuracy = (logits.argmax(dim=-1) == choices).float().mean()
+    return actor_loss, critic_loss, accuracy
+
+
+def pretrain(model, trajectories, device, epochs, deadline, seed):
+    """Behavior cloning: actor cross-entropy on the demonstrated candidate, critic on the demonstrated discounted
+    returns. It has its own optimizer and shuffle generator, so the RL optimizer and the global RNGs start untouched."""
+    rows = discounted_rows(trajectories)
+    features, mask, choices, returns = packed_batch(rows, device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=WARM_START_LEARNING_RATE)
+    generator = torch.Generator().manual_seed(seed)
+
+    def measure():
+        with torch.no_grad():
+            actor_loss, critic_loss, accuracy = behavior_cloning_losses(model, features, mask, choices, returns)
+        return {"actorLoss": float(actor_loss.cpu()), "criticLoss": float(critic_loss.cpu()), "accuracy": float(accuracy.cpu())}
+
+    model.train()
+    initial = measure()
+    history = []
+    stop_reason = "all-requested-epochs"
+    for epoch in range(epochs):
+        if time.monotonic() >= deadline:
+            stop_reason = "time-budget"
+            break
+        order = torch.randperm(len(rows), generator=generator).to(device)
+        totals = {"loss": 0.0, "actorLoss": 0.0, "criticLoss": 0.0}
+        batches = 0
+        for start in range(0, len(rows), WARM_START_BATCH_SIZE):
+            index = order[start:start + WARM_START_BATCH_SIZE]
+            actor_loss, critic_loss, _ = behavior_cloning_losses(model, features[index], mask[index], choices[index], returns[index])
+            loss = actor_loss + WARM_START_CRITIC_WEIGHT * critic_loss
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            for name, value in (("loss", loss), ("actorLoss", actor_loss), ("criticLoss", critic_loss)):
+                totals[name] += float(value.detach().cpu())
+            batches += 1
+        history.append({"epoch": epoch + 1, **{name: total / batches for name, total in totals.items()}})
+    return {"samples": len(rows), "epochsCompleted": len(history), "stopReason": stop_reason,
+            "initial": initial, "final": measure(), "history": history}
+
+
+def demonstration_seed(seed, episodes, index):
+    # Demonstrations get the block right after the predeclared training seeds (seed + episode for episode < episodes).
+    return (seed + episodes + index) & 0xFFFFFFFF
+
+
+def warm_start_plan(args):
+    count = args.warm_start_demonstration_episodes
+    return {"status": "planned", "policy": WARM_START_POLICY,
+            "method": "behavior cloning on the demonstrated choices (actor cross-entropy, critic smooth-L1 on the "
+                      "demonstrated discounted returns), then the unchanged RL loop from the pretrained weights",
+            "demonstrationEpisodesRequested": count,
+            "predeclaredDemonstrationSeeds": {"first": demonstration_seed(args.seed, args.episodes, 0),
+                                              "last": demonstration_seed(args.seed, args.episodes, count - 1),
+                                              "rule": "(seed + episodes + i) mod 2^32 for i < count; red for even i, blue for odd i"},
+            "epochsRequested": args.warm_start_epochs, "batchSize": WARM_START_BATCH_SIZE,
+            "learningRate": WARM_START_LEARNING_RATE, "criticWeight": WARM_START_CRITIC_WEIGHT,
+            "optimizer": "separate Adam; the RL optimizer starts fresh after the warm start",
+            "collectionDeadlineSeconds": WARM_START_COLLECTION_SHARE * args.max_seconds,
+            "deadlineSeconds": WARM_START_SHARE * args.max_seconds,
+            "evaluationReserveFactor": EVALUATION_RESERVE_FACTOR}
+
+
+def append_jsonl(stream, value):
+    stream.write(json.dumps(value, sort_keys=True) + "\n")
+    stream.flush()
+    os.fsync(stream.fileno())
+
+
+def run_warm_start(environment, model, device, args, run_id, started, exposure_log, record):
+    """Collect demonstration episodes (logged as exposure) and pretrain on them; updates `record` in place."""
+    record["status"] = "running"
+    record["collectionStopReason"] = "all-requested-episodes"
+    trajectories, seeds, margins = [], [], []
+    with (args.output / "warm-start.jsonl").open("x", encoding="utf-8") as log:
+        for index in range(args.warm_start_demonstration_episodes):
+            if time.monotonic() - started >= record["collectionDeadlineSeconds"]:
+                record["collectionStopReason"] = "time-budget"
+                break
+            seed = demonstration_seed(args.seed, args.episodes, index)
+            alliance = "red" if index % 2 == 0 else "blue"
+            trajectory, result = run_demonstration_episode(environment, seed, alliance)
+            result["demonstrationEpisode"] = index + 1
+            append_jsonl(log, {"event": "demonstration", **result})
+            append_jsonl(exposure_log, {"phase": "demonstration", "demonstrationEpisode": index + 1, "seed": seed,
+                                        "alliance": alliance, "decisions": result["decisions"],
+                                        "policy": WARM_START_POLICY, "runId": run_id})
+            trajectories.append(trajectory)
+            seeds.append(seed)
+            margins.append(result["score"]["margin"])
+        record.update({"demonstrationEpisodesCompleted": len(seeds), "demonstrationSeeds": seeds,
+                       "demonstrationSamples": sum(len(trajectory) for trajectory in trajectories),
+                       "demonstrationMeanScoreMargin": sum(margins) / len(margins) if margins else None,
+                       "pretraining": None})
+        if record["demonstrationSamples"]:
+            record["status"] = "pretraining"
+            pretraining = pretrain(model, trajectories, device, args.warm_start_epochs,
+                                   started + record["deadlineSeconds"], args.seed)
+            for row in pretraining.pop("history", []):
+                append_jsonl(log, {"event": "pretrain-epoch", **row})
+            record["pretraining"] = pretraining
+    record.update({"status": "completed" if record["pretraining"] else "skipped-no-demonstrations",
+                   "elapsedSeconds": round(time.monotonic() - started, 3),
+                   "reinforcementStoppedForEvaluationReserve": False})
+
+
 def write_json_atomic(path: Path, value):
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8") as stream:
@@ -292,6 +471,9 @@ def main():
            "trainingPerformed": True, "learnedImprovementVerified": False,
            "independentQualificationPerformed": False, "promotionAllowed": False,
            "warning": "This pilot can train game-score priorities in an abstract macro-action model only. It is not a physical tactics or scoring qualification."}
+    warm_start = warm_start_plan(args) if args.warm_start_demonstration_episodes else None
+    if warm_start is not None:
+        run["warmStart"] = warm_start
     (args.output / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
     environment = NodeTacticalEnvironment()
     started = time.monotonic()
@@ -299,15 +481,39 @@ def main():
     metrics = []
     completed = 0
     status = "interrupted"
+    slowest_episode_seconds = 0.0
     try:
         with (args.output / "episodes.jsonl").open("x", encoding="utf-8") as episode_log, \
                 (args.output / "exposure.jsonl").open("x", encoding="utf-8") as exposure_log:
+            if warm_start is not None:
+                run_warm_start(environment, model, device, args, run_id, started, exposure_log, warm_start)
+                if warm_start["pretraining"]:
+                    atomic_torch_save({"schemaVersion": 1, "runId": run_id, "model": MODEL_ID,
+                                       "stage": "behavior-cloning-warm-start", "modelState": model.state_dict(),
+                                       "trainingSeed": args.seed, "sourceSha256": source_hashes, "runtime": runtime,
+                                       "warmStart": warm_start, "learnedImprovementVerified": False,
+                                       "independentQualificationPerformed": False}, args.output / "warm-start.pt")
+                    warm_start["checkpoint"] = "warm-start.pt"
+                write_json_atomic(args.output / "run.json", run)
+                print(json.dumps({"event": "warm-start", "status": warm_start["status"],
+                                  "demonstrationEpisodes": warm_start["demonstrationEpisodesCompleted"],
+                                  "samples": warm_start["demonstrationSamples"],
+                                  "demonstrationMeanScoreMargin": warm_start["demonstrationMeanScoreMargin"],
+                                  "final": (warm_start["pretraining"] or {}).get("final"),
+                                  "elapsedSeconds": warm_start["elapsedSeconds"]}, sort_keys=True), flush=True)
             for episode in range(args.episodes):
                 if time.monotonic() - started >= args.max_seconds:
                     break
+                # The warm start spent part of the shared budget, so RL stops early enough for the evaluation.
+                if warm_start is not None and (time.monotonic() - started + EVALUATION_RESERVE_FACTOR
+                                               * args.evaluation_episodes * slowest_episode_seconds >= args.max_seconds):
+                    warm_start["reinforcementStoppedForEvaluationReserve"] = True
+                    break
                 episode_seed = (args.seed + episode) & 0xFFFFFFFF
                 alliance = "red" if episode % 2 == 0 else "blue"
+                episode_started = time.monotonic()
                 trajectory, result = run_episode(environment, model, episode_seed, alliance, device)
+                slowest_episode_seconds = max(slowest_episode_seconds, time.monotonic() - episode_started)
                 trajectories.append(trajectory)
                 result["episode"] = episode + 1
                 metrics.append(result)
@@ -326,7 +532,8 @@ def main():
                                   "modelState": model.state_dict(), "optimizerState": optimizer.state_dict(),
                                   "episodesCompleted": completed, "trainingSeed": args.seed,
                                   "sourceSha256": source_hashes, "runtime": runtime,
-                                  "learnedImprovementVerified": False, "independentQualificationPerformed": False}
+                                  "learnedImprovementVerified": False, "independentQualificationPerformed": False,
+                                  **({"warmStart": warm_start} if warm_start is not None else {})}
                     atomic_torch_save(checkpoint, args.output / "latest.pt")
                     metrics_row = {"event": "checkpoint", "episodes": completed, **update_metrics,
                                    "scoreMargin": result["score"]["margin"]}
@@ -341,7 +548,8 @@ def main():
                               "modelState": model.state_dict(), "optimizerState": optimizer.state_dict(),
                               "episodesCompleted": completed, "trainingSeed": args.seed,
                               "sourceSha256": source_hashes, "runtime": runtime,
-                              "learnedImprovementVerified": False, "independentQualificationPerformed": False}
+                              "learnedImprovementVerified": False, "independentQualificationPerformed": False,
+                              **({"warmStart": warm_start} if warm_start is not None else {})}
                 atomic_torch_save(checkpoint, args.output / "latest.pt")
                 with (args.output / "training.jsonl").open("a", encoding="utf-8") as training_log:
                     training_log.write(json.dumps({"event": "checkpoint", "episodes": completed, **update_metrics}, sort_keys=True) + "\n")
@@ -375,6 +583,12 @@ def main():
                                                            and learned_mean > baseline_means["loader-cycle"]),
                              "scope": "randomized start-pose holdout in the abstract macro-action model only",
                              "learnedImprovementVerified": False, "independentQualificationPerformed": False}
+        if warm_start is not None:
+            # The learned policy started from imitating loader-cycle, so it is not a from-scratch comparison.
+            evaluation_record["warmStart"] = {"policy": WARM_START_POLICY,
+                                              "demonstrationEpisodes": warm_start.get("demonstrationEpisodesCompleted", 0)}
+            warm_start["evaluationReserveSeconds"] = round(
+                EVALUATION_RESERVE_FACTOR * args.evaluation_episodes * slowest_episode_seconds, 3)
         (args.output / "evaluation.json").write_text(json.dumps(evaluation_record, indent=2) + "\n", encoding="utf-8")
         run.update({"status": status, "episodesCompleted": completed, "elapsedSeconds": round(time.monotonic() - started, 3),
                     "evaluationEpisodesCompleted": len(evaluation), "learnedImprovementVerified": False,

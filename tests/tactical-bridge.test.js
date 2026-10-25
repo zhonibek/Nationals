@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {spawn} = require('node:child_process');
+const {playMatch, policyChooser} = require('../roboproof/tactical_baselines');
 
 const BRIDGE = path.resolve(__dirname, '../roboproof/tactical_learning/bridge.js');
 
@@ -52,6 +53,28 @@ test('the tactical bridge answers nothing after close', async t => {
   bridge.child.stdin.write('{"operation":"close"}\n{"operation":"reset","seed":17,"alliance":"red"}\n');
   assert.deepEqual(await within(bridge.exited, 5, 'bridge still running 5 s after close'), {code: 0, signal: null});
   assert.deepEqual(bridge.lines, [{ok: true}]);
+});
+
+test('the tactical bridge demonstrates the loader-cycle choices the baseline match runner makes', async t => {
+  const decisions = 3;
+  const match = await playMatch({seed: 17, alliance: 'red', chooser: policyChooser('loader-cycle', 17), maximumDecisions: decisions});
+  const bridge = startBridge(t);
+  let observation = (await bridge.request({operation: 'reset', seed: 17, alliance: 'red'})).observation;
+  const demonstrated = [];
+  for (let decision = 0; decision < decisions; decision += 1) {
+    const answer = await bridge.request({operation: 'demonstrate'});
+    assert.equal(answer.ok, true);
+    assert.equal(answer.policy, 'loader-cycle');
+    assert.equal(answer.candidate.id, answer.actionId);
+    assert(observation.actions.some(action => action.id === answer.actionId), 'demonstrated ID must be an observed candidate');
+    demonstrated.push(answer.actionId);
+    observation = (await bridge.request({operation: 'step', actionId: answer.actionId})).observation;
+  }
+  assert.deepEqual(demonstrated, match.log.map(row => row.id));
+  assert.deepEqual(await bridge.request({operation: 'demonstrate', policy: 'random'}),
+    {ok: false, error: 'Unsupported demonstration policy random'});
+  assert.deepEqual(await bridge.request({operation: 'close'}), {ok: true});
+  assert.deepEqual(await within(bridge.exited, 5, 'bridge still running 5 s after close'), {code: 0, signal: null});
 });
 
 test('the tactical bridge also exits when its stdin reaches EOF without a close request', async t => {
