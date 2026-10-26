@@ -63,7 +63,70 @@
       finally { clearTimeout(timer); controller = null; button.disabled = replay || !local; stop.disabled = true; }
     });
     attachTacticalMatch({document, fetch, location, local});
+    attachTacticalTask({document, fetch, location, local});
     return {cancel: () => controller?.abort()};
+  }
+
+  function policyLabel(policy) {
+    const run = policy?.provenance?.runId ? `run ${String(policy.provenance.runId).slice(0, 8)}` : 'unknown run';
+    const evaluation = policy?.evaluation;
+    const heldOut = evaluation && Number.isFinite(evaluation.meanScoreMargin)
+      ? `, held-out margin ${evaluation.meanScoreMargin} vs loader-cycle ${evaluation.baselineMeanScoreMargin?.['loader-cycle'] ?? '?'}` : '';
+    return `${policy?.algorithm || 'trained policy'} (${run}, seed ${policy?.provenance?.trainingSeed ?? '?'}${heldOut})`;
+  }
+
+  // Sends one typed task to the trained tactical policy and lists every decision. Server text is shown as plain text only.
+  function attachTacticalTask({document, fetch, location, local}) {
+    const run = document.getElementById('runTacticalTask');
+    const text = document.getElementById('tacticalTaskText');
+    const status = document.getElementById('tacticalTaskStatus');
+    const log = document.getElementById('tacticalTaskLog');
+    const seedInput = document.getElementById('tacticalTaskSeed');
+    const allianceInput = document.getElementById('tacticalTaskAlliance');
+    if (!run || !text || !status || !log || !seedInput || !allianceInput) return;
+    run.disabled = !local;
+    if (!local) status.textContent = 'Open the Simulator through RoboProof to give Tactical AI a task.';
+    let busy = false;
+    const execute = async () => {
+      if (busy || !local) return;
+      const task = String(text.value || '').trim();
+      const seed = Number(seedInput.value);
+      if (!task) { status.textContent = 'Type a task first, for example: score 3 match loads into the neutral goals, then park.'; return; }
+      if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) { status.textContent = 'Seed must be a whole number from 0 to 4294967295.'; return; }
+      busy = true;
+      run.disabled = true;
+      log.replaceChildren();
+      status.textContent = 'Tactical AI is carrying out the task in the abstract tactical model…';
+      try {
+        const apiBase = location.port === '8765' ? 'http://127.0.0.1:8766' : '';
+        const response = await fetch(`${apiBase}/api/tactics/task`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({task, seed, alliance: allianceInput.value})});
+        const result = await response.json();
+        if (!response.ok) throw Error(result.error || `HTTP ${response.status}`);
+        for (const row of result.log || []) {
+          const tr = document.createElement('tr');
+          for (const value of [row.decision, `${row.clock.toFixed(1)} s`, row.rejected ? `${row.id} (rejected)` : row.id,
+            row.ownPoints, row.seconds.toFixed(2), row.score.margin, row.policyScore]) {
+            const td = document.createElement('td');
+            td.textContent = String(value);
+            tr.appendChild(td);
+          }
+          log.appendChild(tr);
+        }
+        const parked = result.parkedRobots?.length ? `, parked ${result.parkedRobots.join(' and ')}` : '';
+        status.textContent = `Understood: ${result.summary}. ${result.achieved ? 'Done' : 'Not completed'} (${result.stopReason}): ` +
+          `${result.scoringActions} placements${parked}, ${result.ownPointsGained >= 0 ? '+' : ''}${result.ownPointsGained} own points, ` +
+          `final margin ${result.finalScore.margin}, game clock ${result.clockStart}–${result.clockEnd} s. ` +
+          `Policy: ${policyLabel(result.policy)}. Abstract tactical model; no robot was driven.`;
+      } catch (error) {
+        status.textContent = `Tactical task failed: ${error.message}`;
+      } finally {
+        busy = false;
+        run.disabled = !local;
+      }
+    };
+    run.addEventListener('click', execute);
+    text.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault?.(); execute(); } });
   }
 
   // Runs one abstract tactical match through RoboProof and lists every decision. Model text is shown as plain text only.

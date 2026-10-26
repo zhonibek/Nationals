@@ -124,6 +124,43 @@ and in the private RoboProof Drive folder.
 false until a separately predeclared comparison beats a non-learning tactical
 baseline on held-out scenarios with the actual Simulator/iraLIB motion stack.
 
+## Give the trained policy a task in the app
+
+Export the actor once from a preserved run. This only reads the weights; it
+never trains:
+
+```bash
+python -m roboproof.tactical_learning.export_policy --checkpoint <preserved run>/run/latest.pt
+```
+
+It writes `roboproof/runs/tactical/policy.json` (Git-ignored, since weights are
+not committed) with the run ID, checkpoint SHA-256, training seed, warm-start
+summary and the held-out evaluation of the same run. Set
+`ROBOPROOF_TACTICAL_POLICY` to use another exported file.
+
+RoboProof serves it as `POST /api/tactics/task` (`{task, seed, alliance}`), and
+the Simulator has a **Give Tactical AI a task** panel. Type one task in English
+or Russian, for example "score 3 match loads into the neutral goals, then
+park", "забей 2 кубка с поля за 30 секунд", "набери 50 очков" or "припаркуй
+роботов".
+
+- `roboproof/tactical_task.js` turns the text into an allowlisted spec: object
+  (Pins, Cups), source (match loads or field), goals (neutral, alliance, tall),
+  a number of placements, a points target, a time limit and parking. A task it
+  does not understand, or a number out of range, is refused instead of guessed.
+- The policy then plays the driver period choosing only among candidate
+  macro-actions that fit the task, always the highest-scoring one, as in the
+  held-out evaluation. Rejected actions are not retried in the same state.
+  After the scoring part it parks if asked. The rules engine scores each step,
+  and the response lists every decision, the placements, the own points gained
+  and whether the task was completed.
+- `roboproof/tactical_policy.js` runs the actor in plain JavaScript
+  (tanh, tanh, linear). Its scores match PyTorch to about 1e-6.
+- This is the actor-critic trained here (policy gradient with a learned critic
+  baseline), not PPO. It acts in the abstract macro-action model only: nothing
+  drives a robot, and a completed task is not a physical or scoring
+  qualification.
+
 ## Loading-zone cycles, baselines and the Nemotron coordinator
 
 - `load-score-*` actions drive to the alliance loader, request a match load

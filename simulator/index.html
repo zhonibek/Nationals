@@ -309,6 +309,18 @@
         <p id="tacticalMatchStatus" role="status" aria-live="polite"></p>
         <div class="game-score-table"><table><thead><tr><th>#</th><th>Clock</th><th>Action</th><th>Points</th><th>Seconds</th><th>Margin</th><th>Reason</th></tr></thead><tbody id="tacticalMatchLog"></tbody></table></div>
       </details>
+      <details id="tacticalTaskPanel" open>
+        <summary>Give Tactical AI a task · trained policy</summary>
+        <p>Type one task in English or Russian. The trained Tactical AI policy (actor-critic, warm-started from loading-zone cycles on the free Colab T4) carries it out in the abstract tactical model, choosing only macro-actions that fit the task. The Override rules engine scores every step. Nothing drives a robot.</p>
+        <div class="viewport-toolbar" style="flex-wrap:wrap">
+          <label style="flex:1 1 280px">Task <input id="tacticalTaskText" type="text" maxlength="300" style="width:100%" placeholder="e.g. score 3 match loads into the neutral goals, then park"></label>
+          <label>Seed <input id="tacticalTaskSeed" type="number" min="0" max="4294967295" step="1" value="101"></label>
+          <label>Alliance <select id="tacticalTaskAlliance"><option value="red">red</option><option value="blue">blue</option></select></label>
+          <button id="runTacticalTask" class="btn btn-primary" type="button">Run task</button>
+        </div>
+        <p id="tacticalTaskStatus" role="status" aria-live="polite">Examples: “score 3 match loads into the neutral goals, then park” · “забей 2 кубка с поля за 30 секунд” · “набери 50 очков” · “припаркуй роботов”.</p>
+        <div class="game-score-table"><table><thead><tr><th>#</th><th>Clock</th><th>Action</th><th>Own points</th><th>Seconds</th><th>Margin</th><th>Policy score</th></tr></thead><tbody id="tacticalTaskLog"></tbody></table></div>
+      </details>
       <div class="viewport-toolbar" style="flex-wrap:wrap">
         <label>Mode <select id="gameMode"><option value="practice">Practice ∞</option><option value="match">Match 2:00</option></select></label>
         <label><input id="practicePreload" type="checkbox"> Preload Pin at practice start</label>
@@ -540,7 +552,7 @@
   <script src="motion-replay.js?v=gvf-residual-20261017"></script>
   <script src="nemotron-task.js?v=robotai-20261001"></script>
   <script src="tactics-snapshot.js?v=tactics-20261006"></script>
-  <script src="tactics-ui.js?v=tactics-20261006"></script>
+  <script src="tactics-ui.js?v=tactics-20261026"></script>
   <script src="simulator.js?v=controls-20261005"></script>
 </body>
 </html>

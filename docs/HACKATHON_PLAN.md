@@ -46,6 +46,7 @@ Current gap: `roboproof/tactical_environment.js` offers only field objects, Togg
   - The user spends no money. The Nebius route below is shelved and its launcher refuses to run.
   - Free Colab T4: not allocated at first (see log). Nebius route prepared: a separately named opt-in `--approved-nebius-gpu L40S --approved-max-cost-usd <usd>` in `train.py`, the job entrypoint `tools/nebius-tactical-job.sh` (seed 731201, 100 episodes, ≤600 s, 8 evaluation episodes; hashed archive copied to a private bucket) and `tools/nebius-tactical-launch.sh` (dry-run by default). The user approved pushing it and allows **only free bonus credits** to pay. **Not launched**: the launcher refuses unless the bonus-credit balance shown on the Billing page covers the approved ceiling.
 - [x] 4.6 Document measured results honestly (README, `HACKATHON_POST.md`, `roboproof/tactical_learning/README.md`).
+- [x] 4.7 "Give Tactical AI a task" in the app: a typed task (English or Russian) becomes an allowlisted spec, and the trained policy (seed 734001, actor-critic with a loader-cycle warm start, not PPO) carries it out in the abstract tactical model using only actions that fit the task. `POST /api/tactics/task`, a Simulator panel and an export script from checkpoint to JSON; the weights stay Git-ignored.
 
 Out of scope for this deadline: physical dispatch of tactical decisions to the robot, perception-driven state, opponent modelling.
 

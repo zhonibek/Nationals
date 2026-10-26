@@ -20,9 +20,12 @@ const Tactics = require('./tactics');
 const {readResults: readCosmosResults} = require('./cosmos-results');
 const {POLICIES: TACTICAL_POLICIES, playMatch: playTacticalMatch, policyChooser} = require('./tactical_baselines');
 const {playNemotronMatch} = require('./tactical-coordinator');
+const {loadPolicy: loadTacticalPolicy} = require('./tactical_policy');
+const {parseTask: parseTacticalTask, runTask: runTacticalTask} = require('./tactical_task');
 
 function createServer({reportPath = path.join(__dirname, 'runs/latest/report.json'), timeout = 120000,
-  nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, cosmosDirectory, agentTimeout = 300000} = {}) {
+  nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, cosmosDirectory, agentTimeout = 300000,
+  tacticalPolicyPath = process.env.ROBOPROOF_TACTICAL_POLICY || path.join(__dirname, 'runs/tactical/policy.json')} = {}) {
   let report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : null;
   let activeWorker = null;
   let activeAgent = null;
@@ -30,6 +33,18 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
   const chatStore = createStore(nemotronChatDirectory || path.join(__dirname, 'runs/nemotron-chat'));
   const motionStore = createMotionStore(motionDirectory);
   const skills = createRegistry();
+  let tacticalPolicy = null;
+  // The exported trained tactical actor, reloaded when the file changes. It is Git-ignored, so it may be missing.
+  function currentTacticalPolicy() {
+    if (!fs.existsSync(tacticalPolicyPath)) {
+      throw Error('No trained tactical policy is exported yet. Run: python -m roboproof.tactical_learning.export_policy --checkpoint <preserved run>/run/latest.pt');
+    }
+    const {mtimeMs, size} = fs.statSync(tacticalPolicyPath);
+    if (!tacticalPolicy || tacticalPolicy.mtimeMs !== mtimeMs || tacticalPolicy.size !== size) {
+      tacticalPolicy = {mtimeMs, size, policy: loadTacticalPolicy(tacticalPolicyPath)};
+    }
+    return tacticalPolicy.policy;
+  }
   const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/learning-summary.js', ['learning-summary.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
   assets.set('/cosmos.js', ['cosmos.js', 'text/javascript']);
   const simulatorFiles = new Set(['index.html', 'portal.html', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'motion-replay.js',
@@ -145,7 +160,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       fs.createReadStream(file).pipe(response);
       return;
     }
-    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/motion/compare-learned', '/api/tactics/match', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run', '/api/nemotron/chat'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
+    if (request.method !== 'POST' || !['/api/run', '/api/replay', '/api/motion/check', '/api/motion/run', '/api/motion/replay', '/api/motion/evaluate', '/api/motion/compare-learned', '/api/tactics/match', '/api/tactics/task', '/api/nemotron/check', '/api/nemotron/plan', '/api/nemotron/run', '/api/nemotron/chat'].includes(pathname)) { reply(404, {error: 'Not found'}); return; }
     if (!request.headers['content-type']?.startsWith('application/json')) { reply(415, {error: 'application/json required'}); return; }
     if (activeWorker || activeAgent) { reply(409, {error: 'A simulation or Nemotron request is already running'}); return; }
     try {
@@ -198,6 +213,23 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
           response.removeListener('close', cancelled);
           if (activeAgent === controller) activeAgent = null;
         }
+        return;
+      }
+      if (pathname === '/api/tactics/task') {
+        // A typed task carried out by the trained tactical policy in the abstract macro-action model; inference only.
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['task', 'seed', 'alliance'].includes(key))) {
+          throw Error('Unsupported tactical task fields');
+        }
+        if (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > 0xffffffff) throw Error('Tactical task seed must be a uint32');
+        const alliance = body.alliance ?? 'red';
+        if (!['red', 'blue'].includes(alliance)) throw Error('Tactical alliance must be red or blue');
+        const spec = parseTacticalTask(body.task);
+        const policy = currentTacticalPolicy();
+        const result = runTacticalTask({spec, policy, seed: body.seed, alliance});
+        reply(200, {schemaVersion: 1, summary: spec.summary, ...result,
+          policy: {algorithm: policy.algorithm, width: policy.width, provenance: policy.provenance, evaluation: policy.evaluation},
+          learnedImprovementVerified: false, independentQualificationPerformed: false,
+          scope: 'abstract macro-action model scored by the Override rules engine; no robot, motion or physics simulation was driven'});
         return;
       }
       if (pathname.startsWith('/api/nemotron/')) {
