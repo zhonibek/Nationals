@@ -79,6 +79,32 @@ comparison with `loader-cycle`. To keep demonstrations cheap, `loader-cycle`
 first previews only the match-load candidates and previews the rest only when
 no load scores; the choice is identical.
 
+### Optional PPO update (`--algorithm ppo`, off by default)
+
+`--algorithm ppo` replaces the original one-step actor-critic update with PPO
+(`ppo-clip-v1`) on the same network, rollouts, warm start and evaluation:
+
+- every 8 episodes, generalized advantage estimates (λ 0.95) with the same
+  discount as before, 0.995 per game second of each macro-action, and returns
+  = advantage + value;
+- the clipped surrogate objective (ε 0.2) over the candidate-set policy, smooth
+  L1 value loss (weight 0.5) and an entropy bonus (0.01);
+- 4 epochs of shuffled minibatches of 64 decisions, Adam at 3e-4 with gradient
+  clip 1.0, and the remaining epochs skipped once an epoch's mean approximate
+  KL exceeds 1.5 × 0.03.
+
+Rollouts record each choice's log-probability and value for the ratio and the
+advantages. `run.json` gets an `algorithm` block, and the checkpoint and
+`evaluation.json` record `ppo-clip-v1`. Without the flag the trainer writes
+exactly the files and keys it did before. It combines with the warm start, for
+example:
+
+```bash
+python -m roboproof.tactical_learning.train --approved-free-t4 --seed <unused seed> --episodes 300 \
+  --algorithm ppo --warm-start-demonstration-episodes 32 --max-seconds 600 --evaluation-episodes 8 \
+  --output roboproof/runs/tactical/<unique run folder>
+```
+
 ### Nebius AI Cloud Serverless AI job (paid, separately approved; shelved)
 
 **Shelved on 2026-10-24.** The user spends no money and the free Colab T4 is
@@ -156,10 +182,16 @@ park", "забей 2 кубка с поля за 30 секунд", "набери
   and whether the task was completed.
 - `roboproof/tactical_policy.js` runs the actor in plain JavaScript
   (tanh, tanh, linear). Its scores match PyTorch to about 1e-6.
-- This is the actor-critic trained here (policy gradient with a learned critic
-  baseline), not PPO. It acts in the abstract macro-action model only: nothing
-  drives a robot, and a completed task is not a physical or scoring
-  qualification.
+- The app names the algorithm recorded in the exported checkpoint: PPO
+  (`ppo-clip-v1`) or the original actor-critic (shown as "not PPO"). The same
+  policy drives the whole **Tactical PPO optimizer**: the task panel, the
+  "Run with the Tactical PPO optimizer" button next to Nemotron's advice (it
+  runs the typed task, or the whole driver period), and the "Tactical PPO
+  optimizer (trained policy)" coordinator in the tactical match panel, which
+  plays the 40-decision period next to Nemotron and the baselines.
+  `GET /api/tactics/policy` reports the loaded policy.
+- It acts in the abstract macro-action model only: nothing drives a robot, and
+  a completed task is not a physical or scoring qualification.
 
 ## Loading-zone cycles, baselines and the Nemotron coordinator
 

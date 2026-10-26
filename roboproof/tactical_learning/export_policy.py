@@ -19,7 +19,9 @@ from .model import FEATURE_COUNT, MODEL_ID
 POLICY_SCHEMA = "roboproof-tactical-policy-v1"
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "runs/tactical/policy.json"
 MAX_CHECKPOINT_BYTES = 16 * 1024 * 1024
-ALGORITHM = "actor-critic: policy gradient with a learned critic baseline (not PPO)"
+# Training update recorded in the checkpoint (absent = the original actor-critic step) -> label shown in the app.
+ALGORITHMS = {"actor-critic": "actor-critic: policy gradient with a learned critic baseline (not PPO)",
+              "ppo-clip-v1": "PPO: clipped surrogate objective with GAE on the candidate-set actor-critic"}
 
 
 def _finite(tensor: torch.Tensor, label: str) -> torch.Tensor:
@@ -76,10 +78,13 @@ def build_policy(checkpoint_bytes: bytes, evaluation_path: Path | None = None) -
         raise RuntimeError(f"Expected a schema-1 {MODEL_ID} checkpoint")
     width, layers = actor_layers(checkpoint.get("modelState"))
     warm_start = warm_start_summary(checkpoint.get("warmStart"))
-    algorithm = ALGORITHM + (f"; behavior-cloning warm start from {warm_start['policy']}" if warm_start else "")
+    algorithm_id = checkpoint.get("algorithm", "actor-critic")
+    if algorithm_id not in ALGORITHMS:
+        raise RuntimeError(f"Unknown training algorithm in checkpoint: {algorithm_id}")
+    algorithm = ALGORITHMS[algorithm_id] + (f"; behavior-cloning warm start from {warm_start['policy']}" if warm_start else "")
     runtime = checkpoint.get("runtime") if isinstance(checkpoint.get("runtime"), dict) else {}
     return {"schema": POLICY_SCHEMA, "model": MODEL_ID, "featureCount": FEATURE_COUNT, "width": width, "activation": "tanh",
-            "algorithm": algorithm, "layers": layers,
+            "algorithmId": algorithm_id, "algorithm": algorithm, "layers": layers,
             "provenance": {"checkpointSha256": hashlib.sha256(checkpoint_bytes).hexdigest(), "runId": checkpoint.get("runId"),
                            "trainingSeed": checkpoint.get("trainingSeed"), "episodesCompleted": checkpoint.get("episodesCompleted"),
                            "gpu": runtime.get("gpu"), "sourceSha256": checkpoint.get("sourceSha256"), "warmStart": warm_start},

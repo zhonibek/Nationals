@@ -18,6 +18,9 @@ test('the exported tactical actor scores candidates with two tanh layers and a l
   assert.equal(choice.action.id, 'high');
   assert.equal(policy.width, 16);
   assert.equal(policy.provenance.runId, 'fixture-run');
+  assert.deepEqual([policy.algorithmId, policy.ppo], ['actor-critic', false]);
+  const ppo = createPolicy(fixturePolicyRecord({overrides: {algorithmId: 'ppo-clip-v1', algorithm: 'PPO fixture'}}));
+  assert.deepEqual([ppo.algorithmId, ppo.ppo, ppo.algorithm], ['ppo-clip-v1', true, 'PPO fixture']);
   assert.throws(() => policy.score(features(0).slice(1)), /finite numbers/);
   assert.throws(() => policy.score(features(Number.NaN)), /finite numbers/);
 });
@@ -35,6 +38,7 @@ test('policy files with the wrong model, shapes, values or claims are refused', 
   for (const [label, overrides] of Object.entries(broken)) {
     assert.throws(() => createPolicy(fixturePolicyRecord({overrides})), Error, label);
   }
+  assert.throws(() => createPolicy(fixturePolicyRecord({overrides: {algorithmId: 'trpo'}})), /Unknown tactical policy algorithm trpo/);
   const shape = fixturePolicyRecord();
   shape.layers.hidden2.weight.pop();
   assert.throws(() => createPolicy(shape), /hidden2.weight/);

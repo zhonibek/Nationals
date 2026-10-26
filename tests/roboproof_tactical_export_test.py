@@ -54,6 +54,17 @@ class TacticalPolicyExportTests(unittest.TestCase):
         self.assertIs(policy["independentQualificationPerformed"], False)
         self.assertNotIn("value_head", json.dumps(policy))
 
+    def test_the_label_follows_the_training_algorithm_in_the_checkpoint(self):
+        model = tiny_model()
+        plain = export_policy.build_policy(checkpoint_bytes(model))
+        self.assertEqual(plain["algorithmId"], "actor-critic")
+        ppo = export_policy.build_policy(checkpoint_bytes(model, algorithm="ppo-clip-v1"))
+        self.assertEqual(ppo["algorithmId"], "ppo-clip-v1")
+        self.assertTrue(ppo["algorithm"].startswith("PPO: clipped surrogate objective"))
+        self.assertNotIn("not PPO", ppo["algorithm"])
+        with self.assertRaisesRegex(RuntimeError, "Unknown training algorithm"):
+            export_policy.build_policy(checkpoint_bytes(model, algorithm="trpo"))
+
     def test_wrong_checkpoints_are_refused(self):
         model = tiny_model()
         with self.assertRaisesRegex(RuntimeError, "schema-1"):

@@ -10,6 +10,8 @@ const {FEATURE_COUNT} = require('./tactical_environment');
 const POLICY_SCHEMA = 'roboproof-tactical-policy-v1';
 const MODEL_ID = 'override-tactical-actor-critic-v2-loader';
 const MAX_POLICY_BYTES = 8 * 1024 * 1024;
+// Training updates an exported policy may declare; an older export without the field is the original actor-critic.
+const ALGORITHM_IDS = Object.freeze(['actor-critic', 'ppo-clip-v1']);
 
 function vector(value, length, label) {
   if (!Array.isArray(value) || value.length !== length || !value.every(Number.isFinite)) {
@@ -45,6 +47,8 @@ function createPolicy(record) {
   if (record.learnedImprovementVerified !== false || record.independentQualificationPerformed !== false) {
     throw Error('A tactical policy file must not claim verified improvement or qualification');
   }
+  const algorithmId = record.algorithmId ?? 'actor-critic';
+  if (!ALGORITHM_IDS.includes(algorithmId)) throw Error(`Unknown tactical policy algorithm ${algorithmId}`);
   const {hidden1, hidden2, policy} = record.layers || {};
   const w1 = matrix(hidden1?.weight, width, FEATURE_COUNT, 'hidden1.weight');
   const b1 = vector(hidden1?.bias, width, 'hidden1.bias');
@@ -75,7 +79,7 @@ function createPolicy(record) {
     return best;
   }
 
-  return Object.freeze({score, choose, width, algorithm: String(record.algorithm || 'actor-critic'),
+  return Object.freeze({score, choose, width, algorithmId, ppo: algorithmId.startsWith('ppo'), algorithm: String(record.algorithm || algorithmId),
     provenance: record.provenance ?? null, evaluation: record.evaluation ?? null, scope: record.scope ?? null});
 }
 
@@ -85,4 +89,4 @@ function loadPolicy(file) {
   return createPolicy(JSON.parse(fs.readFileSync(file, 'utf8')));
 }
 
-module.exports = {POLICY_SCHEMA, MODEL_ID, createPolicy, loadPolicy};
+module.exports = {POLICY_SCHEMA, MODEL_ID, ALGORITHM_IDS, createPolicy, loadPolicy};

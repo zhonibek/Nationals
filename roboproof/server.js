@@ -18,7 +18,8 @@ const {motionEvidence} = require('./skill-evidence');
 const {chatReply, validateConversation} = require('./nemotron-chat');
 const Tactics = require('./tactics');
 const {readResults: readCosmosResults} = require('./cosmos-results');
-const {POLICIES: TACTICAL_POLICIES, playMatch: playTacticalMatch, policyChooser} = require('./tactical_baselines');
+const {POLICIES: TACTICAL_POLICIES, MATCH_DECISIONS: TACTICAL_MATCH_DECISIONS, playMatch: playTacticalMatch, policyChooser} = require('./tactical_baselines');
+const {TacticalEnvironment} = require('./tactical_environment');
 const {playNemotronMatch} = require('./tactical-coordinator');
 const {loadPolicy: loadTacticalPolicy} = require('./tactical_policy');
 const {parseTask: parseTacticalTask, runTask: runTacticalTask} = require('./tactical_task');
@@ -44,6 +45,21 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       tacticalPolicy = {mtimeMs, size, policy: loadTacticalPolicy(tacticalPolicyPath)};
     }
     return tacticalPolicy.policy;
+  }
+  const describeTacticalPolicy = policy => ({algorithmId: policy.algorithmId, ppo: policy.ppo, algorithm: policy.algorithm,
+    width: policy.width, provenance: policy.provenance, evaluation: policy.evaluation});
+  // The trained policy as a match coordinator: the "play the whole period" task with the baselines' decision limit.
+  function playTrainedTacticalMatch(seed, alliance) {
+    const policy = currentTacticalPolicy();
+    const played = runTacticalTask({spec: parseTacticalTask('play the driver period for the best score'), policy, seed, alliance,
+      environment: new TacticalEnvironment({maximumDecisions: TACTICAL_MATCH_DECISIONS})});
+    const log = played.log.map(row => ({decision: row.decision, clock: row.clock, id: row.id, kind: row.kind, robotId: row.robotId,
+      points: row.points, seconds: row.seconds, rejected: row.rejected, score: row.score,
+      reason: `${policy.ppo ? 'PPO' : 'policy'} score ${row.policyScore}`}));
+    return {seed, alliance, stopReason: played.stopReason === 'match-over' ? 'match-complete' : played.stopReason,
+      finalScore: played.finalScore, decisions: log.length,
+      matchLoadsScored: log.filter(row => !row.rejected && row.kind.startsWith('load-score-')).length, timing: played.timing,
+      movementModel: played.movementModel, log, policy: describeTacticalPolicy(policy), learnedImprovementVerified: false};
   }
   const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/learning-summary.js', ['learning-summary.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
   assets.set('/cosmos.js', ['cosmos.js', 'text/javascript']);
@@ -106,6 +122,11 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
     if (request.method === 'GET' && pathname === '/api/perception/status') { reply(200, perceptionReadiness()); return; }
     if (request.method === 'GET' && pathname === '/api/cosmos/results') { reply(200, readCosmosResults(cosmosDirectory)); return; }
     if (request.method === 'GET' && pathname === '/api/motion/status') { reply(200, motionReadiness()); return; }
+    if (request.method === 'GET' && pathname === '/api/tactics/policy') {
+      try { reply(200, {available: true, ...describeTacticalPolicy(currentTacticalPolicy())}); }
+      catch (error) { reply(200, {available: false, error: error.message}); }
+      return;
+    }
     if (request.method === 'GET' && pathname === '/api/motion/learning') {
       const status = MotionLearner.status(learningDirectory);
       const independentResearch = readIndependentEvaluation(status, learningDirectory);
@@ -192,10 +213,15 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['coordinator', 'seed', 'alliance'].includes(key))) {
           throw Error('Unsupported tactical match fields');
         }
-        if (body.coordinator !== 'nemotron' && !Object.hasOwn(TACTICAL_POLICIES, body.coordinator)) throw Error('Unknown tactical coordinator');
+        if (!['nemotron', 'tactical-policy'].includes(body.coordinator) && !Object.hasOwn(TACTICAL_POLICIES, body.coordinator)) throw Error('Unknown tactical coordinator');
         if (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > 0xffffffff) throw Error('Tactical match seed must be a uint32');
         const alliance = body.alliance ?? 'red';
         if (!['red', 'blue'].includes(alliance)) throw Error('Tactical alliance must be red or blue');
+        if (body.coordinator === 'tactical-policy') {
+          reply(200, {schemaVersion: 1, coordinator: body.coordinator, ...playTrainedTacticalMatch(body.seed, alliance),
+            scope: 'abstract macro-action model scored by the Override rules engine; no robot, motion or physics simulation was driven'});
+          return;
+        }
         const controller = new AbortController();
         activeAgent = controller;
         const timer = setTimeout(() => controller.abort(), agentTimeout);
@@ -227,7 +253,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
         const policy = currentTacticalPolicy();
         const result = runTacticalTask({spec, policy, seed: body.seed, alliance});
         reply(200, {schemaVersion: 1, summary: spec.summary, ...result,
-          policy: {algorithm: policy.algorithm, width: policy.width, provenance: policy.provenance, evaluation: policy.evaluation},
+          policy: describeTacticalPolicy(policy),
           learnedImprovementVerified: false, independentQualificationPerformed: false,
           scope: 'abstract macro-action model scored by the Override rules engine; no robot, motion or physics simulation was driven'});
         return;

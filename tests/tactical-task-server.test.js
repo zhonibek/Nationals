@@ -8,13 +8,49 @@ const path = require('node:path');
 const {createServer} = require('../roboproof/server');
 const {fixturePolicyRecord} = require('./helpers/tactical-policy-fixture');
 
-async function start(t, tacticalPolicyPath) {
+async function start(t, tacticalPolicyPath, endpoint = '/api/tactics/task') {
   const server = createServer({reportPath: 'does-not-exist.json', tacticalPolicyPath});
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
-  return body => fetch(`${base}/api/tactics/task`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const post = body => fetch(`${base}${endpoint}`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  post.status = () => fetch(`${base}/api/tactics/policy`).then(response => response.json());
+  return post;
 }
+
+function policyFile(t, overrides = {}) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tactical-task-server-'));
+  t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  const file = path.join(directory, 'policy.json');
+  fs.writeFileSync(file, JSON.stringify(fixturePolicyRecord({overrides})));
+  return {file, directory};
+}
+
+test('GET /api/tactics/policy names the loaded policy and its training algorithm', async t => {
+  const {file, directory} = policyFile(t, {algorithmId: 'ppo-clip-v1', algorithm: 'PPO fixture'});
+  const loaded = await (await start(t, file)).status();
+  assert.deepEqual([loaded.available, loaded.algorithmId, loaded.ppo, loaded.algorithm, loaded.provenance.runId],
+    [true, 'ppo-clip-v1', true, 'PPO fixture', 'fixture-run']);
+  const missing = await (await start(t, path.join(directory, 'none.json'))).status();
+  assert.equal(missing.available, false);
+  assert.match(missing.error, /No trained tactical policy is exported/);
+});
+
+test('the trained policy plays a whole tactical match as a coordinator next to the baselines', async t => {
+  const {file} = policyFile(t, {algorithmId: 'ppo-clip-v1', algorithm: 'PPO fixture'});
+  const post = await start(t, file, '/api/tactics/match');
+  const response = await post({coordinator: 'tactical-policy', seed: 101, alliance: 'red'});
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(result.coordinator, 'tactical-policy');
+  assert(result.decisions > 0 && result.decisions <= 40);
+  assert.equal(result.decisions, result.log.length);
+  assert(result.log.every(row => /^PPO score -?\d/.test(row.reason) && Number.isFinite(row.score.margin)));
+  assert.equal(result.policy.algorithmId, 'ppo-clip-v1');
+  assert.equal(result.learnedImprovementVerified, false);
+  assert.match(result.scope, /no robot/);
+  assert.equal((await post({coordinator: 'ppo-magic', seed: 1})).status, 400);
+});
 
 test('POST /api/tactics/task runs a typed task with the exported policy and labels it honestly', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tactical-task-server-'));

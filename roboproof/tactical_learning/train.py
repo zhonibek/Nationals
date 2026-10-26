@@ -41,6 +41,17 @@ WARM_START_LEARNING_RATE = 1e-3
 WARM_START_CRITIC_WEIGHT = 0.5  # the RL loss weighs its critic term the same way
 # With a warm start, RL stops while this many times the slowest RL episode per evaluation episode is still left.
 EVALUATION_RESERVE_FACTOR = 2.0
+# Optional PPO update (off unless --algorithm ppo): clipped surrogate objective on the same candidate-set actor-critic,
+# GAE with the same time-based discount as the actor-critic returns (0.995 per game second), and several epochs of
+# shuffled minibatches over each batch of 8 episodes. The network, rollouts, warm start and evaluation are unchanged.
+PPO_ALGORITHM = "ppo-clip-v1"
+PPO_CLIP_RANGE = 0.2
+PPO_EPOCHS = 4
+PPO_MINIBATCH_SIZE = 64
+PPO_GAE_LAMBDA = 0.95
+PPO_VALUE_WEIGHT = 0.5
+PPO_ENTROPY_WEIGHT = 0.01
+PPO_TARGET_KL = 0.03  # the remaining epochs of an update are skipped once an epoch's mean approximate KL exceeds 1.5x this
 
 
 class NodeTacticalEnvironment:
@@ -185,6 +196,8 @@ def parse_args():
     parser.add_argument("--max-seconds", type=int, default=300)
     parser.add_argument("--evaluation-episodes", type=int, default=12)
     parser.add_argument("--output", type=Path, default=ROOT / "roboproof/runs/tactical/t4-pilot")
+    parser.add_argument("--algorithm", choices=("actor-critic", "ppo"), default="actor-critic",
+                        help="policy update: the original actor-critic step (default) or PPO with a clipped objective")
     parser.add_argument("--warm-start-demonstration-episodes", type=int, default=0,
                         help=f"behavior-clone the {WARM_START_POLICY} tactic from this many episodes before RL (0 = off)")
     parser.add_argument("--warm-start-epochs", type=int,
@@ -254,6 +267,90 @@ def update(model, optimizer, trajectories, device):
     return {"loss": float(loss.detach().cpu()), "samples": len(rows)}
 
 
+def gae_rows(trajectories, gae_lambda=PPO_GAE_LAMBDA):
+    """Generalized advantage estimates with a per-step discount of 0.995 ** durationSeconds; each episode ends terminal."""
+    rows = []
+    for trajectory in trajectories:
+        advantage = 0.0
+        next_value = 0.0
+        for transition in reversed(trajectory):
+            discount = 0.995 ** transition["durationSeconds"]
+            delta = transition["reward"] + discount * next_value - transition["value"]
+            advantage = delta + discount * gae_lambda * advantage
+            rows.append({"features": transition["features"], "choice": transition["choice"],
+                         "oldLogProbability": transition["logProbability"], "advantage": advantage,
+                         "return": advantage + transition["value"]})
+            next_value = transition["value"]
+    return rows
+
+
+def ppo_losses(model, features, mask, choices, old_log_probabilities, advantages, returns, clip_range=PPO_CLIP_RANGE):
+    logits, values = model(features, mask)
+    log_probabilities = torch.log_softmax(logits, dim=-1)
+    chosen = log_probabilities.gather(1, choices.unsqueeze(1)).squeeze(1)
+    ratio = torch.exp(chosen - old_log_probabilities)
+    surrogate = torch.minimum(ratio * advantages, ratio.clamp(1 - clip_range, 1 + clip_range) * advantages)
+    actor_loss = -surrogate.mean()
+    critic_loss = torch.nn.functional.smooth_l1_loss(values, returns)
+    entropy = -(torch.softmax(logits, dim=-1) * log_probabilities).sum(dim=-1).mean()
+    loss = actor_loss + PPO_VALUE_WEIGHT * critic_loss - PPO_ENTROPY_WEIGHT * entropy
+    with torch.no_grad():
+        approximate_kl = (old_log_probabilities - chosen).mean()
+        clipped = ((ratio - 1).abs() > clip_range).float().mean()
+    return loss, {"actorLoss": actor_loss, "criticLoss": critic_loss, "entropy": entropy,
+                  "approximateKl": approximate_kl, "clipFraction": clipped}
+
+
+def ppo_update(model, optimizer, trajectories, device, generator):
+    """PPO with the clipped surrogate objective; it reuses the trainer's Adam optimizer, gradient clip and loss weights."""
+    rows = gae_rows(trajectories)
+    if not rows:
+        return {"loss": 0.0, "samples": 0, "algorithm": PPO_ALGORITHM, "epochs": 0}
+    features, mask, choices, returns = packed_batch(rows, device)
+    old_log_probabilities = torch.tensor([row["oldLogProbability"] for row in rows], dtype=torch.float32, device=device)
+    advantages = torch.tensor([row["advantage"] for row in rows], dtype=torch.float32, device=device)
+    if advantages.numel() > 1:
+        advantages = (advantages - advantages.mean()) / advantages.std(unbiased=False).clamp_min(1e-6)
+    model.train()
+    totals = {"loss": 0.0, "actorLoss": 0.0, "criticLoss": 0.0, "entropy": 0.0, "approximateKl": 0.0, "clipFraction": 0.0}
+    batches = 0
+    epochs = 0
+    stopped_early = False
+    for _ in range(PPO_EPOCHS):
+        order = torch.randperm(len(rows), generator=generator).to(device)
+        epoch_kl, epoch_batches = 0.0, 0
+        for start in range(0, len(rows), PPO_MINIBATCH_SIZE):
+            index = order[start:start + PPO_MINIBATCH_SIZE]
+            loss, parts = ppo_losses(model, features[index], mask[index], choices[index], old_log_probabilities[index],
+                                     advantages[index], returns[index])
+            if not torch.isfinite(loss):
+                raise RuntimeError("Nonfinite PPO loss")
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            totals["loss"] += float(loss.detach().cpu())
+            for name, value in parts.items():
+                totals[name] += float(value.detach().cpu())
+            epoch_kl += float(parts["approximateKl"].cpu())
+            batches += 1
+            epoch_batches += 1
+        epochs += 1
+        if epoch_kl / epoch_batches > 1.5 * PPO_TARGET_KL:
+            stopped_early = True
+            break
+    return {**{name: total / batches for name, total in totals.items()}, "samples": len(rows), "algorithm": PPO_ALGORITHM,
+            "epochs": epochs, "stoppedEarlyForKl": stopped_early}
+
+
+def ppo_plan():
+    return {"name": PPO_ALGORITHM, "objective": "clipped surrogate (Schulman et al. 2017) on the candidate-set actor-critic",
+            "clipRange": PPO_CLIP_RANGE, "epochs": PPO_EPOCHS, "minibatchSize": PPO_MINIBATCH_SIZE, "gaeLambda": PPO_GAE_LAMBDA,
+            "discount": "0.995 per game second of each macro-action", "valueWeight": PPO_VALUE_WEIGHT,
+            "entropyWeight": PPO_ENTROPY_WEIGHT, "targetKl": PPO_TARGET_KL, "learningRate": 3e-4, "gradientClip": 1.0,
+            "updateEveryEpisodes": 8}
+
+
 def run_episode(environment, model, seed, alliance, device, deterministic=False):
     observation = environment.reset(seed, alliance)
     trajectory = []
@@ -266,14 +363,18 @@ def run_episode(environment, model, seed, alliance, device, deterministic=False)
         feature_tensor = torch.tensor(feature_rows, dtype=torch.float32, device=device).unsqueeze(0)
         mask = torch.ones((1, len(actions)), dtype=torch.bool, device=device)
         with torch.no_grad():
-            logits, _ = model(feature_tensor, mask)
+            logits, values = model(feature_tensor, mask)
             if deterministic:
                 choice = int(logits.argmax(dim=-1).item())
             else:
                 choice = int(Categorical(logits=logits).sample().item())
+            # The behavior policy's log-probability and value estimate, needed by the PPO update.
+            log_probability = float(torch.log_softmax(logits, dim=-1)[0, choice])
+            value = float(values[0])
         result = environment.step(actions[choice]["id"])
         trajectory.append({"features": feature_rows, "choice": choice,
-                           "reward": float(result["reward"]), "durationSeconds": float(result["durationSeconds"])})
+                           "reward": float(result["reward"]), "durationSeconds": float(result["durationSeconds"]),
+                           "logProbability": log_probability, "value": value})
         total_reward += float(result["reward"])
         observation = result["observation"]
         if len(trajectory) >= 100:
@@ -474,6 +575,15 @@ def main():
     warm_start = warm_start_plan(args) if args.warm_start_demonstration_episodes else None
     if warm_start is not None:
         run["warmStart"] = warm_start
+    ppo = args.algorithm == "ppo"
+    ppo_generator = torch.Generator().manual_seed(args.seed) if ppo else None
+    if ppo:
+        run["algorithm"] = ppo_plan()
+
+    def learn():
+        if ppo:
+            return ppo_update(model, optimizer, trajectories, device, ppo_generator)
+        return update(model, optimizer, trajectories, device)
     (args.output / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
     environment = NodeTacticalEnvironment()
     started = time.monotonic()
@@ -526,14 +636,15 @@ def main():
                 os.fsync(exposure_log.fileno())
                 completed += 1
                 if completed % 8 == 0:
-                    update_metrics = update(model, optimizer, trajectories, device)
+                    update_metrics = learn()
                     trajectories.clear()
                     checkpoint = {"schemaVersion": 1, "runId": run_id, "model": MODEL_ID,
                                   "modelState": model.state_dict(), "optimizerState": optimizer.state_dict(),
                                   "episodesCompleted": completed, "trainingSeed": args.seed,
                                   "sourceSha256": source_hashes, "runtime": runtime,
                                   "learnedImprovementVerified": False, "independentQualificationPerformed": False,
-                                  **({"warmStart": warm_start} if warm_start is not None else {})}
+                                  **({"warmStart": warm_start} if warm_start is not None else {}),
+                                  **({"algorithm": PPO_ALGORITHM} if ppo else {})}
                     atomic_torch_save(checkpoint, args.output / "latest.pt")
                     metrics_row = {"event": "checkpoint", "episodes": completed, **update_metrics,
                                    "scoreMargin": result["score"]["margin"]}
@@ -543,13 +654,14 @@ def main():
                         os.fsync(training_log.fileno())
                     print(json.dumps(metrics_row, sort_keys=True), flush=True)
             if trajectories:
-                update_metrics = update(model, optimizer, trajectories, device)
+                update_metrics = learn()
                 checkpoint = {"schemaVersion": 1, "runId": run_id, "model": MODEL_ID,
                               "modelState": model.state_dict(), "optimizerState": optimizer.state_dict(),
                               "episodesCompleted": completed, "trainingSeed": args.seed,
                               "sourceSha256": source_hashes, "runtime": runtime,
                               "learnedImprovementVerified": False, "independentQualificationPerformed": False,
-                              **({"warmStart": warm_start} if warm_start is not None else {})}
+                              **({"warmStart": warm_start} if warm_start is not None else {}),
+                              **({"algorithm": PPO_ALGORITHM} if ppo else {})}
                 atomic_torch_save(checkpoint, args.output / "latest.pt")
                 with (args.output / "training.jsonl").open("a", encoding="utf-8") as training_log:
                     training_log.write(json.dumps({"event": "checkpoint", "episodes": completed, **update_metrics}, sort_keys=True) + "\n")
@@ -583,6 +695,8 @@ def main():
                                                            and learned_mean > baseline_means["loader-cycle"]),
                              "scope": "randomized start-pose holdout in the abstract macro-action model only",
                              "learnedImprovementVerified": False, "independentQualificationPerformed": False}
+        if ppo:
+            evaluation_record["algorithm"] = PPO_ALGORITHM
         if warm_start is not None:
             # The learned policy started from imitating loader-cycle, so it is not a from-scratch comparison.
             evaluation_record["warmStart"] = {"policy": WARM_START_POLICY,

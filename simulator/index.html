@@ -293,7 +293,7 @@
         <h3>Tactical advice · not executed</h3>
         <p id="tacticsMessage"></p>
         <div style="display: flex; gap: 0.6rem; margin-top: 0.75rem; flex-wrap: wrap;">
-          <button id="btnTacticsToPpo" class="btn btn-primary" type="button" style="background: linear-gradient(135deg, #10b981, #06b6d4); font-weight: 600;">⚡ Run this tactic in the PPO optimizer</button>
+          <button id="btnTacticsToPpo" class="btn btn-primary" type="button" style="background: linear-gradient(135deg, #10b981, #06b6d4); font-weight: 600;">⚡ Run with the Tactical PPO optimizer</button>
           <a href="/#nemotron" target="_blank" rel="noopener" class="btn btn-secondary">Open the coordinator · Robot tools → Restore</a>
         </div>
       </div>
@@ -301,7 +301,7 @@
         <summary>Tactical AI match · Nemotron vs baseline tactics</summary>
         <p>One driver period in the abstract tactical model, scored by the Override rules engine. Nemotron on Nebius Token Factory (or a baseline tactic) chooses every macro-action, including match loads from the loading zone. Nothing drives a robot.</p>
         <div class="viewport-toolbar" style="flex-wrap:wrap">
-          <label>Coordinator <select id="tacticalCoordinator"><option value="nemotron">Nemotron (Nebius Token Factory)</option><option value="loader-cycle">Loading-zone cycles</option><option value="field-greedy">Field greedy</option><option value="greedy-all">Greedy, all actions</option><option value="random">Random</option></select></label>
+          <label>Coordinator <select id="tacticalCoordinator"><option value="nemotron">Nemotron (Nebius Token Factory)</option><option value="loader-cycle">Loading-zone cycles</option><option value="field-greedy">Field greedy</option><option value="greedy-all">Greedy, all actions</option><option value="random">Random</option><option value="tactical-policy">Tactical PPO optimizer (trained policy)</option></select></label>
           <label>Seed <input id="tacticalSeed" type="number" min="0" max="4294967295" step="1" value="101"></label>
           <label>Alliance <select id="tacticalAlliance"><option value="red">red</option><option value="blue">blue</option></select></label>
           <button id="runTacticalMatch" class="btn btn-primary" type="button">Run tactical match</button>
@@ -310,8 +310,9 @@
         <div class="game-score-table"><table><thead><tr><th>#</th><th>Clock</th><th>Action</th><th>Points</th><th>Seconds</th><th>Margin</th><th>Reason</th></tr></thead><tbody id="tacticalMatchLog"></tbody></table></div>
       </details>
       <details id="tacticalTaskPanel" open>
-        <summary>Give Tactical AI a task · trained policy</summary>
-        <p>Type one task in English or Russian. The trained Tactical AI policy (actor-critic, warm-started from loading-zone cycles on the free Colab T4) carries it out in the abstract tactical model, choosing only macro-actions that fit the task. The Override rules engine scores every step. Nothing drives a robot.</p>
+        <summary>Tactical PPO optimizer · give Tactical AI a task</summary>
+        <p>Type one task in English or Russian. The trained tactical policy carries it out in the abstract tactical model, choosing only macro-actions that fit the task. The Override rules engine scores every step. Nothing drives a robot. The line below names the algorithm the loaded policy was trained with.</p>
+        <p id="tacticalPolicyInfo" role="status" aria-live="polite">Click the task box to see which trained policy is loaded.</p>
         <div class="viewport-toolbar" style="flex-wrap:wrap">
           <label style="flex:1 1 280px">Task <input id="tacticalTaskText" type="text" maxlength="300" style="width:100%" placeholder="e.g. score 3 match loads into the neutral goals, then park"></label>
           <label>Seed <input id="tacticalTaskSeed" type="number" min="0" max="4294967295" step="1" value="101"></label>
