@@ -1,0 +1,13 @@
+{
+  "name": "nationals-physical-ai",
+  "private": true,
+  "description": "VEX V5 Physical AI: C++ controller with WebAssembly simulator, NVIDIA Nemotron on Nebius Token Factory, RoboProof evidence.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.3"
+  },
+  "scripts": {
+    "start": "node tools/start.js",
+    "test": "node tools/run-tests.js"
+  }
+}

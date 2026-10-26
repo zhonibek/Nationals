@@ -1284,20 +1284,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnConnectNebius = document.getElementById('btnConnectNebius');
   let nemotronState = { available: false, liveInferenceVerified: false, checked: false, details: '' };
 
-  async function connectNebiusTokenFactory() {
-    // The key goes only to the local RoboProof server, which stores it in the git-ignored .cache folder.
-    const key = prompt(
-      '🔑 Enter your Nebius Token Factory API key (Bearer token):\n\n' +
-      'You can create it in the Nebius Token Factory console (API Keys).\n' +
-      'The key is stored only locally in .cache/ and never goes into git.'
-    );
-    if (key === null) return;
-    const cleanKey = key.trim();
-    if (!cleanKey) {
-      alert('The API key cannot be empty.');
-      return;
+  // Inline key form and status line instead of prompt()/alert(). The key goes only to the local RoboProof server,
+  // which checks it and stores it in the Git-ignored .cache folder.
+  const nebiusKeyForm = document.getElementById('nebiusKeyForm');
+  const nebiusKeyInput = document.getElementById('nebiusKeyInput');
+  const aiConnectMessage = document.getElementById('aiConnectMessage');
+  const connectMessage = text => { if (aiConnectMessage) aiConnectMessage.textContent = text; };
+
+  function connectNebiusTokenFactory() {
+    if (!nebiusKeyForm) return;
+    nebiusKeyForm.hidden = !nebiusKeyForm.hidden;
+    if (!nebiusKeyForm.hidden) {
+      connectMessage('Paste a key from the Nebius Token Factory console (API Keys). It is stored only in the local .cache/ folder.');
+      nebiusKeyInput?.focus();
     }
-    if (aiStatusText) aiStatusText.textContent = "Connecting to Nebius Token Factory...";
+  }
+
+  document.getElementById('nebiusKeyCancel')?.addEventListener('click', () => {
+    if (nebiusKeyInput) nebiusKeyInput.value = '';
+    if (nebiusKeyForm) nebiusKeyForm.hidden = true;
+    connectMessage('');
+  });
+
+  nebiusKeyForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const cleanKey = nebiusKeyInput.value.trim();
+    if (!cleanKey) return;
+    if (aiStatusText) aiStatusText.textContent = 'Connecting to Nebius Token Factory...';
+    connectMessage('Checking the key with Nebius Token Factory…');
     try {
       const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
         method: 'POST',
@@ -1306,30 +1320,38 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       const data = await res.json();
       if (res.ok && data.available) {
+        nebiusKeyInput.value = '';
+        nebiusKeyForm.hidden = true;
         nemotronState = { available: true, liveInferenceVerified: false, isNebius: true, checked: true, details: 'Nebius Token Factory' };
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot online';
         if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Online (NVIDIA Nemotron cloud)';
-        alert('🎉 Connected to Nebius Token Factory!\nModel: ' + data.model + '\nAI Studio requests are now handled by NVIDIA Nemotron on Nebius cloud GPUs.');
+        connectMessage(`Connected: ${data.model}. AI Studio requests now go to NVIDIA Nemotron on Nebius Token Factory.`);
       } else {
-        alert('❌ Connection error: ' + (data.error || 'Check that the API key is correct.'));
+        connectMessage(`Not connected: ${data.error || 'check that the API key is correct.'}`);
         checkNemotronStatus(false);
       }
     } catch (err) {
-      alert('❌ Could not reach the RoboProof server (port 8766): ' + err.message);
+      connectMessage(`Could not reach the RoboProof server (port 8766): ${err.message}`);
     }
-  }
+  });
 
   async function checkNemotronStatus(interactive = false) {
     if (aiStatusText) aiStatusText.textContent = "AI engine: checking the Nemotron connection...";
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-        signal: controller.signal
-      });
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      // RoboProof runs one operation at a time; a check that collides with another request gets 409, so retry briefly.
+      let res;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+          signal: controller.signal
+        });
+        if (res.status !== 409 || attempt === 3) break;
+        await new Promise(resolve => setTimeout(resolve, 600));
+      }
       clearTimeout(timeoutId);
       const data = await res.json();
       const isNebius = data.provider === 'nebius-token-factory' || !!data.cloudEnabled;
@@ -1345,36 +1367,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot online';
         if (isNebius) {
           if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius Token Factory:</strong> Online (NVIDIA Nemotron cloud)';
-          if (interactive) {
-            alert('🟢 Nebius Token Factory is active!\nModel: ' + (data.model || 'NVIDIA Nemotron') + '\nInference runs on Nebius cloud GPUs (< 1 s).');
-          }
+          if (interactive) connectMessage(`Nebius Token Factory is reachable and serves ${data.model || 'the configured Nemotron model'}.`);
         } else {
           if (aiStatusText) aiStatusText.innerHTML = '<strong>Nemotron T4 LLM:</strong> Connected (NVIDIA T4)';
-          if (interactive) {
-            alert('🟢 Nemotron LLM coordinator is active on an NVIDIA T4!\nYour prompts are handled by Nemotron.');
-          }
+          if (interactive) connectMessage('The configured Nemotron endpoint is reachable.');
         }
       } else {
         if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot';
         if (aiStatusText) aiStatusText.innerHTML = '<strong>Nebius/Nemotron: offline</strong>. Click Connect Nebius Token Factory';
-        if (interactive) {
-          alert(
-            '⚠️ Nemotron/Nebius Offline:\n\n' +
-            (data.error || 'Connect to Nebius Token Factory or an NVIDIA T4 first.') +
-            '\n\nClick ⚡ Connect Nebius Token Factory to enter an API key.'
-          );
-        }
+        if (interactive) connectMessage(`Nemotron is offline: ${data.error || 'connect Nebius Token Factory first.'}`);
       }
     } catch (e) {
       nemotronState = { available: false, liveInferenceVerified: false, checked: true, details: 'Server offline' };
       if (aiStatusDot) aiStatusDot.className = 'status-indicator-dot offline';
-      if (aiStatusText) aiStatusText.innerHTML = '<strong>Local mode:</strong> Built-in tactical AI + GVF-TD3 RL (WASM)';
-      if (interactive) {
-        alert(
-          'ℹ️ The RoboProof server (port 8766) is not running or unreachable.\n\n' +
-          'The simulator runs in a fully local mode (WASM + iraLIB + GVF-TD3 RL).'
-        );
-      }
+      if (aiStatusText) aiStatusText.innerHTML = '<strong>Local mode:</strong> RoboProof server not reachable; AI Studio uses the built-in command parser';
+      if (interactive) connectMessage('The RoboProof server is not running. Start it with npm start (or start.bat / start.sh); the simulator itself keeps working.');
     }
   }
 
@@ -1404,7 +1411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (plan.startPose && sim && !sim.isRunning) {
       sim.setPose(plan.startPose.x, plan.startPose.y, plan.startPose.theta);
-      if (renderer) sim.renderField(renderer);
+      if (renderer) renderer.render();
     }
   }
 
@@ -1453,7 +1460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           "Start pose: (0, 0, 0°), intake rollers on",
           "Quintic spline forward 24″ to the central element (V_max = 1.2 m/s)",
           "Holonomic strafe up-right to (24″, 24″) with a 45° heading",
-          "Instant 90° LQR turn to line up with the mobile goal",
+          "90° LQR turn to line up with the goal",
           "Move to (24″, 0″) to clear the neutral zone",
           "Spline back to the home zone (0, 0, 0°) and stop"
         ],
@@ -1806,7 +1813,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (remoteChatRecord.inferencePerformed) {
           coordinatorLabel = remoteChatRecord.provider?.provider === 'nebius-token-factory'
             ? "NVIDIA Nemotron (Nebius Token Factory Cloud GPU)"
-            : "NVIDIA Nemotron 3 Nano LLM (Verified NVIDIA T4)";
+            : "NVIDIA Nemotron (local endpoint)";
         } else {
           coordinatorLabel = "Local Tactical Coordinator (Nemotron/Nebius Offline)";
         }
@@ -2036,7 +2043,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       id: 'spline',
       title: '⚡ Quintic spline (LTV-LQR)',
       badge: splineBench ? 'Physical measurement' : 'Smooth acceleration',
-      time: `${splineTime} c`,
+      time: `${splineTime} s`,
       effort: `${splineEffort} V²·s`,
       desc: 'Continuous curvature, momentum kept without stopping at intermediate points.',
       startPose,
@@ -2050,9 +2057,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       id: 'gvf-td3',
       title: '🧠 GVF-TD3 (RL Policy)',
       badge: gvfBench ? 'AMD MI300X RL' : 'Vector field',
-      time: `${gvfTime} c`,
+      time: `${gvfTime} s`,
       effort: `${gvfEffort} V²·s`,
-      desc: '512×10 neural (TD3) correction on top of a Lyapunov vector field. Lowest energy use.',
+      desc: '512×10 neural (TD3) residual correction on top of an analytical guiding vector field. Experimental; improvement not verified.',
       startPose,
       waypoints: JSON.parse(JSON.stringify(waypoints)),
       actions: gvfActions,
@@ -2064,7 +2071,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       id: 'strafe',
       title: '↔ Holonomic strafe',
       badge: strafeBench ? 'Omni Vector' : 'Constant heading',
-      time: `${strafeTime} c`,
+      time: `${strafeTime} s`,
       effort: `${strafeEffort} V²·s`,
       desc: 'Vector motion of the omni chassis while independently holding the heading to the target.',
       startPose,
@@ -2078,7 +2085,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       id: 'sprint',
       title: '🔄 Turn + sprint (PID)',
       badge: sprintBench ? 'Discrete PID' : 'High traction',
-      time: `${sprintTime} c`,
+      time: `${sprintTime} s`,
       effort: `${sprintEffort} V²·s`,
       desc: 'Discrete in-place turn before each segment with a full stop.',
       startPose,
@@ -2102,20 +2109,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (isStrafeMajor && actions.length === 1) {
       winnerIndex = 2; // Strafe
-      verdictText = `🏆 Simulator physics measurement: holonomic strafe — exact sideways displacement (${strafeTime} s) without unwanted chassis rotation!`;
+      verdictText = `Selected: holonomic strafe. ${strafeBench ? 'One simulator rollout' : 'Planner estimate (no rollout)'}: ${strafeTime} s sideways move with the heading held.`;
     } else if (sTime <= gTime && sTime <= pTime) {
       winnerIndex = 0; // Spline
       const pctFaster = Math.round(((pTime - sTime) / Math.max(0.1, pTime)) * 100);
-      const isSim = splineBench ? 'Real physics measurement' : 'Planner estimate';
-      verdictText = `🏆 ${isSim}: quintic spline LTV-LQR — ${pctFaster}% faster than discrete PID (${splineTime} s vs ${sprintTime} s) by taking corners smoothly without braking!`;
+      const isSim = splineBench ? 'One simulator rollout' : 'Planner estimate (no rollout)';
+      verdictText = `Selected: quintic spline LTV-LQR. ${isSim}: ${pctFaster}% less time than turn-and-sprint PID on this path (${splineTime} s vs ${sprintTime} s).`;
     } else if (gEffort < sEffort * 0.8) {
       winnerIndex = 1; // GVF
       const pctEnergy = Math.round(((sEffort - gEffort) / Math.max(0.1, sEffort)) * 100);
-      const isSim = gvfBench ? 'Real physics measurement' : 'RL estimate';
-      verdictText = `🏆 ${isSim}: GVF-TD3 (RL) — saves ${pctEnergy}% battery energy (${gvfEffort} V²·s vs ${splineEffort} V²·s) thanks to the Lyapunov vector field!`;
+      const isSim = gvfBench ? 'One simulator rollout' : 'Policy estimate (no rollout)';
+      verdictText = `Selected: GVF-TD3 residual policy. ${isSim}: ${pctEnergy}% lower electrical-effort proxy than the spline on this path (${gvfEffort} vs ${splineEffort} V²·s). Learned improvement is not verified.`;
     } else {
       winnerIndex = 0;
-      verdictText = `🏆 Real simulator measurement: quintic spline LTV-LQR is the best trade-off between speed (${splineTime} s) and energy (${splineEffort} V²·s)!`;
+      verdictText = `Selected: quintic spline LTV-LQR, the fastest option here without a large effort penalty (${splineTime} s, ${splineEffort} V²·s). ${splineBench ? 'One simulator rollout' : 'Planner estimate (no rollout)'}.`;
     }
 
     selectedStrategyIndex = winnerIndex;
@@ -2232,7 +2239,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           btnToggleJerry.classList.add('active');
           btnToggleJerry.textContent = "❌ Close Jerry.io";
         }
-        sim.renderField(renderer);
+        renderer.render();
       });
     }
 
@@ -2241,7 +2248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         sim.resetSimulation();
         const sp = currentAiPlan?.startPose || {x: 0, y: 0, theta: 0};
         sim.setPose(sp.x, sp.y, sp.theta);
-        sim.renderField(renderer);
+        renderer.render();
       });
     }
 

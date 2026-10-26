@@ -82,7 +82,7 @@ async function playMatch({seed, alliance = 'red', chooser, maximumDecisions = MA
       score: result.score, ...(pick.reason ? {reason: pick.reason} : {}), ...(pick.meta ? {meta: pick.meta} : {})});
     observation = result.observation;
   }
-  return {seed, alliance, stopReason, ...(error ? {error} : {}), actionSeconds: environment.actionSeconds, finalScore: environment.score(), decisions: log.length, ...summarize(log), log,
+  return {seed, alliance, stopReason, ...(error ? {error} : {}), timing: environment.timing, actionSeconds: environment.actionSeconds, finalScore: environment.score(), decisions: log.length, ...summarize(log), log,
     movementModel: observation.movementModel};
 }
 

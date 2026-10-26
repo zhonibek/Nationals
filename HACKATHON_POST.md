@@ -146,18 +146,19 @@ The repository's first commit is dated 2026-09-17, after the submission period o
 
 ## Run it
 
-```powershell
-.\tools\connect-nebius.ps1   # once: paste a Nebius Token Factory API key
-.\start.bat                  # simulator, RoboProof and the portal
+```bash
+npm start        # Windows, macOS or Linux with Node.js 20.3+ (also: start.bat, ./start.sh, node tools/start.js)
 ```
 
-1. **Simulator:** <http://127.0.0.1:8765/index.html> — 2D/3D Override field with the WASM controller.
-2. **RoboProof:** <http://127.0.0.1:8766/> — Motion Lab, Nemotron coordinator, evidence.
-3. **Portal:** <http://127.0.0.1:8765/portal.html> — both side by side.
+Then click the **Nebius Token Factory** badge in the portal and paste a Token Factory API key (it is stored only in the local, Git-ignored `.cache/`; `NEBIUS_API_KEY` also works).
+
+1. **Portal:** <http://127.0.0.1:8766/simulator/portal.html> — simulator and RoboProof side by side.
+2. **Simulator:** <http://127.0.0.1:8766/simulator/index.html> — 2D/3D Override field with the WASM controller.
+3. **RoboProof:** <http://127.0.0.1:8766/> — Motion Lab, Nemotron coordinator, evidence.
 
 Simulator controls: `W`/`A`/`S`/`D` move the X-drive, arrows turn, `E`/`Q` raise/lower the lift, `F` takes a Pin/Cup or flips a Toggle, `G` places, `R` releases. **AI Programming** opens the natural-language motion studio; **Ask tactical AI** asks Nemotron for the next move; **Tactical PPO optimizer** lets the trained PPO tactical policy carry out a typed task (for example "score 3 match loads into the neutral goals, then park") in the abstract tactical model. It needs an exported policy: `python -m roboproof.tactical_learning.export_policy --checkpoint <run>/latest.pt`.
 
-Without a Nebius key, the simulator and controller still work; only Nemotron features are unavailable. Requirements: Windows with PowerShell and Node.js 20+.
+Without a Nebius key, the simulator and controller still work; only Nemotron features are unavailable. Requirements: Node.js 20.3 or newer on Windows, macOS or Linux; no Python or other installs are needed to run the apps.
 
 ---
 

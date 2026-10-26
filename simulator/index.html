@@ -139,6 +139,12 @@
             </button>
           </div>
         </div>
+        <form id="nebiusKeyForm" class="nebius-key-form" hidden>
+          <input type="password" id="nebiusKeyInput" autocomplete="off" spellcheck="false" placeholder="Nebius Token Factory API key" aria-label="Nebius Token Factory API key" required>
+          <button type="submit" class="btn-check-nemotron">Connect</button>
+          <button type="button" id="nebiusKeyCancel" class="btn-check-nemotron">Cancel</button>
+        </form>
+        <p id="aiConnectMessage" class="ai-connect-message" role="status" aria-live="polite"></p>
 
         <!-- AI Prompt Input Bar -->
         <div class="ai-input-bar">

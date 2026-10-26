@@ -63,7 +63,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
   }
   const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/learning-summary.js', ['learning-summary.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
   assets.set('/cosmos.js', ['cosmos.js', 'text/javascript']);
-  const simulatorFiles = new Set(['index.html', 'portal.html', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'motion-replay.js',
+  const simulatorFiles = new Set(['index.html', 'portal.html', 'portal.js', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'motion-replay.js',
     'control-runtime.js', 'control.wasm', 'robot-config.js', 'override.js', 'override-view.js', 'override-ui.js', 'override-geometry.js',
     'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'cad-runtime.js', 'tactics-snapshot.js', 'tactics-ui.js', 'models/robot.stl', 'models/robot.preview.glb', 'models/robot.preview.json']);
   function launchWorker(filename, workerData, response) {
@@ -169,7 +169,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       if (!simulatorFiles.has(filename)) { reply(404, {error: 'Simulator asset not found'}); return; }
       const type = {'.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.wasm': 'application/wasm', '.stl': 'application/octet-stream', '.glb': 'model/gltf-binary', '.json': 'application/json'}[path.extname(filename)];
       response.writeHead(200, {'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self' http://127.0.0.1:8765 http://localhost:8765 http://127.0.0.1:8766 http://localhost:8766"});
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self' http://127.0.0.1:8765 http://localhost:8765 http://127.0.0.1:8766 http://localhost:8766"});
       fs.createReadStream(path.join(__dirname, '../simulator', filename)).pipe(response);
       return;
     }

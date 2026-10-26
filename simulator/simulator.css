@@ -1502,5 +1502,8 @@ canvas.telemetry-chart {
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
 }
-
-
+.nebius-key-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
+.nebius-key-form[hidden] { display: none; }
+.nebius-key-form input { flex: 1 1 14rem; min-width: 0; padding: .45rem .6rem; border-radius: 8px; border: 1px solid #475569; background: #0b1220; color: #e2e8f0; font: inherit; }
+.ai-connect-message { margin: 6px 0 0; font-size: .85rem; color: #94a3b8; min-height: 0; }
+.ai-connect-message:empty { display: none; }

@@ -1,7 +1,7 @@
 # Nationals-work3
 
 > 🏆 **Nebius × NVIDIA Global AI Hackathon — Physical AI track.** Project description, architecture, results and feedback: [**HACKATHON_POST.md**](HACKATHON_POST.md). Plan and progress: [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).
-> 🚀 **One-click start:** run `start.bat` to open the 3D field simulator (port 8765), RoboProof Mission Control (port 8766) and the portal.
+> 🚀 **One-command start (Windows, macOS, Linux, Node.js 20.3+):** `npm start` (or `start.bat` / `./start.sh`) serves the 3D field simulator, RoboProof Mission Control and the portal from one local server and opens <http://127.0.0.1:8766/simulator/portal.html>.
 
 **Nationals-work3** is a VEX V5 robotics project and experimental robotics-AI workspace. It brings together PROS firmware, a browser-based VEX game simulator, the original Simulator/iraLIB motion environment, and RoboProof tools for inspecting and experimenting with robot movement.
 
@@ -21,6 +21,13 @@ The repository contains both working engineering components and research-stage f
 - [License, attribution and originality](#license-attribution-and-originality)
 
 ## Quick start
+
+```bash
+npm start          # or: node tools/start.js   ·   Windows: start.bat   ·   macOS/Linux: ./start.sh
+npm test           # all Node test suites
+```
+
+One RoboProof server on port 8766 serves everything: portal `/simulator/portal.html`, simulator `/simulator/index.html` and RoboProof `/`. No Python is needed for this. Use `--port <n>` for another port and `--no-open` to skip opening a browser. The sections below describe the individual apps.
 
 ### Open the VEX Override simulator
 

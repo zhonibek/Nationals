@@ -81,6 +81,12 @@
       align-items: center;
     }
 
+    .key-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0.75rem 2rem 0; padding: 0.9rem 1rem; border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 12px; background: rgba(15, 23, 42, 0.85); }
+    .key-form[hidden] { display: none; }
+    .key-form label { font-weight: 600; }
+    .key-form input { flex: 1 1 18rem; min-width: 0; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid #475569; background: #0b1220; color: #e2e8f0; font: inherit; }
+    .key-form p { flex-basis: 100%; margin: 0; font-size: 0.85rem; color: #94a3b8; }
+    button.status-badge { font: inherit; color: inherit; }
     .status-badge {
       display: flex;
       align-items: center;
@@ -455,19 +461,27 @@
     </div>
     <div class="status-group">
       <div class="status-badge" id="badgeSim">
-        <span class="dot"></span> App 1: 3D Simulator (:8765)
+        <span class="dot"></span> App 1: 3D Simulator
       </div>
       <div class="status-badge" id="badgeRobo">
-        <span class="dot"></span> App 2: RoboProof AI (:8766)
+        <span class="dot"></span> App 2: RoboProof AI
       </div>
-      <div class="status-badge" id="badgeNebius" style="cursor: pointer;" title="Nebius Token Factory (NVIDIA Nemotron)">
+      <button type="button" class="status-badge" id="badgeNebius" style="cursor: pointer;" title="Connect Nebius Token Factory (NVIDIA Nemotron)" aria-controls="nebiusKeyForm" aria-expanded="false">
         <span class="dot" id="dotNebius" style="background: #a855f7; box-shadow: 0 0 8px #a855f7;"></span> <span id="textNebius">Nebius Token Factory</span>
-      </div>
+      </button>
       <div class="status-badge">
         <span class="dot" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span> WebAssembly C++ Core
       </div>
     </div>
   </header>
+
+  <form class="key-form" id="nebiusKeyForm" hidden>
+    <label for="nebiusKeyInput">Nebius Token Factory API key</label>
+    <input type="password" id="nebiusKeyInput" autocomplete="off" spellcheck="false" placeholder="Paste the key from the Token Factory console" required>
+    <button type="submit" class="btn btn-primary">Connect</button>
+    <button type="button" class="btn btn-secondary" id="nebiusKeyCancel">Cancel</button>
+    <p id="nebiusKeyStatus" role="status" aria-live="polite">The key goes only to the local RoboProof server and is stored in the Git-ignored .cache/ folder.</p>
+  </form>
 
   <main class="container">
     <!-- Hero Section -->
@@ -495,7 +509,7 @@
       <article class="app-card">
         <div class="card-header">
           <div class="card-icon">🎮</div>
-          <span class="card-badge">PORT 8765</span>
+          <span class="card-badge">SIMULATOR</span>
         </div>
         <div class="card-title">
           <h3>App 1: 3D simulator + AI studio</h3>
@@ -508,8 +522,8 @@
           <li>Jerry.io spline and waypoint editor</li>
         </ul>
         <div class="card-actions">
-          <button class="btn btn-primary" onclick="switchView('app1')">Open here</button>
-          <a class="btn btn-secondary" href="http://127.0.0.1:8765/index.html" target="_blank" rel="noopener">In a new tab ↗</a>
+          <button class="btn btn-primary" data-view="app1">Open here</button>
+          <a class="btn btn-secondary" href="index.html" target="_blank" rel="noopener">In a new tab ↗</a>
         </div>
       </article>
 
@@ -517,7 +531,7 @@
       <article class="app-card">
         <div class="card-header">
           <div class="card-icon">🧠</div>
-          <span class="card-badge">PORT 8766</span>
+          <span class="card-badge">ROBOPROOF</span>
         </div>
         <div class="card-title">
           <h3>App 2: RoboProof Mission Control</h3>
@@ -530,8 +544,8 @@
           <li>Cryptographic run ledger (AMD MI300X, Colab)</li>
         </ul>
         <div class="card-actions">
-          <button class="btn btn-primary" onclick="switchView('app2')">Open here</button>
-          <a class="btn btn-secondary" href="http://127.0.0.1:8766/" target="_blank" rel="noopener">In a new tab ↗</a>
+          <button class="btn btn-primary" data-view="app2">Open here</button>
+          <a class="btn btn-secondary" href="http://127.0.0.1:8766/" data-roboproof-link target="_blank" rel="noopener">In a new tab ↗</a>
         </div>
       </article>
     </section>
@@ -540,9 +554,9 @@
     <section class="workspace-section" id="workspaceSection">
       <div class="workspace-tabs">
         <div class="tabs-group">
-          <button class="tab-btn active" id="tabApp1" onclick="switchView('app1')">🎮 App 1: 3D simulator</button>
-          <button class="tab-btn" id="tabApp2" onclick="switchView('app2')">🧠 App 2: RoboProof AI</button>
-          <button class="tab-btn" id="tabSplit" onclick="switchView('split')">⚡ Dual view</button>
+          <button class="tab-btn active" id="tabApp1" data-view="app1">🎮 App 1: 3D simulator</button>
+          <button class="tab-btn" id="tabApp2" data-view="app2">🧠 App 2: RoboProof AI</button>
+          <button class="tab-btn" id="tabSplit" data-view="split">⚡ Dual view</button>
         </div>
         <div>
           <button class="btn btn-secondary" id="btnOpenCurrentTab" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
@@ -553,7 +567,7 @@
 
       <div class="view-frame-wrapper" id="frameContainer">
         <!-- Single App 1 View by default -->
-        <iframe id="mainFrame" src="http://127.0.0.1:8765/index.html"></iframe>
+        <iframe id="mainFrame" src="index.html" title="App 1 Simulator"></iframe>
       </div>
     </section>
   </main>
@@ -562,107 +576,6 @@
     <span>🚀 Both systems are running and ready!</span>
   </div>
 
-  <script>
-    const frameContainer = document.getElementById('frameContainer');
-    const tabApp1 = document.getElementById('tabApp1');
-    const tabApp2 = document.getElementById('tabApp2');
-    const tabSplit = document.getElementById('tabSplit');
-    const btnOpenCurrentTab = document.getElementById('btnOpenCurrentTab');
-    const toast = document.getElementById('toast');
-    let currentMode = 'app1';
-
-    function switchView(mode) {
-      currentMode = mode;
-      tabApp1.classList.toggle('active', mode === 'app1');
-      tabApp2.classList.toggle('active', mode === 'app2');
-      tabSplit.classList.toggle('active', mode === 'split');
-
-      if (mode === 'app1') {
-        frameContainer.innerHTML = '<iframe id="mainFrame" src="http://127.0.0.1:8765/index.html"></iframe>';
-      } else if (mode === 'app2') {
-        frameContainer.innerHTML = '<iframe id="mainFrame" src="http://127.0.0.1:8766/"></iframe>';
-      } else if (mode === 'split') {
-        frameContainer.innerHTML = `
-          <div class="split-view">
-            <iframe src="http://127.0.0.1:8765/index.html" title="App 1 Simulator"></iframe>
-            <iframe src="http://127.0.0.1:8766/" title="App 2 RoboProof"></iframe>
-          </div>
-        `;
-      }
-    }
-
-    btnOpenCurrentTab.addEventListener('click', () => {
-      if (currentMode === 'app1') {
-        window.open('http://127.0.0.1:8765/index.html', '_blank');
-      } else if (currentMode === 'app2') {
-        window.open('http://127.0.0.1:8766/', '_blank');
-      } else {
-        window.open('http://127.0.0.1:8765/index.html', '_blank');
-        window.open('http://127.0.0.1:8766/', '_blank');
-      }
-    });
-
-    document.getElementById('btnMasterLaunch').addEventListener('click', () => {
-      // Scroll smoothly to workspace
-      document.getElementById('workspaceSection').scrollIntoView({ behavior: 'smooth' });
-      
-      // Show toast notification
-      toast.style.display = 'flex';
-      setTimeout(() => { toast.style.display = 'none'; }, 4000);
-
-      // Open split view or dual tabs
-      switchView('split');
-    });
-
-    // Check Nebius Token Factory status
-    async function checkPortalNebius() {
-      const dot = document.getElementById('dotNebius');
-      const text = document.getElementById('textNebius');
-      try {
-        const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: '{}'
-        });
-        const data = await res.json();
-        if (res.ok && data.available && (data.cloudEnabled || data.provider === 'nebius-token-factory')) {
-          dot.style.background = '#10b981';
-          dot.style.boxShadow = '0 0 8px #10b981';
-          text.textContent = 'Nebius Token Factory: Online';
-        } else {
-          dot.style.background = '#eab308';
-          dot.style.boxShadow = '0 0 8px #eab308';
-          text.textContent = 'Nebius: Click to Connect';
-        }
-      } catch {
-        dot.style.background = '#64748b';
-        dot.style.boxShadow = 'none';
-        text.textContent = 'Nebius Token Factory';
-      }
-    }
-
-    document.getElementById('badgeNebius')?.addEventListener('click', async () => {
-      const key = prompt('🔑 Enter a Nebius Token Factory API key (Bearer token).\nThe key is stored only locally in .cache/ and never goes into git.');
-      if (!key || !key.trim()) return;
-      try {
-        const res = await fetch('http://127.0.0.1:8766/api/nemotron/check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: key.trim() })
-        });
-        const data = await res.json();
-        if (res.ok && data.available) {
-          alert('🟢 Nebius Token Factory connected!\nModel: ' + data.model);
-          checkPortalNebius();
-        } else {
-          alert('❌ Error: ' + (data.error || 'Could not connect to Nebius'));
-        }
-      } catch (e) {
-        alert('❌ Could not reach RoboProof (port 8766): ' + e.message);
-      }
-    });
-
-    checkPortalNebius();
-  </script>
+  <script src="portal.js"></script>
 </body>
 </html>
