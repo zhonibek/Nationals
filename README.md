@@ -1,15 +1,14 @@
-# Nationals-work3
+# Nationals Physical AI
 
-> 🏆 **Nebius × NVIDIA Global AI Hackathon — Physical AI track.** Project description, architecture, results and feedback: [**HACKATHON_POST.md**](HACKATHON_POST.md). Plan and progress: [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).
-> 🚀 **One-command start (Windows, macOS, Linux, Node.js 20.3+):** `npm start` (or `start.bat` / `./start.sh`) serves the 3D field simulator, RoboProof Mission Control and the portal from one local server and opens <http://127.0.0.1:8766/simulator/portal.html>.
+> 🏆 **Nebius × NVIDIA Global AI Hackathon 2026 — Physical AI track.** Full write-up, architecture and feedback: [**HACKATHON_POST.md**](HACKATHON_POST.md) · License: [MIT](LICENSE) · Plan and progress: [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md)
 
-**Nationals-work3** is a VEX V5 robotics project and experimental robotics-AI workspace. It brings together PROS firmware, a browser-based VEX game simulator, the original Simulator/iraLIB motion environment, and RoboProof tools for inspecting and experimenting with robot movement.
-
-The repository contains both working engineering components and research-stage features. A simulator pass, successful training run, or AI-generated recommendation is not by itself proof that a learned policy is better or safe on a physical robot. The current controller remains the default; experimental learned movement must pass the documented qualification gates before promotion.
+**Don't train robot AI from scratch — give it the tools every robotics programmer already knows.** A C++20 control cascade (LTV-LQR → wheel PID, guided by a vector field) drives our VEX V5 X-drive robot, and the *same* C++ runs in a browser simulator of the V5RC Override field through WebAssembly. A small residual network may only nudge the controller's reference, never the motors. **NVIDIA Nemotron on Nebius Token Factory** sits on top as a tool-calling coordinator: it plans motion tasks and plays whole matches by choosing legal actions that the game's rules engine checks and scores. **RoboProof** records the evidence for every claim, including the negative results.
 
 ## Contents
 
 - [Quick start](#quick-start)
+- [NVIDIA Nemotron and Nebius Token Factory](#nvidia-nemotron-and-nebius-token-factory)
+- [Trained models](#trained-models)
 - [Project architecture](#project-architecture)
 - [RoboProof and machine learning](#roboproof-and-machine-learning)
 - [VEX Override simulator](#vex-override-simulator)
@@ -22,52 +21,82 @@ The repository contains both working engineering components and research-stage f
 
 ## Quick start
 
+**Requirements:** [Node.js](https://nodejs.org) 20.3 or newer on Windows, macOS or Linux, and a current browser. Internet access is needed for the 3D view (Three.js from a CDN) and for Nemotron. Nothing else has to be installed to run the apps.
+
 ```bash
-npm start          # or: node tools/start.js   ·   Windows: start.bat   ·   macOS/Linux: ./start.sh
-npm test           # all Node test suites
+git clone https://github.com/zhonibek/Nationals.git
+cd Nationals
+npm start
 ```
 
-One RoboProof server on port 8766 serves everything: portal `/simulator/portal.html`, simulator `/simulator/index.html` and RoboProof `/`. No Python is needed for this. Use `--port <n>` for another port and `--no-open` to skip opening a browser. The sections below describe the individual apps.
+`npm start` (also `start.bat` on Windows, `./start.sh` on macOS/Linux, or `node tools/start.js`) starts one local server on port 8766 and opens the portal at <http://127.0.0.1:8766/simulator/portal.html>. The same server serves the simulator (`/simulator/index.html`) and RoboProof (`/`). Options: `--port <n>`, `--no-open`.
 
-### Open the VEX Override simulator
+**Connect NVIDIA Nemotron (optional, needs a free Nebius account):**
 
-From the repository root, run this in PowerShell:
+1. Create an API key in the [Nebius Token Factory](https://tokenfactory.nebius.com) console (API Keys).
+2. Click the **Nebius Token Factory** badge at the top of the portal and paste the key. The server checks it against Token Factory first and stores it only in the Git-ignored `.cache/` folder; the browser never keeps it.
+
+Or pass the key through the environment:
+
+```bash
+NEBIUS_API_KEY=your-key npm start            # macOS / Linux
+```
 
 ```powershell
-.\tools\start-simulator.ps1
+$env:NEBIUS_API_KEY = "your-key"; npm start  # Windows PowerShell
 ```
 
-Then open [http://127.0.0.1:8765](http://127.0.0.1:8765). The simulator needs to be served over HTTP; opening its HTML file directly with `file://` will not load the WebAssembly controller. The project includes the built `control.wasm` module. Three.js is loaded from a CDN for the 3D view, so that view requires an internet connection.
+Without a key the simulator, the controller and the trained tactical policy all work; only the Nemotron features are unavailable.
 
-### Open RoboProof
+**What to try:**
 
-From the repository root, run:
+- **Simulator → Tactical AI match:** choose *Nemotron (Nebius Token Factory)* and run a match. Every decision is listed with Nemotron's reason; compare it with the *Loading-zone cycles* and *Field greedy* tactics.
+- **Simulator → Tactical PPO optimizer:** type a task such as "score 3 match loads into the neutral goals, then park"; the trained PPO policy bundled in [`roboproof/models/tactical-ppo-seed736001`](roboproof/models/tactical-ppo-seed736001/README.md) carries it out in the tactical model.
+- **Simulator → AI Programming:** describe a motion in plain language and run the generated route on the WebAssembly controller.
+- **Simulator → Start game:** drive the robot yourself (WASD, arrows, E/Q lift, F take, G place).
+- **RoboProof (`/`):** Motion Lab replays, the Nemotron workspace and the evidence views.
 
-```powershell
-node roboproof/cli.js motion-check
-node roboproof/server.js
-```
+Run the tests with `npm test` (619 Node tests). The RoboProof command line (`node roboproof/cli.js motion-check`, `node roboproof/cli.js demo`) and the standalone simulator server (`tools/start-simulator.ps1`) are described in [roboproof/README.md](roboproof/README.md) and [simulator/README.md](simulator/README.md).
 
-Open [http://127.0.0.1:8766](http://127.0.0.1:8766) and select **Motion lab**. The dashboard reads saved experiment artifacts; opening or refreshing it does not start model training. The `motion-check` command checks the motion-learning integration and is not a training run.
+## NVIDIA Nemotron and Nebius Token Factory
 
-To run the deterministic RoboProof demo instead:
+**Models.** `nvidia/Nemotron-3_5-Lightning` is the default, used for fast per-step tool calls. `nvidia/nemotron-3-super-120b-a12b` was also evaluated on the same tactical task. Both are called at runtime through the OpenAI-compatible Nebius Token Factory API at `https://api.tokenfactory.nebius.com/v1`.
 
-```powershell
-node roboproof/cli.js demo
-```
+**What Nemotron does here** (it never outputs motor commands, code to execute or scores):
 
-The simulator and RoboProof dashboard are separate local web applications and use different ports.
+| Use | How | Code |
+| --- | --- | --- |
+| Motion task planning | Native tool calls `load_skill → get_motion_contract → prepare_reach_pose`; the task is validated and runs only after user approval; ambiguous requests end in `ask_clarification` | [`roboproof/nemotron.js`](roboproof/nemotron.js) |
+| Match coordinator | Each decision, `choose_action` picks one candidate ID from a shortlist whose points and seconds the Override rules engine previewed; an invalid answer stops the match (fail closed) | [`roboproof/tactical-coordinator.js`](roboproof/tactical-coordinator.js), `POST /api/tactics/match` |
+| Rules-grounded advice and chat | Reads the reviewed rule subset and a compact game snapshot; advice only | [`roboproof/tactics.js`](roboproof/tactics.js), [`roboproof/nemotron-chat.js`](roboproof/nemotron-chat.js) |
 
-### Connect NVIDIA Nemotron on Nebius Token Factory
+The client validates the endpoint (HTTPS Nebius hosts or loopback only), keeps the key server-side, and requires the configured model to be listed by `/v1/models` ([`roboproof/NEMOTRON.md`](roboproof/NEMOTRON.md)).
 
-The AI Studio (simulator) and the RoboProof Nemotron workspace call `nvidia/Nemotron-3_5-Lightning` through [Nebius Token Factory](https://tokenfactory.nebius.com). Create an API key in the Token Factory console, then run:
+**Where Token Factory accelerated our workflow:**
 
-```powershell
-.\tools\connect-nebius.ps1
-.\start.bat
-```
+| | Before (Nemotron on a laptop CPU) | Nebius Token Factory |
+| --- | --- | --- |
+| One motion-planning request | 153.7 s cold, 73.8 s warm | about 1 s per tool-calling turn |
+| Endpoint check | — | 0.47 s |
+| One tactical decision | not practical | ~0.6 s (Lightning), ~1.7 s (Super 120B) |
+| A full driver period (~30 decisions) | not practical | ~18 s of model time (Lightning) |
 
-The key is saved only to the Git-ignored `.cache/robotai-nemotron/nebius-api-key.txt`; `start.bat` uses it automatically. Alternatively set `$env:NEBIUS_API_KEY` before `node roboproof/server.js`, or click **⚡ Connect Nebius Token Factory** in the simulator's AI Studio. Without a key, the simulator and controller still work; only Nemotron planning is unavailable. Details and limits: [roboproof/NEMOTRON.md](roboproof/NEMOTRON.md#nebius-token-factory).
+That speed is what made per-decision match coordination possible, and switching between Nemotron sizes was a one-line model change instead of hosting each model ourselves.
+
+**Result** (one driver period in the match model, robot timing measured on our robot, mean margin over seeds 101–102): loading-zone tactic 246, **Nemotron 3.5 Lightning 231**, field greedy 218, greedy over all actions 203, random 62.5. Nemotron Super 120B scored 203 on seed 101 and failed closed on seed 102 after one invalid tool call. Details: [HACKATHON_POST.md](HACKATHON_POST.md#tactical-ai-results).
+
+**Other Nebius tools and services.** A Nebius Serverless AI Job for the tactical trainer is prepared ([`tools/nebius-tactical-job.sh`](tools/nebius-tactical-job.sh), [`tools/nebius-tactical-launch.sh`](tools/nebius-tactical-launch.sh)) but was not run: we had no Nebius compute credits, so training ran on a free NVIDIA Tesla T4 in Google Colab. Nebius AI Cloud compute was not used.
+
+**Other NVIDIA technology.** Training used CUDA on an NVIDIA Tesla T4. An adapter for NVIDIA Cosmos-Reason2 ([`roboproof/cosmos`](roboproof/cosmos/README.md)) is prepared to describe recorded robot motion; its GPU inference has not run yet.
+
+## Trained models
+
+| Model | Parameters | Trained on | Result | Files |
+| --- | ---: | --- | --- | --- |
+| Residual GVF-TD3 actor, 36 → 10 × 512 → 3 | 2,384,387 | AMD Instinct MI300X, seed 50513, 564 episodes | research artifact, improvement not verified | [`roboproof/models/gvf-td3-mi300x-512x10-seed50513`](roboproof/models/gvf-td3-mi300x-512x10-seed50513/README.md) |
+| Tactical PPO policy, 23 → 2 × 128 | 28,034 | NVIDIA Tesla T4, seed 736001 | held-out margin 201.5 vs loading-zone tactic 244.5 | [`roboproof/models/tactical-ppo-seed736001`](roboproof/models/tactical-ppo-seed736001/README.md) |
+
+Full run records, including the failed and weaker runs, are in [docs/progress.md](docs/progress.md).
 
 ## Project architecture
 
@@ -92,7 +121,7 @@ RoboProof is the project’s local dashboard and experimental robotics-agent wor
 - **Tactical AI** — provide rules-grounded, conditional recommendations from a verified game-rule set and an explicitly selected simulator snapshot. Recommendations do not execute robot actions.
 - **Perception preparation** — validate a future object-location request format and calibration inputs. Camera inference and automatic movement from a visual target are not implemented.
 - **Nemotron / Cosmos integrations** — AI reasoning and task coordinator workspace. Nemotron is integrated with **Nebius Token Factory** (`nvidia/Nemotron-3_5-Lightning`), enabling sub-second natural language task planning and function-calling into the WebAssembly C++ controller.
-- **AI Autonomous Programming Studio** — available directly inside the 3D Simulator (port 8765): converts natural language movement instructions into validated C++ PROS routines and executable 3D rollouts in real time.
+- **AI Autonomous Programming Studio** — available directly inside the 3D Simulator: converts natural-language movement instructions into C++ PROS routines and executable 3D rollouts in real time.
 
 ## RoboProof and machine learning
 

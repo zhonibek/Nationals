@@ -26,7 +26,7 @@ const {parseTask: parseTacticalTask, runTask: runTacticalTask} = require('./tact
 
 function createServer({reportPath = path.join(__dirname, 'runs/latest/report.json'), timeout = 120000,
   nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, cosmosDirectory, agentTimeout = 300000,
-  tacticalPolicyPath = process.env.ROBOPROOF_TACTICAL_POLICY || path.join(__dirname, 'runs/tactical/policy.json')} = {}) {
+  tacticalPolicyPath} = {}) {
   let report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : null;
   let activeWorker = null;
   let activeAgent = null;
@@ -35,14 +35,19 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
   const motionStore = createMotionStore(motionDirectory);
   const skills = createRegistry();
   let tacticalPolicy = null;
-  // The exported trained tactical actor, reloaded when the file changes. It is Git-ignored, so it may be missing.
+  // The trained tactical policy, reloaded when the file changes: an explicit path, then a locally exported policy
+  // (Git-ignored), then the trained PPO policy shipped in roboproof/models.
+  const policyFile = () => tacticalPolicyPath || process.env.ROBOPROOF_TACTICAL_POLICY ||
+    [path.join(__dirname, 'runs/tactical/policy.json'), path.join(__dirname, 'models/tactical-ppo-seed736001/policy.json')]
+      .find(file => fs.existsSync(file)) || path.join(__dirname, 'runs/tactical/policy.json');
   function currentTacticalPolicy() {
-    if (!fs.existsSync(tacticalPolicyPath)) {
+    const file = policyFile();
+    if (!fs.existsSync(file)) {
       throw Error('No trained tactical policy is exported yet. Run: python -m roboproof.tactical_learning.export_policy --checkpoint <preserved run>/run/latest.pt');
     }
-    const {mtimeMs, size} = fs.statSync(tacticalPolicyPath);
+    const {mtimeMs, size} = fs.statSync(file);
     if (!tacticalPolicy || tacticalPolicy.mtimeMs !== mtimeMs || tacticalPolicy.size !== size) {
-      tacticalPolicy = {mtimeMs, size, policy: loadTacticalPolicy(tacticalPolicyPath)};
+      tacticalPolicy = {mtimeMs, size, policy: loadTacticalPolicy(file)};
     }
     return tacticalPolicy.policy;
   }
