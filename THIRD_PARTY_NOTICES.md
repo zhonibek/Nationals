@@ -4,11 +4,13 @@ The original work in this repository is licensed under the [MIT License](LICENSE
 
 | Component | Where | License | How it is used |
 | :--- | :--- | :--- | :--- |
-| LemLib | `include/lemlib/`, `src/lemlib/` | MIT | Included in source form (chassis, PID, safety, logger). |
+| LemLib | `include/lemlib/`, `src/lemlib/`, `tests/mocks/lemlib/` | MIT | Included in source form (chassis, PID, safety, logger). |
+| LemLib documentation and repository templates | `docs/conf.py`, `docs/index.md`, `docs/about.md`, `docs/download.md`, `docs/support.md`, `docs/contribute.md`, `docs/tutorials/`, `docs/api/`, `docs/assets/` tutorial images and `LemLib_Banner_V3.png`, `docs/icon.png`, `.github/` issue, pull-request, contributing and code-of-conduct templates | MIT | Came with the LemLib project template (Copyright (c) 2024 Liam Teale and LemLib contributors); some pages are adapted. They document LemLib, not the original work of this project. |
 | Pedro Pathing | `include/subsystems/pedro/`, `src/subsystems/pedro/` | BSD-3-Clause | The original library is written in **Java** for FTC. This project contains an independent **C++ rewrite** of its path and Bézier concepts for VEX V5 by Kassymkhan; no Java source is included. The rewrite is derived from the original design, so its notice is reproduced below and in each directory's `NOTICE.md`. |
-| PROS kernel 4.2.2 | `include/pros/`, `include/api.h`, `include/main.h`, `firmware/` | MPL-2.0 | V5 runtime and headers, unmodified. Source: <https://github.com/purduesigbots/pros>. |
+| PROS kernel 4.2.2 | `include/pros/`, `include/api.h`, `include/main.h`, `firmware/`; project template build files `Makefile`, `common.mk` | MPL-2.0 | V5 runtime and headers, unmodified; build files from the PROS project template. Source: <https://github.com/purduesigbots/pros>. |
 | Eigen | `include/Eigen/` | MPL-2.0 | Linear algebra headers, unmodified. Source: <https://gitlab.com/libeigen/eigen>. |
 | {fmt} | `include/fmt/` | MIT ([`include/fmt/LICENSE`](include/fmt/LICENSE)) | Formatting headers, unmodified. |
+| Robot CAD preview | `simulator/models/robot.preview.glb`, `simulator/models/robot.stl` | Project's own | Simplified from the team's own Onshape model with gltfpack (meshoptimizer, MIT); the tool itself is not included. See `docs/ROBOT_CAD.md`. |
 | Three.js r128 | Loaded from cdnjs / jsDelivr by `simulator/index.html` | MIT | 3D field view. Not redistributed in this repository. |
 | NVIDIA Nemotron models | Called through the Nebius Token Factory API (`roboproof/nemotron.js`) | NVIDIA Open Model License / model card terms | Inference only. No weights are included in this repository. |
 | NVIDIA Cosmos-Reason2 | Optional adapter in `roboproof/cosmos/` | NVIDIA Open Model License / model card terms | Optional inference adapter. No weights are included. |
