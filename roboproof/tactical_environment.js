@@ -19,7 +19,8 @@ function seededRandom(seed) {
 }
 
 function cloneGame(game) {
-  const copy = new OverrideGame({world: game.world, physical: false});
+  // Every own field is replaced by the clone below, so the constructor's fresh field setup is skipped.
+  const copy = Object.create(OverrideGame.prototype);
   Object.assign(copy, structuredClone(game));
   copy.physical = false;
   return copy;
@@ -87,13 +88,30 @@ function bounded(value, denominator) {
   return Math.max(-1, Math.min(1, value / denominator));
 }
 
+// Same clock arithmetic as OverrideGame.tick() (0.01 s steps) for a non-physical match well inside the driver
+// period, where a step only advances the clock; it skips the state copy that tick() returns on every call.
+// Near the end of the match, and in any other phase, the engine's own tick() runs.
+function tickDriver(game, dt) {
+  if (game.physical || game.mode !== 'match' || game.phase !== 'driver' || game.finalScore ||
+      game.clock + dt >= MATCH_SECONDS - 0.05) {
+    game.tick(dt);
+    return;
+  }
+  let remaining = dt;
+  while (remaining > 1e-8) {
+    const h = Math.min(.01, remaining);
+    game.clock += h;
+    remaining -= h;
+  }
+}
+
 function advanceTime(game, seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return false;
   let remaining = seconds;
   while (remaining > 1e-8) {
     const duration = Math.min(0.5, remaining);
     const previousClock = game.clock;
-    game.tick(duration);
+    tickDriver(game, duration);
     if (game.clock <= previousClock) return false;
     remaining -= duration;
   }
