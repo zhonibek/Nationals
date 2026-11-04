@@ -17,7 +17,7 @@ from roboproof.tactical_learning.model import FEATURE_COUNT, TacticalActorCritic
 
 # Keys the trainer wrote to run.json before the warm start existed; the default path must keep exactly these.
 DEFAULT_RUN_KEYS = {"schemaVersion", "runId", "model", "status", "seed", "episodesRequested", "maxSeconds",
-                    "evaluationEpisodes", "featureCount", "width", "hiddenLayers", "runtime", "sourceSha256", "reward",
+                    "evaluationEpisodes", "featureCount", "width", "hiddenLayers", "features", "architecture", "runtime", "sourceSha256", "reward",
                     "movementAbstraction", "tacticalTiming", "trainingPerformed", "learnedImprovementVerified",
                     "independentQualificationPerformed", "promotionAllowed", "warning", "episodesCompleted",
                     "elapsedSeconds", "evaluationEpisodesCompleted", "bridgeShutdown"}
@@ -131,6 +131,15 @@ def bridge(process):
 
 class FakeModel:
     width = 8
+    feature_count = 23
+    hidden_layers = 2
+
+    def __init__(self, **dimensions):
+        self.dimensions = dimensions
+
+    def architecture(self):
+        return {"featureCount": self.feature_count, "width": self.width, "hiddenLayers": self.hidden_layers,
+                "residual": False, "parameters": 0}
 
     def to(self, device):
         return self

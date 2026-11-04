@@ -101,6 +101,15 @@ def bridge(process):
 
 class FakeModel:
     width = 8
+    feature_count = 23
+    hidden_layers = 2
+
+    def __init__(self, **dimensions):
+        self.dimensions = dimensions
+
+    def architecture(self):
+        return {"featureCount": self.feature_count, "width": self.width, "hiddenLayers": self.hidden_layers,
+                "residual": False, "parameters": 0}
 
     def to(self, device):
         return self

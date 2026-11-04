@@ -91,3 +91,22 @@ test('the measured timing profile reproduces the team robot cycles (loader ~2 s,
   assert.equal(new TacticalEnvironment().observe().timing, 'measured');
   assert.throws(() => calibrateTiming({loaderCycleSeconds: 0.5, fieldCycleSeconds: 4}), /shorter than the travel time/);
 });
+
+test('v3 features append the rules-engine preview of each candidate; v2 stays the default', () => {
+  const {FEATURE_COUNT_V3} = require('../roboproof/tactical_environment');
+  const v2 = new TacticalEnvironment().reset(17, 'red');
+  assert(v2.actions.every(action => action.features.length === FEATURE_COUNT));
+  const environment = new TacticalEnvironment({featureSet: 'v3'});
+  const observation = environment.reset(17, 'red');
+  const previews = new Map(environment.previewCandidates().map(row => [row.id, row]));
+  assert.equal(FEATURE_COUNT_V3, FEATURE_COUNT + 7);
+  for (const action of observation.actions) {
+    assert.equal(action.features.length, FEATURE_COUNT_V3);
+    assert.deepEqual(action.features.slice(0, FEATURE_COUNT), v2.actions.find(row => row.id === action.id).features);
+    const preview = previews.get(action.id);
+    assert.equal(action.features[FEATURE_COUNT], preview.legal ? 1 : 0);
+    if (preview.legal) assert.equal(action.features[FEATURE_COUNT + 1], Math.max(-1, Math.min(1, preview.points / 50)));
+  }
+  assert.equal(observation.actions.filter(action => action.features[FEATURE_COUNT + 5] === 1).length, 1);
+  assert.throws(() => new TacticalEnvironment({featureSet: 'v4'}), /Unknown tactical feature set/);
+});

@@ -4,7 +4,9 @@ const readline = require('node:readline');
 const {TacticalEnvironment} = require('../tactical_environment');
 const {evaluatePolicies, demonstrate} = require('../tactical_baselines');
 
-const environment = new TacticalEnvironment();
+// `--features v3` adds the rules-engine preview features (the trainer passes it for v3 models).
+const featuresIndex = process.argv.indexOf('--features');
+const environment = new TacticalEnvironment({featureSet: featuresIndex >= 0 ? process.argv[featuresIndex + 1] : 'v2'});
 const input = readline.createInterface({input: process.stdin, crlfDelay: Infinity});
 
 function respond(value, callback) {

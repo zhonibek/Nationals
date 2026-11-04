@@ -18,7 +18,8 @@ from pathlib import Path
 import torch
 from torch.distributions import Categorical
 
-from .model import FEATURE_COUNT, MODEL_ID, TacticalActorCritic
+from .model import (FEATURE_COUNT, FEATURE_COUNT_V3, MAX_HIDDEN_LAYERS, MAX_WIDTH, MODEL_ID, MODEL_ID_V3,
+                    TacticalActorCritic)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,11 @@ SOURCE_FILES = ("roboproof/tactical_environment.js", "roboproof/tactical_baselin
 # torch device-name fragment -> exact CUDA capability and memory floor of the real device.
 APPROVED_NEBIUS_GPUS = {"L40S": {"capability": (8, 9), "minimumMemoryBytes": 40 * 1024 ** 3}}
 MAX_APPROVED_NEBIUS_COST_USD = 10.0
+# The free T4 and the Nebius job keep the original 10-minute bound; an approved AMD Instinct MI300X
+# (AMD Developer Cloud) may run a fit of up to 6 hours. The campaign launcher enforces the cost ceiling.
+MAX_SECONDS_DEFAULT_RUNTIME = 600
+MAX_SECONDS_AMD_MI300X = 6 * 3600
+AMD_MI300X_MINIMUM_MEMORY_BYTES = 180 * 1024 ** 3
 # Optional behavior-cloning warm start (off unless --warm-start-demonstration-episodes is given): the actor imitates
 # the non-learning team tactic and the critic fits its returns, then the unchanged RL loop runs from those weights.
 WARM_START_POLICY = "loader-cycle"
@@ -55,11 +61,11 @@ PPO_TARGET_KL = 0.03  # the remaining epochs of an update are skipped once an ep
 
 
 class NodeTacticalEnvironment:
-    def __init__(self):
+    def __init__(self, features="v2"):
         node = shutil.which("node")
         if node is None:
             raise RuntimeError("Node.js is required to run the original Override game engine")
-        self.process = subprocess.Popen([node, str(BRIDGE)], cwd=ROOT, stdin=subprocess.PIPE,
+        self.process = subprocess.Popen([node, str(BRIDGE), "--features", features], cwd=ROOT, stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                         encoding="utf-8", bufsize=1)
 
@@ -161,15 +167,41 @@ def validate_nebius_runtime(approved_nebius_gpu: str, approved_max_cost_usd):
             "approvedMaxCostUsd": float(approved_max_cost_usd), "providerBillingVerified": False}
 
 
-def validate_runtime(approved_free_t4: bool, approved_nebius_gpu: str | None = None, approved_max_cost_usd=None):
-    if approved_free_t4 and approved_nebius_gpu is not None:
-        raise RuntimeError("Choose exactly one approved runtime: approved-free-t4 or approved-nebius-gpu")
+def validate_amd_runtime():
+    """An actual AMD Instinct MI300X under ROCm (AMD Developer Cloud); never a CUDA, CPU or other AMD fallback."""
+    if platform.system() != "Linux" or torch.version.hip is None:
+        raise RuntimeError("The approved MI300X fit needs a Linux ROCm build of PyTorch; no CUDA, CPU or local fallback")
+    if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
+        raise RuntimeError("No ROCm GPU is visible")
+    properties = torch.cuda.get_device_properties(0)
+    architecture = str(getattr(properties, "gcnArchName", ""))
+    if ("MI300X" not in properties.name.upper() or not architecture.startswith("gfx942")
+            or properties.total_memory < AMD_MI300X_MINIMUM_MEMORY_BYTES):
+        raise RuntimeError("This approved fit is pinned to an actual AMD Instinct MI300X (gfx942, 192 GB)")
+    if shutil.which("node") is None:
+        raise RuntimeError("Original Simulator game engine requires Node.js")
+    return {"platform": platform.platform(), "python": platform.python_version(), "torch": str(torch.__version__),
+            "hip": str(torch.version.hip), "gpu": properties.name, "gcnArchName": architecture,
+            "memoryBytes": properties.total_memory, "visibleGpus": torch.cuda.device_count(),
+            "cpuCount": os.cpu_count(), "node": subprocess.run(["node", "--version"], check=True,
+                capture_output=True, text=True).stdout.strip(), "device": "cuda:0",
+            "provider": "amd-developer-cloud", "providerBillingVerified": False}
+
+
+def validate_runtime(approved_free_t4: bool, approved_nebius_gpu: str | None = None, approved_max_cost_usd=None,
+                     approved_amd_mi300x: bool = False):
+    if sum((bool(approved_free_t4), approved_nebius_gpu is not None, bool(approved_amd_mi300x))) > 1:
+        raise RuntimeError("Choose exactly one approved runtime: approved-free-t4, approved-nebius-gpu or approved-amd-mi300x")
+    if approved_amd_mi300x:
+        if approved_max_cost_usd is not None:
+            raise RuntimeError("The MI300X cost ceiling is enforced by tools/amd-tactical-campaign.sh, not the trainer")
+        return validate_amd_runtime()
     if approved_nebius_gpu is not None:
         return validate_nebius_runtime(approved_nebius_gpu, approved_max_cost_usd)
     if approved_max_cost_usd is not None:
         raise RuntimeError("approved-max-cost-usd applies only to an approved Nebius GPU job")
     if not approved_free_t4:
-        raise RuntimeError("Explicit approved-free-t4 or approved-nebius-gpu opt-in is required")
+        raise RuntimeError("Explicit approved-free-t4, approved-nebius-gpu or approved-amd-mi300x opt-in is required")
     if platform.system() != "Linux" or torch.version.cuda is None or torch.version.hip is not None:
         raise RuntimeError("Tactical training is restricted to a remote Linux CUDA runtime; no local or ROCm fallback")
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
@@ -190,6 +222,8 @@ def parse_args():
     approval = parser.add_mutually_exclusive_group()
     approval.add_argument("--approved-free-t4", action="store_true")
     approval.add_argument("--approved-nebius-gpu", choices=sorted(APPROVED_NEBIUS_GPUS))
+    approval.add_argument("--approved-amd-mi300x", action="store_true",
+                          help="run on an approved AMD Instinct MI300X (AMD Developer Cloud) under ROCm")
     parser.add_argument("--approved-max-cost-usd", type=float)
     parser.add_argument("--seed", type=int, default=731001)
     parser.add_argument("--episodes", type=int, default=100)
@@ -200,11 +234,19 @@ def parse_args():
                         help="policy update: the original actor-critic step (default) or PPO with a clipped objective")
     parser.add_argument("--warm-start-demonstration-episodes", type=int, default=0,
                         help=f"behavior-clone the {WARM_START_POLICY} tactic from this many episodes before RL (0 = off)")
+    parser.add_argument("--features", choices=("v2", "v3"), default="v2",
+                        help="candidate features: v2 (23, the original) or v3 (30, adds rules-engine previews)")
+    parser.add_argument("--width", type=int, default=128, help=f"hidden width, 16..{MAX_WIDTH}")
+    parser.add_argument("--hidden-layers", type=int, default=2,
+                        help=f"hidden layers, 2..{MAX_HIDDEN_LAYERS} (more than 2 adds pre-norm residual blocks)")
     parser.add_argument("--warm-start-epochs", type=int,
                         help=f"pretraining epochs over the demonstrations (default {WARM_START_DEFAULT_EPOCHS})")
     args = parser.parse_args()
-    if not 0 <= args.seed <= 0xFFFFFFFF or not 1 <= args.episodes <= 10000 or not 1 <= args.max_seconds <= 600:
+    maximum_seconds = MAX_SECONDS_AMD_MI300X if args.approved_amd_mi300x else MAX_SECONDS_DEFAULT_RUNTIME
+    if not 0 <= args.seed <= 0xFFFFFFFF or not 1 <= args.episodes <= 10000 or not 1 <= args.max_seconds <= maximum_seconds:
         parser.error("seed, episodes or bounded runtime is outside the allowed range")
+    if not 16 <= args.width <= MAX_WIDTH or not 2 <= args.hidden_layers <= MAX_HIDDEN_LAYERS:
+        parser.error(f"width must be 16..{MAX_WIDTH} and hidden-layers 2..{MAX_HIDDEN_LAYERS}")
     if not 1 <= args.evaluation_episodes <= 100:
         parser.error("evaluation-episodes must be between 1 and 100")
     if not 0 <= args.warm_start_demonstration_episodes <= 200:
@@ -221,7 +263,7 @@ def parse_args():
 
 def packed_batch(rows, device):
     maximum = max(len(row["features"]) for row in rows)
-    features = torch.zeros((len(rows), maximum, FEATURE_COUNT), dtype=torch.float32, device=device)
+    features = torch.zeros((len(rows), maximum, len(rows[0]["features"][0])), dtype=torch.float32, device=device)
     mask = torch.zeros((len(rows), maximum), dtype=torch.bool, device=device)
     choices = torch.empty(len(rows), dtype=torch.long, device=device)
     returns = torch.empty(len(rows), dtype=torch.float32, device=device)
@@ -550,7 +592,8 @@ def atomic_torch_save(value, path: Path):
 
 def main():
     args = parse_args()
-    runtime = validate_runtime(args.approved_free_t4, args.approved_nebius_gpu, args.approved_max_cost_usd)
+    runtime = validate_runtime(args.approved_free_t4, args.approved_nebius_gpu, args.approved_max_cost_usd,
+                               args.approved_amd_mi300x)
     if args.output.exists() or args.output.is_symlink():
         raise FileExistsError("Refusing to overwrite a previous tactical training run")
     args.output.mkdir(parents=True)
@@ -559,13 +602,17 @@ def main():
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-    model = TacticalActorCritic().to(device)
+    model = TacticalActorCritic(feature_count=FEATURE_COUNT_V3 if args.features == "v3" else FEATURE_COUNT,
+                                width=args.width, hidden_layers=args.hidden_layers).to(device)
+    # v2 checkpoints keep the original model ID so the existing exporter and app accept them.
+    model_id = MODEL_ID_V3 if args.features == "v3" or args.hidden_layers > 2 or args.width > 512 else MODEL_ID
     optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
     source_hashes = {filename: sha256_file(ROOT / filename) for filename in SOURCE_FILES}
-    run = {"schemaVersion": 1, "runId": run_id, "model": MODEL_ID, "status": "running",
+    run = {"schemaVersion": 1, "runId": run_id, "model": model_id, "status": "running",
            "seed": args.seed, "episodesRequested": args.episodes, "maxSeconds": args.max_seconds,
-           "evaluationEpisodes": args.evaluation_episodes, "featureCount": FEATURE_COUNT,
-           "width": model.width, "hiddenLayers": 2, "runtime": runtime, "sourceSha256": source_hashes,
+           "evaluationEpisodes": args.evaluation_episodes, "featureCount": model.feature_count,
+           "width": model.width, "hiddenLayers": model.hidden_layers, "features": args.features,
+           "architecture": model.architecture(), "runtime": runtime, "sourceSha256": source_hashes,
            "reward": "change in exact Override simulator score differential; no LLM-generated reward",
            "movementAbstraction": "macro-action teleport plus a travel-time proxy; no physical motion or path feasibility",
            "tacticalTiming": "environment default profile, recorded per episode in episodes.jsonl ('measured' = calibrated to the team robot cycles: loader ~2 s, field ~4 s)",
@@ -585,7 +632,7 @@ def main():
             return ppo_update(model, optimizer, trajectories, device, ppo_generator)
         return update(model, optimizer, trajectories, device)
     (args.output / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
-    environment = NodeTacticalEnvironment()
+    environment = NodeTacticalEnvironment(args.features)
     started = time.monotonic()
     trajectories = []
     metrics = []
@@ -598,7 +645,7 @@ def main():
             if warm_start is not None:
                 run_warm_start(environment, model, device, args, run_id, started, exposure_log, warm_start)
                 if warm_start["pretraining"]:
-                    atomic_torch_save({"schemaVersion": 1, "runId": run_id, "model": MODEL_ID,
+                    atomic_torch_save({"schemaVersion": 1, "runId": run_id, "model": model_id, "architecture": model.architecture(),
                                        "stage": "behavior-cloning-warm-start", "modelState": model.state_dict(),
                                        "trainingSeed": args.seed, "sourceSha256": source_hashes, "runtime": runtime,
                                        "warmStart": warm_start, "learnedImprovementVerified": False,
@@ -638,7 +685,7 @@ def main():
                 if completed % 8 == 0:
                     update_metrics = learn()
                     trajectories.clear()
-                    checkpoint = {"schemaVersion": 1, "runId": run_id, "model": MODEL_ID,
+                    checkpoint = {"schemaVersion": 1, "runId": run_id, "model": model_id, "architecture": model.architecture(),
                                   "modelState": model.state_dict(), "optimizerState": optimizer.state_dict(),
                                   "episodesCompleted": completed, "trainingSeed": args.seed,
                                   "sourceSha256": source_hashes, "runtime": runtime,
@@ -655,7 +702,7 @@ def main():
                     print(json.dumps(metrics_row, sort_keys=True), flush=True)
             if trajectories:
                 update_metrics = learn()
-                checkpoint = {"schemaVersion": 1, "runId": run_id, "model": MODEL_ID,
+                checkpoint = {"schemaVersion": 1, "runId": run_id, "model": model_id, "architecture": model.architecture(),
                               "modelState": model.state_dict(), "optimizerState": optimizer.state_dict(),
                               "episodesCompleted": completed, "trainingSeed": args.seed,
                               "sourceSha256": source_hashes, "runtime": runtime,

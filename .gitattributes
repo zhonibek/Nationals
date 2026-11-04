@@ -1,3 +1,4 @@
 include/robot_config.hpp text eol=lf
 simulator/robot-config.js text eol=lf
 tools/nebius-tactical-*.sh text eol=lf
+tools/amd-tactical-campaign.sh text eol=lf

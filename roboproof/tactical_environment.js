@@ -5,6 +5,10 @@ const OverrideGame = require('../simulator/override');
 const MATCH_SECONDS = OverrideGame.constants.MATCH_SECONDS;
 const MAX_FIELD_OBJECTS_PER_ROBOT = 6;
 const FEATURE_COUNT = 23;
+// v3 appends seven rules-engine preview features per candidate (legal, points, seconds, points per second,
+// rank by points per second, best overall, best match-load cycle), so a policy can see what each action is worth.
+const FEATURE_COUNT_V3 = 30;
+const FEATURE_SETS = Object.freeze(['v2', 'v3']);
 // Nominal seconds per mechanism action. `pickup` is a loose field object, `loaderPickup` an object at the loader outlet.
 const ACTION_SECONDS = Object.freeze({pickup: 1.25, loaderPickup: 1.25, place: 1.5, toggle: 0.6, park: 0.5, load: 1.0});
 // The robot waits this far in front of its loader (towards field centre) for a match load.
@@ -119,8 +123,10 @@ function advanceTime(game, seconds) {
 }
 
 class TacticalEnvironment {
-  constructor({timing = 'measured', movementSpeedInchesPerSecond, maximumDecisions = 60, actionSeconds = {}} = {}) {
+  constructor({timing = 'measured', movementSpeedInchesPerSecond, maximumDecisions = 60, actionSeconds = {}, featureSet = 'v2'} = {}) {
     if (!Object.hasOwn(TIMING_PROFILES, timing)) throw Error(`Unknown tactical timing profile ${timing}`);
+    if (!FEATURE_SETS.includes(featureSet)) throw Error(`Unknown tactical feature set ${featureSet}`);
+    this.featureSet = featureSet;
     const profile = TIMING_PROFILES[timing];
     this.timing = timing;
     movementSpeedInchesPerSecond ??= profile.movementSpeedInchesPerSecond;
@@ -377,6 +383,22 @@ class TacticalEnvironment {
     }
     this.done = terminal;
     this._prepared = new Map(raw.map(action => [action.id, action]));
+    if (this.featureSet === 'v3' && actions.length) {
+      const previews = this.previewCandidates();
+      this._previewsFor = this._prepared;
+      this._previews = previews;
+      const byId = new Map(previews.map(row => [row.id, row]));
+      const legal = previews.filter(row => row.legal);
+      const ranked = [...legal].sort((first, second) => second.pointsPerSecond - first.pointsPerSecond || first.id.localeCompare(second.id));
+      const rank = new Map(ranked.map((row, index) => [row.id, ranked.length > 1 ? index / (ranked.length - 1) : 0]));
+      const bestLoad = ranked.find(row => row.kind.startsWith('load-score-'))?.id;
+      for (const action of actions) {
+        const row = byId.get(action.id);
+        action.features = [...action.features, row.legal ? 1 : 0, row.legal ? bounded(row.points, 50) : 0,
+          row.legal ? Math.min(1, row.seconds / 20) : 1, row.legal ? bounded(row.pointsPerSecond, 10) : -1,
+          row.legal ? rank.get(row.id) : 1, ranked[0]?.id === row.id ? 1 : 0, bestLoad === row.id ? 1 : 0];
+      }
+    }
     return {schemaVersion: 1, seed: this.seed, alliance: this.alliance, clock: this.game.clock,
       score, decisions: this.decisions, done: this.done, timing: this.timing, movementModel: 'teleport macro-actions with explicit nominal travel-time proxy; not a motion/physics result',
       actions};
@@ -384,7 +406,10 @@ class TacticalEnvironment {
 
   // Engine preview of every current candidate, or only of those `include(action)` accepts: points gained
   // (score-margin change) and seconds used. Read-only: each preview runs on a cloned game.
-  previewCandidates(include = () => true) {
+  previewCandidates(include) {
+    // The v3 observation already previewed every candidate of this state.
+    if (!include && this._previewsFor === this._prepared) return this._previews.map(row => ({...row}));
+    include ??= () => true;
     const rows = [];
     for (const action of this._prepared.values()) {
       if (!include(action)) continue;
@@ -424,5 +449,5 @@ class TacticalEnvironment {
   }
 }
 
-module.exports = {TacticalEnvironment, FEATURE_COUNT, MAX_FIELD_OBJECTS_PER_ROBOT, ACTION_SECONDS, TIMING_PROFILES, calibrateTiming,
+module.exports = {TacticalEnvironment, FEATURE_COUNT, FEATURE_COUNT_V3, FEATURE_SETS, MAX_FIELD_OBJECTS_PER_ROBOT, ACTION_SECONDS, TIMING_PROFILES, calibrateTiming,
   xDriveTopSpeed, cloneGame, loaderApproach};

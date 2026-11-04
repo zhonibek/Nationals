@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "scope": "Tactical trainer training and warm-start demonstration seeds already used or possibly exposed. A new fit must not overlap any range. Evaluation seeds are derived from the training seed (seed ^ 0x5BD1E995 ^ offset) and differ for every new training seed.",
+  "source": "docs/progress.md",
+  "ranges": [
+    {"first": 731001, "last": 731200, "note": "default seed of early pilots; reserved conservatively"},
+    {"first": 731201, "last": 731300, "note": "T4 fit seed 731201, 100 episodes"},
+    {"first": 731401, "last": 732600, "note": "T4 fit seed 731401, 1200 episodes"},
+    {"first": 732701, "last": 733900, "note": "T4 fit seed 732701, declared up to 1200 episodes"},
+    {"first": 734001, "last": 734332, "note": "T4 warm-start fit seed 734001: training and demonstrations"},
+    {"first": 735001, "last": 735332, "note": "lost PPO fit seed 735001: unresolved exposure-loss marker, never reuse"},
+    {"first": 736001, "last": 736332, "note": "T4 PPO fit seed 736001: training and demonstrations"}
+  ]
+}
