@@ -1113,3 +1113,10 @@ Next: real compact CPU motion-policy gradients, bounded budgets and episode-boun
   - the match coordinator played seed 101 (margin 175, 7 match loads);
   - "Run with the Tactical PPO optimizer" ran the whole period (+185 own points).
 - `learnedImprovementVerified:false` and `independentQualificationPerformed:false` unchanged. Seed 736001 is consumed.
+
+### 2026-11-06 Replacement MI300X 512x10 GVF cohort (seeds 50521-50523)
+
+- The primary MI300X cohort `primary-gvf512x10-v1` cannot be completed: seed 50512 has no initial actor or host receipt and 50514 never ran. Its seeds stay excluded. A replacement cohort `mi300x-gvf512x10-v2` with the unused seeds 50521/50522/50523 was declared in `roboproof/gvf-motion-experiment.js` (commit fb28c28) before any of its runs; the cohort tests pass 10/10.
+- Source bundle `.cache/amd-gvf-training-656af145a25ad6c3.zip` (972 files, SHA-256 `d1d69104a60755cb2ad9c115dddbee240ba4045ec800eaa43df1df8e3ec1408c`, source-manifest SHA-256 `656af145a25ad6c323cba9d238dff49f2a34e4a4fca708d82dea3c43bb7025bf`) was uploaded to the AMD droplet `roboproof-tactical-mi300x` (MI300X VF, ROCm PyTorch 2.14) and its hash checked there. On that GPU the GVF remote suites passed 36 of 37 Python tests; the one error is the Tesla-T4-only restore test (`verify_t4` cannot pass on an AMD GPU). The GVF JavaScript contract and cohort suites passed 20/20.
+- 16:39 UTC: three bounded fits started in parallel with `gvf_train --approved-amd-mi300x --approved-max-credits 5` (512 x 10, at most 100,000 decisions, 100,000 updates, 3,600 s each, hard stop at 3,900 s), free AMD credit only. Results, preservation and evaluation follow in the next entry. `learnedImprovementVerified` and `independentQualificationPerformed` remain false.
+

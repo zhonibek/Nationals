@@ -17,6 +17,8 @@
     {"first": 2090001, "last": 2090004, "note": "independent-check test on the memory probe run (2026-11-06): 4 fresh start poses"},
     {"first": 2100001, "last": 2100200, "note": "independent check of mi300x-campaign-34 top 5 runs (2026-11-06): 200 fresh start poses"},
     {"first": 2200001, "last": 2200508, "note": "v4 multi-task smoke run, 1 rules engine (2026-11-06): 500 episodes + 8 demonstrations"},
-    {"first": 2210001, "last": 2210508, "note": "v4 multi-task smoke run, 3 parallel rules engines (2026-11-06): 500 episodes + 8 demonstrations"}
+    {"first": 2210001, "last": 2210508, "note": "v4 multi-task smoke run, 3 parallel rules engines (2026-11-06): 500 episodes + 8 demonstrations"},
+    {"first": 2300001, "last": 2490032, "note": "v4 multi-task campaign mi300x-v4-campaign-16 (2026-11-06): 16 PPO runs x 3 parallel rules engines, training and demonstrations"},
+    {"first": 2500001, "last": 2500200, "note": "independent check of mi300x-v4-campaign-16 top 5 runs (2026-11-06): 200 fresh tasks"}
   ]
 }
