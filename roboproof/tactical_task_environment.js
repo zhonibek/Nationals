@@ -100,6 +100,7 @@ class TaskEnvironment {
     this.rejectedActions = 0;
     this.stopReason = null;
     this.loopSteps = 0;
+    this.parkedInPlace = 0;
     this.taskReturn = 0;
     this.log = [];
     this.done = false;
@@ -130,6 +131,18 @@ class TaskEnvironment {
     this.candidates = [];
   }
 
+  // In the parking phase a robot already standing in midfield counts as parked: the rules engine offers no park move
+  // to it, and it scores as parked where it is (for example after placing into the central tall goal).
+  // Each robot counted this way earns the same parking reward as a park move (paid on the step that led here).
+  _countRobotsInMidfield() {
+    for (const robot of this.environment.game.robots) {
+      if (robot.alliance === this.alliance && robot.midfield && !this.parked.has(robot.id)) {
+        this.parked.add(robot.id);
+        this.parkedInPlace += 1;
+      }
+    }
+  }
+
   // The checks before each decision, as the original runTask loop made them, then the allowed candidates.
   _advance() {
     const spec = this.spec;
@@ -146,6 +159,7 @@ class TaskEnvironment {
           this._finishScoring();
         }
       }
+      if (this.phase === 'park') this._countRobotsInMidfield();
       const candidates = observation.actions.filter(action => !this.banned.has(action.id) &&
         allows(spec, this.phase, action.id, this.alliance) && !(this.phase === 'park' && this.parked.has(actionParts(action.id).robotId)));
       if (!candidates.length) {
@@ -226,7 +240,9 @@ class TaskEnvironment {
     this.observation = result.observation;
     let reward = this._reward(result, {counted, parkedNow, ownBefore});
     if (this.targeted && !wasTargetsMet && this.targetsMet() && phase === 'score') reward += TASK_REWARD.completion;
+    this.parkedInPlace = 0;
     this._advance();
+    if (spec.mode !== 'play') reward += TASK_REWARD.perParkedRobot * this.parkedInPlace;
     if (this.done) {
       if (this.targeted && !this.targetsMet()) reward -= TASK_REWARD.failure;
       if (spec.park && !this.parked.size) reward -= TASK_REWARD.failure;

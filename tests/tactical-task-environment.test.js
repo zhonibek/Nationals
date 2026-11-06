@@ -71,6 +71,25 @@ test('a task that runs out of time is penalized, and open play keeps the score-m
   assert.ok(play.log.every(row => row.taskReward === row.points));
 });
 
+test('robots already standing in midfield count as parked, with the same parking reward', () => {
+  const task = new TaskEnvironment({spec: parseTask('score 4 pins and cups as fast as possible, then park'), featureSet: 'v4',
+    environment: new TacticalEnvironment({featureSet: 'v3'})});
+  task.reset(2500001, 'red');
+  const moves = ['load-score-cup:red-1:loader-red-s:g-neutral-tall', 'score-pin:red-1:pin-01:g-neutral-tall',
+    'load-score-cup:red-2:loader-red-n:g-neutral-tall', 'score-pin:red-2:pin-02:g-neutral-tall'];
+  let last;
+  for (const id of moves) last = task.step(id);
+  const summary = task.summary();
+  assert.equal(summary.achieved, true);
+  assert.equal(summary.stopReason, 'task-complete');
+  assert.deepEqual(summary.parkedRobots.sort(), ['red-1', 'red-2']);
+  // The last placement completes the count and leaves both robots in the central goal's midfield: completion bonus
+  // plus the parking reward for each robot, minus game time.
+  const expected = TASK_REWARD.perPlacement + TASK_REWARD.completion + 2 * TASK_REWARD.perParkedRobot -
+    TASK_REWARD.timeCostPerSecond * last.durationSeconds;
+  assert.ok(Math.abs(last.reward - expected) < 1e-9, `${last.reward} vs ${expected}`);
+});
+
 test('sampled tasks are valid, deterministic per seed and cover every task kind', () => {
   const kinds = new Set();
   for (let seed = 1; seed <= 300; seed += 1) {
