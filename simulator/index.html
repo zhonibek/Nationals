@@ -307,7 +307,7 @@
         <summary>Tactical AI match · Nemotron vs baseline tactics</summary>
         <p>One driver period in the abstract tactical model, scored by the Override rules engine. Nemotron on Nebius Token Factory (or a baseline tactic) chooses every macro-action, including match loads from the loading zone. Nothing drives a robot.</p>
         <div class="viewport-toolbar" style="flex-wrap:wrap">
-          <label>Coordinator <select id="tacticalCoordinator"><option value="nemotron">Nemotron (Nebius Token Factory)</option><option value="loader-cycle">Loading-zone cycles</option><option value="field-greedy">Field greedy</option><option value="greedy-all">Greedy, all actions</option><option value="random">Random</option><option value="tactical-policy">Tactical PPO optimizer (trained policy)</option></select></label>
+          <label>Coordinator <select id="tacticalCoordinator"><option value="nemotron">Nemotron (Nebius Token Factory)</option><option value="nemotron-recording">Recorded Nemotron match (no key needed)</option><option value="loader-cycle">Loading-zone cycles</option><option value="field-greedy">Field greedy</option><option value="greedy-all">Greedy, all actions</option><option value="random">Random</option><option value="tactical-policy">Tactical PPO optimizer (trained policy)</option></select></label>
           <label>Seed <input id="tacticalSeed" type="number" min="0" max="4294967295" step="1" value="101"></label>
           <label>Alliance <select id="tacticalAlliance"><option value="red">red</option><option value="blue">blue</option></select></label>
           <button id="runTacticalMatch" class="btn btn-primary" type="button">Run tactical match</button>

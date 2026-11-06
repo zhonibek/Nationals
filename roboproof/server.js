@@ -21,12 +21,13 @@ const {readResults: readCosmosResults} = require('./cosmos-results');
 const {POLICIES: TACTICAL_POLICIES, MATCH_DECISIONS: TACTICAL_MATCH_DECISIONS, playMatch: playTacticalMatch, policyChooser} = require('./tactical_baselines');
 const {TacticalEnvironment} = require('./tactical_environment');
 const {playNemotronMatch} = require('./tactical-coordinator');
+const tacticalRecordings = require('./tactical-recording');
 const {loadPolicy: loadTacticalPolicy} = require('./tactical_policy');
 const {parseTask: parseTacticalTask, runTask: runTacticalTask} = require('./tactical_task');
 
 function createServer({reportPath = path.join(__dirname, 'runs/latest/report.json'), timeout = 120000,
   nemotronClient = createClient(), nemotronDirectory, nemotronChatDirectory, motionDirectory, learningDirectory, cosmosDirectory, agentTimeout = 300000,
-  tacticalPolicyPath} = {}) {
+  tacticalPolicyPath, tacticalRecordingsDirectory = tacticalRecordings.RECORDINGS} = {}) {
   let report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, 'utf8')) : null;
   let activeWorker = null;
   let activeAgent = null;
@@ -74,6 +75,7 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
   assets.set('/training.js', ['training.js', 'text/javascript']);
   assets.set('/training-data.json', ['training-data.json', 'application/json']);
   assets.set('/training-replay.json', ['training-replay.json', 'application/json']);
+  assets.set('/training-replay-task.json', ['training-replay-task.json', 'application/json']);
   const simulatorFiles = new Set(['index.html', 'portal.html', 'portal.js', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'motion-replay.js',
     'control-runtime.js', 'control.wasm', 'robot-config.js', 'override.js', 'override-view.js', 'override-ui.js', 'override-geometry.js',
     'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'cad-runtime.js', 'tactics-snapshot.js', 'tactics-ui.js', 'models/robot.stl', 'models/robot.preview.glb', 'models/robot.preview.json']);
@@ -133,6 +135,11 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
     if (request.method === 'GET' && pathname === '/api/perception/status') { reply(200, perceptionReadiness()); return; }
     if (request.method === 'GET' && pathname === '/api/cosmos/results') { reply(200, readCosmosResults(cosmosDirectory)); return; }
     if (request.method === 'GET' && pathname === '/api/motion/status') { reply(200, motionReadiness()); return; }
+    if (request.method === 'GET' && pathname === '/api/tactics/recordings') {
+      // Saved Nemotron matches that anyone can replay without a Nebius key; reading them runs no inference.
+      reply(200, {recordings: tacticalRecordings.describeRecordings(tacticalRecordingsDirectory)});
+      return;
+    }
     if (request.method === 'GET' && pathname === '/api/tactics/policy') {
       try { reply(200, {available: true, ...describeTacticalPolicy(currentTacticalPolicy())}); }
       catch (error) { reply(200, {available: false, error: error.message}); }
@@ -221,9 +228,17 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       }
       if (pathname === '/api/tactics/match') {
         // One abstract driver-period match: Nemotron or a non-learning tactic chooses macro-actions; the rules engine scores.
-        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['coordinator', 'seed', 'alliance'].includes(key))) {
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['coordinator', 'seed', 'alliance', 'recording'].includes(key))) {
           throw Error('Unsupported tactical match fields');
         }
+        if (body.coordinator === 'nemotron-recording') {
+          // Replays a saved Nemotron match in the rules engine; no model is called and every score is re-checked.
+          const record = tacticalRecordings.readRecording(body.recording, tacticalRecordingsDirectory);
+          reply(200, {schemaVersion: 1, ...(await tacticalRecordings.replayRecording(record)),
+            scope: 'abstract macro-action model scored by the Override rules engine; recorded Nemotron choices, no inference'});
+          return;
+        }
+        if (body.recording !== undefined) throw Error('A recording is only replayed by the nemotron-recording coordinator');
         if (!['nemotron', 'tactical-policy'].includes(body.coordinator) && !Object.hasOwn(TACTICAL_POLICIES, body.coordinator)) throw Error('Unknown tactical coordinator');
         if (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > 0xffffffff) throw Error('Tactical match seed must be a uint32');
         const alliance = body.alliance ?? 'red';
@@ -243,7 +258,12 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
             ? await playNemotronMatch({seed: body.seed, alliance, client: nemotronClient, signal: controller.signal})
             : await playTacticalMatch({seed: body.seed, alliance, signal: controller.signal, chooser: policyChooser(body.coordinator, body.seed)});
           controller.signal.throwIfAborted();
-          reply(200, {schemaVersion: 1, coordinator: body.coordinator, ...result,
+          let recording = null;
+          if (body.coordinator === 'nemotron' && result.stopReason === 'match-complete') {
+            try { recording = tacticalRecordings.saveRecording(result, tacticalRecordingsDirectory); }
+            catch (error) { recording = {error: error.message}; }
+          }
+          reply(200, {schemaVersion: 1, coordinator: body.coordinator, ...result, ...(recording ? {recording} : {}),
             scope: 'abstract macro-action model scored by the Override rules engine; no robot, motion or physics simulation was driven'});
         } finally {
           clearTimeout(timer);

@@ -166,12 +166,26 @@
       run.disabled = true;
       log.replaceChildren();
       const nemotron = coordinator.value === 'nemotron';
+      const recorded = coordinator.value === 'nemotron-recording';
       status.textContent = nemotron ? 'Nemotron is choosing each macro-action on Nebius Token Factory…'
-        : coordinator.value === 'tactical-policy' ? 'The trained tactical policy is choosing each macro-action…' : 'Running the baseline tactic…';
+        : recorded ? 'Replaying a recorded Nemotron match in the rules engine…'
+          : coordinator.value === 'tactical-policy' ? 'The trained tactical policy is choosing each macro-action…' : 'Running the baseline tactic…';
       try {
         const apiBase = location.port === '8765' ? 'http://127.0.0.1:8766' : '';
+        const request = {coordinator: coordinator.value, seed, alliance: allianceInput.value};
+        if (recorded) {
+          // The recording for this seed and alliance if there is one, otherwise the most recent recording.
+          const listing = await (await fetch(`${apiBase}/api/tactics/recordings`)).json();
+          const usable = (listing.recordings || []).filter(row => !row.error);
+          const pick = usable.find(row => row.seed === seed && row.alliance === allianceInput.value) ||
+            [...usable].sort((first, second) => String(second.recordedAt).localeCompare(String(first.recordedAt)))[0];
+          if (!pick) throw Error('No Nemotron match has been recorded yet. Run one with the Nemotron coordinator first; it is saved automatically.');
+          Object.assign(request, {recording: pick.name, seed: pick.seed, alliance: pick.alliance});
+          seedInput.value = String(pick.seed);
+          allianceInput.value = pick.alliance;
+        }
         const response = await fetch(`${apiBase}/api/tactics/match`, {method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({coordinator: coordinator.value, seed, alliance: allianceInput.value})});
+          body: JSON.stringify(request)});
         const result = await response.json();
         if (!response.ok) throw Error(result.error || `HTTP ${response.status}`);
         for (const row of result.log || []) {
@@ -186,7 +200,9 @@
         const own = result.finalScore[result.alliance];
         status.textContent = `${result.policy ? `${result.coordinator}, ${policyLabel(result.policy)}` : result.coordinator}: final margin ${result.finalScore.margin} (own score ${own}), ` +
           `${result.decisions} decisions, ${result.matchLoadsScored} match loads scored` +
-          (nemotron && result.meanDecisionLatencyMs ? `, ${result.meanDecisionLatencyMs} ms per Nemotron decision (${result.provider?.model})` : '') +
+          ((nemotron || recorded) && result.meanDecisionLatencyMs ? `, ${result.meanDecisionLatencyMs} ms per Nemotron decision (${result.provider?.model})` : '') +
+          (recorded && result.replay ? ` · recorded ${result.recordedAt}: ${result.replay.reproduced ? 'every score reproduced' : `NOT reproduced (decisions ${result.replay.mismatches.join(', ') || 'missing'})`}` : '') +
+          (nemotron && typeof result.recording === 'string' ? ` · saved as recording ${result.recording}` : '') +
           (result.stopReason !== 'match-complete' ? ` · stopped: ${result.stopReason}${result.error ? ` (${result.error})` : ''}` : '') +
           '. Abstract tactical model; no robot was driven.';
       } catch (error) {
