@@ -17,7 +17,8 @@ from pathlib import Path
 
 import torch
 
-from .model import FEATURE_COUNT, FEATURE_COUNT_V3, MAX_HIDDEN_LAYERS, MAX_WIDTH, MODEL_ID, MODEL_ID_V3
+from .model import (FEATURE_COUNT, FEATURE_COUNT_V3, FEATURE_COUNT_V4, MAX_HIDDEN_LAYERS, MAX_WIDTH, MODEL_ID,
+                    MODEL_ID_V3, MODEL_ID_V4)
 
 
 POLICY_SCHEMA = "roboproof-tactical-policy-v1"
@@ -106,7 +107,7 @@ def actor_tensors_v3(state: dict) -> tuple[dict, list[tuple[str, torch.Tensor]]]
         raise RuntimeError("Checkpoint has no model state")
     first = _finite(state.get("encoder.0.weight"), "encoder.0.weight")
     width, feature_count = tuple(first.shape) if first.ndim == 2 else (0, 0)
-    if not 16 <= width <= MAX_WIDTH or feature_count not in (FEATURE_COUNT, FEATURE_COUNT_V3):
+    if not 16 <= width <= MAX_WIDTH or feature_count not in (FEATURE_COUNT, FEATURE_COUNT_V3, FEATURE_COUNT_V4):
         raise RuntimeError("Unsupported tactical model dimensions")
     blocks = 0
     while f"encoder.{2 + blocks}.linear.weight" in state:
@@ -147,8 +148,9 @@ def build_policy_v3(checkpoint_bytes: bytes, evaluation_path: Path | None = None
     if Path(weights_file).name != weights_file or not weights_file.endswith(".bin"):
         raise RuntimeError("The weights file must be a plain .bin file name next to the manifest")
     checkpoint = torch.load(io.BytesIO(checkpoint_bytes), map_location="cpu", weights_only=True)
-    if not isinstance(checkpoint, dict) or checkpoint.get("schemaVersion") != 1 or checkpoint.get("model") != MODEL_ID_V3:
-        raise RuntimeError(f"Expected a schema-1 {MODEL_ID_V3} checkpoint")
+    if (not isinstance(checkpoint, dict) or checkpoint.get("schemaVersion") != 1
+            or checkpoint.get("model") not in (MODEL_ID_V3, MODEL_ID_V4)):
+        raise RuntimeError(f"Expected a schema-1 {MODEL_ID_V3} or {MODEL_ID_V4} checkpoint")
     dimensions, tensors = actor_tensors_v3(checkpoint.get("modelState"))
     layout, chunks, offset = [], [], 0
     for name, tensor in tensors:
@@ -163,8 +165,10 @@ def build_policy_v3(checkpoint_bytes: bytes, evaluation_path: Path | None = None
         raise RuntimeError(f"Unknown training algorithm in checkpoint: {algorithm_id}")
     algorithm = ALGORITHMS[algorithm_id] + (f"; behavior-cloning warm start from {warm_start['policy']}" if warm_start else "")
     runtime = checkpoint.get("runtime") if isinstance(checkpoint.get("runtime"), dict) else {}
-    manifest = {"schema": POLICY_SCHEMA_BINARY, "model": MODEL_ID_V3,
-                "featureSet": "v3" if dimensions["featureCount"] == FEATURE_COUNT_V3 else "v2", **dimensions,
+    feature_set = {FEATURE_COUNT: "v2", FEATURE_COUNT_V3: "v3", FEATURE_COUNT_V4: "v4"}[dimensions["featureCount"]]
+    if (checkpoint["model"] == MODEL_ID_V4) != (feature_set == "v4"):
+        raise RuntimeError("Only a v4 (multi-task) checkpoint has the 52 task-conditioned features")
+    manifest = {"schema": POLICY_SCHEMA_BINARY, "model": checkpoint["model"], "featureSet": feature_set, **dimensions,
                 "activation": "tanh", "layerNormEpsilon": LAYER_NORM_EPSILON, "actorParameters": offset,
                 "dtype": "float32-le", "weightsFile": weights_file, "weightsBytes": len(weights),
                 "weightsSha256": hashlib.sha256(weights).hexdigest(), "layout": layout,
@@ -228,7 +232,7 @@ def main(argv=None):
     if len(raw) > MAX_CHECKPOINT_BYTES_V3:
         parser.error("checkpoint is larger than any tactical model")
     model_id = torch.load(io.BytesIO(raw), map_location="cpu", weights_only=True).get("model")
-    if model_id == MODEL_ID_V3:
+    if model_id in (MODEL_ID_V3, MODEL_ID_V4):
         weights_file = args.output.with_suffix(".weights.bin").name
         policy, weights = build_policy_v3(raw, evaluation, weights_file)
         if args.independent_holdout is not None:

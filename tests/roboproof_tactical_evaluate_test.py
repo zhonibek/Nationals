@@ -81,6 +81,35 @@ class StatisticsTests(unittest.TestCase):
         self.assertIs(result["learnedImprovementVerified"], False)
         self.assertIs(result["humanApprovalRequired"], True)
 
+    def test_multi_task_results_compare_task_returns_with_task_greedy_on_the_same_tasks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            seeds = [2300001, 2300002, 2300003, 2300004]
+            tasks = ["Place 2 Cup match loads in goals", "Park the robots", "Play the driver period", "Place 3 objects in goals"]
+            names = evaluate.BASELINE_NAMES_V4
+            (output / "baselines.json").write_text(json.dumps({
+                "seeds": seeds, "margins": {name: [240.0] * 4 for name in names},
+                "taskReturns": {name: [10.0, 5.0, 240.0, 12.0] for name in names},
+                "achieved": {name: [True, True, True, False] for name in names},
+                "tasks": {name: tasks for name in names}}), encoding="utf-8")
+            (output / "candidate-run-03.json").write_text(json.dumps({
+                "margins": [250.0] * 4, "taskReturns": [14.0, 6.0, 260.0, 20.0], "achieved": [True, True, True, True],
+                "tasks": tasks}), encoding="utf-8")
+            plan = {"campaign": "c", "baseSeed": 2300001, "features": "v4", "seeds": {"list": seeds}, "primaryRunIndex": 3,
+                    "candidates": [{"index": 3, "seed": 1, "developmentMargin": 70.0}]}
+            result = evaluate.aggregate(plan, output)
+            self.assertEqual(result["metric"], "taskReturn")
+            self.assertEqual(result["primary"]["successRate"], 1.0)
+            self.assertEqual(result["primary"]["taskGreedySuccessRate"], 0.75)
+            self.assertEqual(result["primary"]["versusTaskGreedy"]["wins"], 4)
+            self.assertTrue(result["primaryBeatsTaskGreedy"])
+            self.assertIs(result["learnedImprovementVerified"], False)
+            (output / "candidate-run-03.json").write_text(json.dumps({
+                "margins": [250.0] * 4, "taskReturns": [1.0] * 4, "achieved": [True] * 4, "tasks": list(reversed(tasks))}),
+                encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "same tasks"):
+                evaluate.aggregate(plan, output)
+
 
 if __name__ == "__main__":
     unittest.main()

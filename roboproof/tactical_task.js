@@ -6,14 +6,10 @@
 
 const OverrideGame = require('../simulator/override');
 const {TacticalEnvironment} = require('./tactical_environment');
+const {TaskEnvironment, allows, validateSpec} = require('./tactical_task_environment');
 
 const MAX_TASK_LENGTH = 300;
-const MATCH_SECONDS = OverrideGame.constants.MATCH_SECONDS;
 const DRIVER_SECONDS = OverrideGame.constants.DRIVER_SECONDS;
-// With an open-ended scoring task followed by parking, scoring stops this many seconds before the end of the match.
-const PARK_RESERVE_SECONDS = 12;
-const MAX_LOOP_STEPS = 200;
-const SCORING_KINDS = new Set(['score-pin', 'score-cup', 'load-score-pin', 'load-score-cup']);
 const EXAMPLES = ['score 3 match loads into the neutral goals, then park', 'забей 2 кубка с поля за 30 секунд',
   'score Pins until we gain 40 points', 'play the driver period for the best score', 'припаркуй роботов'];
 
@@ -92,94 +88,57 @@ function parseTask(text) {
   return {...spec, summary: describe(spec)};
 }
 
-function actionParts(id) {
-  const [kind, robotId, target, goal] = id.split(':');
-  return {kind, robotId, target: target ?? null, goal: goal ?? null};
-}
-
-// Whether a candidate macro-action fits the task in the current phase ('score' or 'park').
-function allows(spec, phase, id, alliance) {
-  const {kind, goal} = actionParts(id);
-  if (phase === 'park') return kind === 'park';
-  if (spec.mode === 'play') return true;
-  if (!SCORING_KINDS.has(kind)) return false;
-  if (spec.objects !== 'any' && !kind.endsWith(spec.objects)) return false;
-  if (spec.source === 'loader' && !kind.startsWith('load-score-')) return false;
-  if (spec.source === 'field' && kind.startsWith('load-score-')) return false;
-  if (spec.goals === 'neutral' && !goal?.startsWith('g-neutral-')) return false;
-  if (spec.goals === 'alliance' && !goal?.startsWith(`g-${alliance}-`)) return false;
-  if (spec.goals === 'tall' && goal !== 'g-neutral-tall') return false;
-  return true;
-}
-
-function runTask({spec, policy, seed, alliance = 'red',
-  environment = new TacticalEnvironment({featureSet: policy?.featureSet ?? 'v2'})}) {
+// Plays one task with a trained policy through the same TaskEnvironment the multi-task trainer uses.
+// `environment` is the underlying TacticalEnvironment (its feature set must match the policy's base features).
+function runTask({spec, policy, seed, alliance = 'red', environment}) {
   if (!policy || typeof policy.choose !== 'function') throw Error('A trained tactical policy is required');
-  // A v3 policy reads the rules-engine preview features; v2 features would be the wrong length for it.
-  if ((policy.featureSet ?? 'v2') !== (environment.featureSet ?? 'v2')) {
-    throw Error(`The tactical policy needs ${policy.featureSet} features, but the environment produces ${environment.featureSet}`);
+  const featureSet = policy.featureSet ?? 'v2';
+  environment ??= new TacticalEnvironment({featureSet: featureSet === 'v4' ? 'v3' : featureSet});
+  // A v3 policy reads the rules-engine preview features and a v4 policy also the task; other features would not fit.
+  const base = featureSet === 'v4' ? 'v3' : featureSet;
+  if (base !== (environment.featureSet ?? 'v2')) {
+    throw Error(`The tactical policy needs ${featureSet} features, but the environment produces ${environment.featureSet}`);
   }
-  let observation = environment.reset(seed, alliance);
-  const clockStart = observation.clock;
-  const ownStart = observation.score[alliance];
-  const marginStart = observation.score.margin;
-  const parked = new Set();
+  const task = new TaskEnvironment({spec: validateSpec({...spec}), environment, featureSet});
+  let observation = task.reset(seed, alliance);
   const log = [];
-  let banned = new Set();
-  let phase = spec.mode === 'park' ? 'park' : 'score';
-  let scoringActions = 0;
-  let rejectedActions = 0;
-  let stopReason = null;
-  const gained = () => observation.score[alliance] - ownStart;
-  const targetsMet = () => (spec.count === null || scoringActions >= spec.count) && (spec.points === null || gained() >= spec.points);
-  const finishScoring = reason => {
-    if (spec.park) { phase = 'park'; banned = new Set(); return false; }
-    stopReason = reason;
-    return true;
-  };
-
-  for (let step = 0; step < MAX_LOOP_STEPS; step += 1) {
-    if (observation.done) { stopReason = phase === 'park' && parked.size ? 'task-complete' : 'match-over'; break; }
-    if (phase === 'score') {
-      const timeUp = spec.seconds !== null && observation.clock - clockStart >= spec.seconds - 1e-9;
-      const targeted = spec.count !== null || spec.points !== null;
-      if (targeted && targetsMet() && finishScoring('task-complete')) break;
-      if (phase === 'score' && timeUp && finishScoring('time-limit')) break;
-      if (phase === 'score' && !targeted && spec.park && observation.clock >= MATCH_SECONDS - PARK_RESERVE_SECONDS) finishScoring();
-    }
-    const candidates = observation.actions.filter(action => !banned.has(action.id) && allows(spec, phase, action.id, alliance) &&
-      !(phase === 'park' && parked.has(actionParts(action.id).robotId)));
-    if (!candidates.length) {
-      if (phase === 'score' && !finishScoring('no-allowed-action')) continue;
-      if (phase === 'park') stopReason = parked.size ? 'task-complete' : 'no-allowed-action';
-      break;
-    }
-    const pick = policy.choose(candidates);
-    const clock = observation.clock;
-    const ownBefore = observation.score[alliance];
-    const result = environment.step(pick.action.id);
-    const parts = actionParts(pick.action.id);
-    if (result.rejectedAction) { rejectedActions += 1; banned.add(pick.action.id); }
-    else {
-      banned = new Set();
-      if (SCORING_KINDS.has(parts.kind)) scoringActions += 1;
-      if (parts.kind === 'park') parked.add(parts.robotId);
-    }
-    observation = result.observation;
-    log.push({decision: log.length + 1, phase, clock: Number(clock.toFixed(2)), id: pick.action.id, kind: parts.kind,
-      robotId: parts.robotId, points: result.reward, ownPoints: observation.score[alliance] - ownBefore,
-      seconds: Number(result.durationSeconds.toFixed(3)), rejected: Boolean(result.rejectedAction), score: result.score,
-      policyScore: Number(pick.score.toFixed(4)), candidates: candidates.length});
+  while (!observation.done) {
+    const pick = policy.choose(observation.actions);
+    const {row, observation: next} = task.step(pick.action.id);
+    const {taskReward, ...rest} = row;
+    log.push({...rest, policyScore: Number(pick.score.toFixed(4)), ...(featureSet === 'v4' ? {taskReward} : {})});
+    observation = next;
   }
-  stopReason ??= 'decision-cap';
-  const targeted = spec.count !== null || spec.points !== null;
-  const achieved = spec.mode === 'park' ? parked.size > 0
-    : spec.mode === 'play' ? ['match-over', 'time-limit', 'decision-cap'].includes(stopReason)
-      : (targeted ? targetsMet() : scoringActions > 0) && (!spec.park || parked.size > 0);
-  return {seed, alliance, task: spec, achieved, stopReason, scoringActions, rejectedActions, parkedRobots: [...parked],
-    ownPointsGained: gained(), marginChange: observation.score.margin - marginStart, decisions: log.length,
-    clockStart: Number(clockStart.toFixed(2)), clockEnd: Number(observation.clock.toFixed(2)), finalScore: observation.score,
-    timing: observation.timing, movementModel: observation.movementModel, log};
+  const {taskReturn, ...summary} = task.summary();
+  return {...summary, task: spec, ...(featureSet === 'v4' ? {taskReturn} : {}), log};
 }
 
-module.exports = {MAX_TASK_LENGTH, EXAMPLES, parseTask, allows, runTask};
+// Random task specs for multi-task training, drawn from the same allowlisted shape the parser produces.
+// `random` returns floats in [0, 1).
+function sampleTask(random) {
+  const weighted = entries => {
+    let draw = random() * entries.reduce((sum, [, weight]) => sum + weight, 0);
+    for (const [value, weight] of entries) { draw -= weight; if (draw < 0) return value; }
+    return entries.at(-1)[0];
+  };
+  const integer = (minimum, maximum, step = 1) => minimum + step * Math.floor(random() * (Math.floor((maximum - minimum) / step) + 1));
+  const mode = weighted([['play', 0.2], ['score', 0.7], ['park', 0.1]]);
+  let spec;
+  if (mode === 'play') {
+    spec = {mode, objects: 'any', source: 'any', goals: 'any', count: null, points: null,
+      seconds: random() < 0.5 ? null : integer(15, 100, 5), park: false};
+  } else if (mode === 'park') {
+    spec = {mode, objects: 'any', source: 'any', goals: 'any', count: null, points: null, seconds: null, park: true};
+  } else {
+    const target = weighted([['count', 0.4], ['points', 0.3], ['none', 0.3]]);
+    spec = {mode, objects: weighted([['any', 0.4], ['pin', 0.3], ['cup', 0.3]]),
+      source: weighted([['any', 0.4], ['loader', 0.3], ['field', 0.3]]),
+      goals: weighted([['any', 0.4], ['neutral', 0.25], ['alliance', 0.2], ['tall', 0.15]]),
+      count: target === 'count' ? integer(1, 8) : null, points: target === 'points' ? integer(10, 80, 5) : null,
+      seconds: random() < 0.4 ? integer(10, 90, 5) : null, park: random() < 0.3};
+  }
+  validateSpec(spec);
+  return {...spec, summary: describe(spec)};
+}
+
+module.exports = {MAX_TASK_LENGTH, EXAMPLES, parseTask, allows, describe, runTask, sampleTask};

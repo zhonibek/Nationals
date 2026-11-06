@@ -11,7 +11,8 @@ from pathlib import Path
 import torch
 
 from roboproof.tactical_learning import export_policy
-from roboproof.tactical_learning.model import FEATURE_COUNT, FEATURE_COUNT_V3, MODEL_ID, MODEL_ID_V3, TacticalActorCritic
+from roboproof.tactical_learning.model import (FEATURE_COUNT, FEATURE_COUNT_V3, FEATURE_COUNT_V4, MODEL_ID, MODEL_ID_V3,
+                                               MODEL_ID_V4, TacticalActorCritic)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -150,6 +151,15 @@ class TacticalPolicyExportV3Tests(unittest.TestCase):
             export_policy.build_policy_v3(checkpoint_bytes(tiny_model()))
         with self.assertRaisesRegex(RuntimeError, "plain .bin"):
             export_policy.build_policy_v3(raw, weights_file="../policy.bin")
+
+    def test_a_multi_task_v4_actor_exports_with_its_task_features_and_a_mismatch_is_refused(self):
+        torch.manual_seed(19)
+        model = TacticalActorCritic(feature_count=FEATURE_COUNT_V4, width=32, hidden_layers=3).eval()
+        manifest, weights = export_policy.build_policy_v3(checkpoint_bytes(model, model=MODEL_ID_V4, algorithm="ppo-clip-v1"))
+        self.assertEqual((manifest["model"], manifest["featureSet"], manifest["featureCount"]), (MODEL_ID_V4, "v4", FEATURE_COUNT_V4))
+        self.assertEqual(manifest["layout"][0]["shape"], [32, FEATURE_COUNT_V4])
+        with self.assertRaisesRegex(RuntimeError, "Only a v4"):
+            export_policy.build_policy_v3(checkpoint_bytes(v3_model(), model=MODEL_ID_V4))
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
     def test_the_javascript_v3_actor_matches_torch_and_the_cli_attaches_the_independent_result(self):

@@ -35,13 +35,16 @@ def consumed_ranges(path: Path = CONSUMED_SEEDS):
 
 def plan(*, output_root: Path, runs: int, base_seed: int, seed_stride: int, episodes: int, warm_start: int,
          max_seconds: int, evaluation_episodes: int, algorithm: str, features: str, width: int, hidden_layers: int,
-         hourly_rate_usd: float, approved_max_cost_usd: float, python: str = "python3", consumed=None) -> dict:
+         hourly_rate_usd: float, approved_max_cost_usd: float, python: str = "python3", consumed=None,
+         parallel_envs: int = 1) -> dict:
     if not 1 <= runs <= MAX_RUNS:
         raise ValueError(f"runs must be 1..{MAX_RUNS}")
     if not 1 <= episodes <= 10000 or not 0 <= warm_start <= 200 or not 1 <= evaluation_episodes <= 100:
         raise ValueError("episodes, warm-start demonstrations or evaluation episodes are out of range")
     if not 1 <= max_seconds <= 6 * 3600:
         raise ValueError("max-seconds must be 1..21600")
+    if not 1 <= parallel_envs <= 8:
+        raise ValueError("parallel-envs must be 1..8")
     if seed_stride < episodes + warm_start:
         raise ValueError("seed-stride must be at least episodes + warm-start demonstrations, so runs never share seeds")
     if not 0 < hourly_rate_usd <= 20 or not 0 < approved_max_cost_usd <= HARD_COST_CAP_USD:
@@ -67,6 +70,8 @@ def plan(*, output_root: Path, runs: int, base_seed: int, seed_stride: int, epis
                    "--features", features, "--width", str(width), "--hidden-layers", str(hidden_layers)]
         if warm_start:
             command += ["--warm-start-demonstration-episodes", str(warm_start)]
+        if parallel_envs > 1:
+            command += ["--parallel-envs", str(parallel_envs)]
         command += ["--output", str(output)]
         planned.append({"index": index, "seed": seed, "trainingSeeds": [first, first + episodes - 1],
                         "demonstrationSeeds": [first + episodes, last] if warm_start else None,
@@ -75,7 +80,7 @@ def plan(*, output_root: Path, runs: int, base_seed: int, seed_stride: int, epis
             "configuration": {"runs": runs, "baseSeed": base_seed, "seedStride": seed_stride, "episodes": episodes,
                               "warmStartDemonstrations": warm_start, "maxSeconds": max_seconds,
                               "evaluationEpisodes": evaluation_episodes, "algorithm": algorithm, "features": features,
-                              "width": width, "hiddenLayers": hidden_layers},
+                              "width": width, "hiddenLayers": hidden_layers, "parallelEnvironments": parallel_envs},
             "wallClockLimitSeconds": wall_seconds, "hourlyRateUsd": hourly_rate_usd,
             "estimatedMaxCostUsd": round(estimated_cost, 2), "approvedMaxCostUsd": approved_max_cost_usd,
             "costNote": "Worst case at the hourly rate the user read in the AMD Developer Cloud console; the droplet must be destroyed afterwards to stop billing.",
@@ -114,13 +119,21 @@ def summarize(root: Path) -> dict:
         record = json.loads((folder / "run.json").read_text(encoding="utf-8")) if (folder / "run.json").exists() else {}
         evaluation = json.loads((folder / "evaluation.json").read_text(encoding="utf-8")) if (folder / "evaluation.json").exists() else {}
         exit_file = root / f"run-{run['index']:02d}.exit-code"
-        rows.append({"index": run["index"], "seed": run["seed"], "status": record.get("status", "missing"),
-                     "exitCode": int(exit_file.read_text().strip()) if exit_file.exists() else None,
-                     "episodesCompleted": record.get("episodesCompleted"),
-                     "learnedMargin": evaluation.get("meanScoreMargin"),
-                     "loaderCycleMargin": (evaluation.get("baselineMeanScoreMargin") or {}).get("loader-cycle"),
-                     "beatsLoaderCycleOnHoldout": evaluation.get("beatsLoaderCycleOnHoldout")})
-    margins = [row["learnedMargin"] for row in rows if isinstance(row["learnedMargin"], (int, float))]
+        row = {"index": run["index"], "seed": run["seed"], "status": record.get("status", "missing"),
+               "exitCode": int(exit_file.read_text().strip()) if exit_file.exists() else None,
+               "episodesCompleted": record.get("episodesCompleted"),
+               "learnedMargin": evaluation.get("meanScoreMargin"),
+               "loaderCycleMargin": (evaluation.get("baselineMeanScoreMargin") or {}).get("loader-cycle"),
+               "beatsLoaderCycleOnHoldout": evaluation.get("beatsLoaderCycleOnHoldout")}
+        if evaluation.get("metric") == "taskReturn":  # multi-task (v4): task return against the per-task greedy tactic
+            row.update(metric="taskReturn", learnedTaskReturn=evaluation.get("meanTaskReturn"),
+                       taskGreedyTaskReturn=(evaluation.get("baselineMeanTaskReturn") or {}).get("task-greedy"),
+                       successRate=evaluation.get("successRate"),
+                       taskGreedySuccessRate=(evaluation.get("baselineSuccessRate") or {}).get("task-greedy"),
+                       beatsTaskGreedyOnHoldout=evaluation.get("beatsTaskGreedyOnHoldout"))
+        row["learned"] = row.get("learnedTaskReturn", row["learnedMargin"])
+        rows.append(row)
+    margins = [row["learned"] for row in rows if isinstance(row["learned"], (int, float))]
     busy = []
     samples_file = root / "gpu-utilization.jsonl"
     if samples_file.exists():
@@ -129,11 +142,13 @@ def summarize(root: Path) -> dict:
                 busy.extend(utilization_values(json.loads(line).get("sample")))
             except (ValueError, AttributeError):
                 continue
-    best = max((row for row in rows if isinstance(row["learnedMargin"], (int, float))),
-               key=lambda row: row["learnedMargin"], default=None)
+    best = max((row for row in rows if isinstance(row["learned"], (int, float))),
+               key=lambda row: row["learned"], default=None)
     return {"schemaVersion": 1, "kind": "tactical-mi300x-campaign-summary", "runs": rows,
             "completedRuns": sum(row["status"] == "completed" for row in rows),
             "runsBeatingLoaderCycle": sum(row["beatsLoaderCycleOnHoldout"] is True for row in rows),
+            "runsBeatingTaskGreedy": sum(row.get("beatsTaskGreedyOnHoldout") is True for row in rows),
+            "metric": "taskReturn" if any(row.get("metric") == "taskReturn" for row in rows) else "scoreMargin",
             "learnedMargin": {"mean": statistics.fmean(margins), "median": statistics.median(margins),
                               "min": min(margins), "max": max(margins)} if margins else None,
             "bestRun": best,
@@ -176,7 +191,8 @@ def main(argv=None):
     planner.add_argument("--max-seconds", type=int, default=7200)
     planner.add_argument("--evaluation-episodes", type=int, default=8)
     planner.add_argument("--algorithm", choices=("actor-critic", "ppo"), default="ppo")
-    planner.add_argument("--features", choices=("v2", "v3"), default="v3")
+    planner.add_argument("--features", choices=("v2", "v3", "v4"), default="v3")
+    planner.add_argument("--parallel-envs", type=int, default=1)
     planner.add_argument("--width", type=int, default=1024)
     planner.add_argument("--hidden-layers", type=int, default=10)
     planner.add_argument("--hourly-rate-usd", type=float, required=True)
@@ -204,7 +220,8 @@ def main(argv=None):
                       max_seconds=args.max_seconds, evaluation_episodes=args.evaluation_episodes,
                       algorithm=args.algorithm, features=args.features, width=args.width,
                       hidden_layers=args.hidden_layers, hourly_rate_usd=args.hourly_rate_usd,
-                      approved_max_cost_usd=args.approved_max_cost_usd, python=args.python)
+                      approved_max_cost_usd=args.approved_max_cost_usd, python=args.python,
+                      parallel_envs=args.parallel_envs)
     except ValueError as error:
         print(f"Campaign refused: {error}", file=sys.stderr)
         return 2

@@ -10,12 +10,15 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {FEATURE_COUNT, FEATURE_COUNT_V3} = require('./tactical_environment');
+const {FEATURE_COUNT_V4} = require('./tactical_task_environment');
 
 const POLICY_SCHEMA = 'roboproof-tactical-policy-v1';
 const MODEL_ID = 'override-tactical-actor-critic-v2-loader';
 const MAX_POLICY_BYTES = 8 * 1024 * 1024;
 const BINARY_POLICY_SCHEMA = 'roboproof-tactical-policy-v3-binary';
 const MODEL_ID_V3 = 'override-tactical-mlp-v3-preview';
+// A multi-task policy: v3 features plus the task block (roboproof/tactical_task_environment.js).
+const MODEL_ID_V4 = 'override-tactical-mlp-v4-task';
 const MAX_WEIGHTS_BYTES = 64 * 1024 * 1024;
 const LAYER_NORM_EPSILON = 1e-5;
 // Training updates an exported policy may declare; an older export without the field is the original actor-critic.
@@ -124,11 +127,13 @@ function affine(weights, bias, input, output) {
 }
 
 function createBinaryPolicy(record, weightsBuffer) {
-  if (!record || typeof record !== 'object' || record.schema !== BINARY_POLICY_SCHEMA || record.model !== MODEL_ID_V3) {
-    throw Error(`Expected an exported ${MODEL_ID_V3} policy (${BINARY_POLICY_SCHEMA})`);
+  if (!record || typeof record !== 'object' || record.schema !== BINARY_POLICY_SCHEMA ||
+      record.model !== (record.featureSet === 'v4' ? MODEL_ID_V4 : MODEL_ID_V3)) {
+    throw Error(`Expected an exported ${MODEL_ID_V3} or ${MODEL_ID_V4} policy (${BINARY_POLICY_SCHEMA})`);
   }
   const {featureSet, featureCount, width, hiddenLayers, residual} = record;
-  if (!((featureSet === 'v3' && featureCount === FEATURE_COUNT_V3) || (featureSet === 'v2' && featureCount === FEATURE_COUNT))
+  if (!((featureSet === 'v4' && featureCount === FEATURE_COUNT_V4) || (featureSet === 'v3' && featureCount === FEATURE_COUNT_V3) ||
+        (featureSet === 'v2' && featureCount === FEATURE_COUNT))
       || !Number.isInteger(width) || width < 16 || width > 1024 || !Number.isInteger(hiddenLayers) || hiddenLayers < 2
       || hiddenLayers > 10 || residual !== hiddenLayers > 2 || record.activation !== 'tanh'
       || record.layerNormEpsilon !== LAYER_NORM_EPSILON || record.dtype !== 'float32-le') {
@@ -223,5 +228,5 @@ function loadPolicy(file) {
   return createBinaryPolicy(record, fs.readFileSync(weightsFile));
 }
 
-module.exports = {POLICY_SCHEMA, MODEL_ID, ALGORITHM_IDS, BINARY_POLICY_SCHEMA, MODEL_ID_V3, binaryLayout, createPolicy,
+module.exports = {POLICY_SCHEMA, MODEL_ID, ALGORITHM_IDS, BINARY_POLICY_SCHEMA, MODEL_ID_V3, MODEL_ID_V4, binaryLayout, createPolicy,
   createBinaryPolicy, loadPolicy};

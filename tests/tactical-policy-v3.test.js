@@ -7,12 +7,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {FEATURE_COUNT, FEATURE_COUNT_V3, TacticalEnvironment} = require('../roboproof/tactical_environment');
-const {BINARY_POLICY_SCHEMA, MODEL_ID_V3, binaryLayout, createBinaryPolicy, loadPolicy} = require('../roboproof/tactical_policy');
+const {BINARY_POLICY_SCHEMA, MODEL_ID_V3, MODEL_ID_V4, binaryLayout, createBinaryPolicy, loadPolicy} = require('../roboproof/tactical_policy');
 const {parseTask, runTask} = require('../roboproof/tactical_task');
+const {FEATURE_COUNT_V4} = require('../roboproof/tactical_task_environment');
 
 // A small v3 export built in the test: deterministic pseudo-random float32 weights and the manifest the exporter writes.
 function fixture({width = 16, hiddenLayers = 3, featureSet = 'v3', overrides = {}} = {}) {
-  const featureCount = featureSet === 'v3' ? FEATURE_COUNT_V3 : FEATURE_COUNT;
+  const featureCount = {v2: FEATURE_COUNT, v3: FEATURE_COUNT_V3, v4: FEATURE_COUNT_V4}[featureSet];
   const dimensions = {featureCount, width, hiddenLayers, residual: hiddenLayers > 2};
   const layout = binaryLayout(dimensions);
   const total = layout.reduce((sum, entry) => sum + entry.length, 0);
@@ -24,7 +25,7 @@ function fixture({width = 16, hiddenLayers = 3, featureSet = 'v3', overrides = {
   }
   for (const entry of layout.filter(row => row.name.endsWith('norm.weight'))) values.fill(1.1, entry.offset, entry.offset + entry.length);
   const weights = Buffer.from(values.buffer);
-  const record = {schema: BINARY_POLICY_SCHEMA, model: MODEL_ID_V3, featureSet, ...dimensions, activation: 'tanh',
+  const record = {schema: BINARY_POLICY_SCHEMA, model: featureSet === 'v4' ? MODEL_ID_V4 : MODEL_ID_V3, featureSet, ...dimensions, activation: 'tanh',
     layerNormEpsilon: 1e-5, actorParameters: total, dtype: 'float32-le', weightsFile: 'policy.weights.bin',
     weightsBytes: weights.length, weightsSha256: crypto.createHash('sha256').update(weights).digest('hex'), layout,
     algorithmId: 'ppo-clip-v1', algorithm: 'PPO fixture', provenance: {runId: 'fixture-v3', trainingSeed: 1400001},
@@ -120,4 +121,19 @@ test('a v3 policy plays a task on v3 features and refuses a v2 environment', () 
   assert.ok(played.decisions > 0, JSON.stringify({stopReason: played.stopReason}));
   assert.throws(() => runTask({spec, policy, seed: 1, alliance: 'red', environment: new TacticalEnvironment()}),
     /needs v3 features, but the environment produces v2/);
+});
+
+test('a multi-task (v4) policy reads the task block and plays typed tasks through the same task runner', () => {
+  const {record, weights} = fixture({featureSet: 'v4', hiddenLayers: 3});
+  const policy = createBinaryPolicy(record, weights);
+  assert.equal(policy.featureCount, FEATURE_COUNT_V4);
+  for (const text of ['score 2 cups from the loader', 'park the robots', 'play the driver period for the best score']) {
+    const played = runTask({spec: parseTask(text), policy, seed: 4, alliance: 'blue'});
+    assert.ok(played.decisions > 0, text);
+    assert.equal(typeof played.taskReturn, 'number');
+    assert.ok(played.log.every(row => Number.isFinite(row.taskReward) && Number.isFinite(row.policyScore)));
+  }
+  assert.throws(() => createBinaryPolicy({...record, model: MODEL_ID_V3}, weights), /policy/);
+  assert.throws(() => runTask({spec: parseTask('park the robots'), policy, seed: 4, environment: new TacticalEnvironment()}),
+    /needs v4 features, but the environment produces v2/);
 });

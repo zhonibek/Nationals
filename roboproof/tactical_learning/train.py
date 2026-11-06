@@ -18,7 +18,8 @@ from pathlib import Path
 import torch
 from torch.distributions import Categorical
 
-from .model import (FEATURE_COUNT, FEATURE_COUNT_V3, MAX_HIDDEN_LAYERS, MAX_WIDTH, MODEL_ID, MODEL_ID_V3,
+from .model import (FEATURE_COUNT, FEATURE_COUNT_V3, FEATURE_COUNTS, MAX_HIDDEN_LAYERS, MAX_WIDTH, MODEL_ID, MODEL_ID_V3,
+                    MODEL_ID_V4,
                     TacticalActorCritic)
 
 
@@ -26,7 +27,8 @@ ROOT = Path(__file__).resolve().parents[2]
 BRIDGE = ROOT / "roboproof/tactical_learning/bridge.js"
 SOURCE_FILES = ("roboproof/tactical_environment.js", "roboproof/tactical_baselines.js", "roboproof/tactical_learning/bridge.js",
                 "roboproof/tactical_learning/model.py", "roboproof/tactical_learning/train.py",
-                "simulator/override.js", "simulator/override-geometry.js", "simulator/override-dynamics.js")
+                "simulator/override.js", "simulator/override-geometry.js", "simulator/override-dynamics.js",
+                "roboproof/tactical_task.js", "roboproof/tactical_task_environment.js", "roboproof/tactical_task_training.js")
 # Paid Nebius AI Cloud Serverless AI job GPUs the user approved separately from the free T4:
 # torch device-name fragment -> exact CUDA capability and memory floor of the real device.
 APPROVED_NEBIUS_GPUS = {"L40S": {"capability": (8, 9), "minimumMemoryBytes": 40 * 1024 ** 3}}
@@ -39,6 +41,9 @@ AMD_MI300X_MINIMUM_MEMORY_BYTES = 180 * 1024 ** 3
 # Optional behavior-cloning warm start (off unless --warm-start-demonstration-episodes is given): the actor imitates
 # the non-learning team tactic and the critic fits its returns, then the unchanged RL loop runs from those weights.
 WARM_START_POLICY = "loader-cycle"
+# A multi-task (v4) warm start imitates the per-task greedy tactic instead (see roboproof/tactical_task_training.js).
+WARM_START_POLICY_V4 = "task-greedy"
+MAX_PARALLEL_ENVIRONMENTS = 8
 WARM_START_COLLECTION_SHARE = 0.4  # no demonstration episode starts after this share of --max-seconds
 WARM_START_SHARE = 0.5  # pretraining stops after this share; the rest of the budget is for RL and evaluation
 WARM_START_DEFAULT_EPOCHS = 200
@@ -69,11 +74,17 @@ class NodeTacticalEnvironment:
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                         encoding="utf-8", bufsize=1)
 
-    def request(self, payload):
+    def send(self, payload):
         if self.process.poll() is not None:
             raise RuntimeError("Original game-engine worker exited unexpectedly")
         self.process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
         self.process.stdin.flush()
+
+    def request(self, payload):
+        self.send(payload)
+        return self.receive()
+
+    def receive(self):
         line = self.process.stdout.readline()
         if not line:
             error = self.process.stderr.read()[-4000:]
@@ -234,8 +245,11 @@ def parse_args():
                         help="policy update: the original actor-critic step (default) or PPO with a clipped objective")
     parser.add_argument("--warm-start-demonstration-episodes", type=int, default=0,
                         help=f"behavior-clone the {WARM_START_POLICY} tactic from this many episodes before RL (0 = off)")
-    parser.add_argument("--features", choices=("v2", "v3"), default="v2",
-                        help="candidate features: v2 (23, the original) or v3 (30, adds rules-engine previews)")
+    parser.add_argument("--features", choices=("v2", "v3", "v4"), default="v2",
+                        help="candidate features: v2 (23, the original), v3 (30, adds rules-engine previews) or v4 "
+                             "(52, adds the task: one random task per episode seed, rewards and baselines follow it)")
+    parser.add_argument("--parallel-envs", type=int, default=1,
+                        help=f"rules engines played in lockstep with one batched network call (1..{MAX_PARALLEL_ENVIRONMENTS})")
     parser.add_argument("--width", type=int, default=128, help=f"hidden width, 16..{MAX_WIDTH}")
     parser.add_argument("--hidden-layers", type=int, default=2,
                         help=f"hidden layers, 2..{MAX_HIDDEN_LAYERS} (more than 2 adds pre-norm residual blocks)")
@@ -249,6 +263,8 @@ def parse_args():
         parser.error(f"width must be 16..{MAX_WIDTH} and hidden-layers 2..{MAX_HIDDEN_LAYERS}")
     if not 1 <= args.evaluation_episodes <= 100:
         parser.error("evaluation-episodes must be between 1 and 100")
+    if not 1 <= args.parallel_envs <= MAX_PARALLEL_ENVIRONMENTS:
+        parser.error(f"parallel-envs must be between 1 and {MAX_PARALLEL_ENVIRONMENTS}")
     if not 0 <= args.warm_start_demonstration_episodes <= 200:
         parser.error("warm-start-demonstration-episodes must be between 0 and 200")
     if args.warm_start_epochs is not None:
@@ -421,10 +437,47 @@ def run_episode(environment, model, seed, alliance, device, deterministic=False)
         observation = result["observation"]
         if len(trajectory) >= 100:
             break
-    return trajectory, {"seed": seed, "alliance": alliance, "score": observation["score"],
-                        "clock": observation["clock"], "decisions": observation["decisions"],
-                        "episodeReturn": total_reward, "done": observation["done"],
-                        "timing": observation.get("timing")}
+    return trajectory, episode_result(observation, seed, alliance, total_reward)
+
+
+def episode_result(observation, seed, alliance, total_reward):
+    result = {"seed": seed, "alliance": alliance, "score": observation["score"], "clock": observation["clock"],
+              "decisions": observation["decisions"], "episodeReturn": total_reward, "done": observation["done"],
+              "timing": observation.get("timing")}
+    if "task" in observation:  # v4: the episode's task and how it went
+        task = observation["task"]
+        result["task"] = {"summary": task["spec"].get("summary"), "spec": task["spec"], "achieved": task.get("achieved"),
+                          "stopReason": task.get("stopReason"), "scoringActions": task.get("scoringActions"),
+                          "ownPointsGained": task.get("ownPointsGained"), "secondsUsed": task.get("secondsUsed")}
+    return result
+
+
+def run_parallel_step(environments, slots, active, model, device):
+    """One lockstep decision for every active slot: one batched forward pass, then all step requests are sent
+    before any reply is read, so the rules engines work at the same time."""
+    rows = [[action["features"] for action in slots[index]["observation"]["actions"]] for index in active]
+    width = max(len(row) for row in rows)
+    padded = torch.zeros((len(rows), width, model.feature_count), dtype=torch.float32)
+    mask = torch.zeros((len(rows), width), dtype=torch.bool)
+    for position, row in enumerate(rows):
+        padded[position, :len(row)] = torch.tensor(row, dtype=torch.float32)
+        mask[position, :len(row)] = True
+    with torch.no_grad():
+        logits, values = model(padded.to(device), mask.to(device))
+        choices = Categorical(logits=logits).sample()
+        log_probabilities = torch.log_softmax(logits, dim=-1).gather(1, choices.unsqueeze(1)).squeeze(1)
+    choices, log_probabilities, values = choices.tolist(), log_probabilities.tolist(), values.tolist()
+    for position, index in enumerate(active):
+        environments[index].send({"operation": "step",
+                                  "actionId": slots[index]["observation"]["actions"][choices[position]]["id"]})
+    for position, index in enumerate(active):
+        result = environments[index].receive()
+        slot = slots[index]
+        slot["trajectory"].append({"features": rows[position], "choice": choices[position], "reward": float(result["reward"]),
+                                   "durationSeconds": float(result["durationSeconds"]),
+                                   "logProbability": float(log_probabilities[position]), "value": float(values[position])})
+        slot["return"] += float(result["reward"])
+        slot["observation"] = result["observation"]
 
 
 def run_demonstration_episode(environment, seed, alliance, policy=WARM_START_POLICY):
@@ -513,9 +566,13 @@ def demonstration_seed(seed, episodes, index):
     return (seed + episodes + index) & 0xFFFFFFFF
 
 
+def warm_start_policy(features):
+    return WARM_START_POLICY_V4 if features == "v4" else WARM_START_POLICY
+
+
 def warm_start_plan(args):
     count = args.warm_start_demonstration_episodes
-    return {"status": "planned", "policy": WARM_START_POLICY,
+    return {"status": "planned", "policy": warm_start_policy(args.features),
             "method": "behavior cloning on the demonstrated choices (actor cross-entropy, critic smooth-L1 on the "
                       "demonstrated discounted returns), then the unchanged RL loop from the pretrained weights",
             "demonstrationEpisodesRequested": count,
@@ -548,12 +605,12 @@ def run_warm_start(environment, model, device, args, run_id, started, exposure_l
                 break
             seed = demonstration_seed(args.seed, args.episodes, index)
             alliance = "red" if index % 2 == 0 else "blue"
-            trajectory, result = run_demonstration_episode(environment, seed, alliance)
+            trajectory, result = run_demonstration_episode(environment, seed, alliance, record["policy"])
             result["demonstrationEpisode"] = index + 1
             append_jsonl(log, {"event": "demonstration", **result})
             append_jsonl(exposure_log, {"phase": "demonstration", "demonstrationEpisode": index + 1, "seed": seed,
                                         "alliance": alliance, "decisions": result["decisions"],
-                                        "policy": WARM_START_POLICY, "runId": run_id})
+                                        "policy": record["policy"], "runId": run_id})
             trajectories.append(trajectory)
             seeds.append(seed)
             margins.append(result["score"]["margin"])
@@ -602,16 +659,18 @@ def main():
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-    model = TacticalActorCritic(feature_count=FEATURE_COUNT_V3 if args.features == "v3" else FEATURE_COUNT,
+    model = TacticalActorCritic(feature_count=FEATURE_COUNTS[args.features],
                                 width=args.width, hidden_layers=args.hidden_layers).to(device)
     # v2 checkpoints keep the original model ID so the existing exporter and app accept them.
-    model_id = MODEL_ID_V3 if args.features == "v3" or args.hidden_layers > 2 or args.width > 512 else MODEL_ID
+    model_id = (MODEL_ID_V4 if args.features == "v4" else
+                MODEL_ID_V3 if args.features == "v3" or args.hidden_layers > 2 or args.width > 512 else MODEL_ID)
     optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
     source_hashes = {filename: sha256_file(ROOT / filename) for filename in SOURCE_FILES}
     run = {"schemaVersion": 1, "runId": run_id, "model": model_id, "status": "running",
            "seed": args.seed, "episodesRequested": args.episodes, "maxSeconds": args.max_seconds,
            "evaluationEpisodes": args.evaluation_episodes, "featureCount": model.feature_count,
            "width": model.width, "hiddenLayers": model.hidden_layers, "features": args.features,
+           **({"parallelEnvironments": args.parallel_envs} if args.parallel_envs > 1 else {}),
            "architecture": model.architecture(), "runtime": runtime, "sourceSha256": source_hashes,
            "reward": "change in exact Override simulator score differential; no LLM-generated reward",
            "movementAbstraction": "macro-action teleport plus a travel-time proxy; no physical motion or path feasibility",
@@ -633,6 +692,7 @@ def main():
         return update(model, optimizer, trajectories, device)
     (args.output / "run.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
     environment = NodeTacticalEnvironment(args.features)
+    environments = [environment]
     started = time.monotonic()
     trajectories = []
     metrics = []
@@ -658,19 +718,19 @@ def main():
                                   "demonstrationMeanScoreMargin": warm_start["demonstrationMeanScoreMargin"],
                                   "final": (warm_start["pretraining"] or {}).get("final"),
                                   "elapsedSeconds": warm_start["elapsedSeconds"]}, sort_keys=True), flush=True)
-            for episode in range(args.episodes):
+            def may_start_episode():
                 if time.monotonic() - started >= args.max_seconds:
-                    break
+                    return False
                 # The warm start spent part of the shared budget, so RL stops early enough for the evaluation.
                 if warm_start is not None and (time.monotonic() - started + EVALUATION_RESERVE_FACTOR
                                                * args.evaluation_episodes * slowest_episode_seconds >= args.max_seconds):
                     warm_start["reinforcementStoppedForEvaluationReserve"] = True
-                    break
-                episode_seed = (args.seed + episode) & 0xFFFFFFFF
-                alliance = "red" if episode % 2 == 0 else "blue"
-                episode_started = time.monotonic()
-                trajectory, result = run_episode(environment, model, episode_seed, alliance, device)
-                slowest_episode_seconds = max(slowest_episode_seconds, time.monotonic() - episode_started)
+                    return False
+                return True
+
+            def finish_episode(episode, episode_seed, alliance, trajectory, result, episode_seconds):
+                nonlocal completed, slowest_episode_seconds
+                slowest_episode_seconds = max(slowest_episode_seconds, episode_seconds)
                 trajectories.append(trajectory)
                 result["episode"] = episode + 1
                 metrics.append(result)
@@ -695,11 +755,52 @@ def main():
                     atomic_torch_save(checkpoint, args.output / "latest.pt")
                     metrics_row = {"event": "checkpoint", "episodes": completed, **update_metrics,
                                    "scoreMargin": result["score"]["margin"]}
+                    if "task" in result:
+                        metrics_row.update(taskReturn=result["episodeReturn"], taskAchieved=result["task"]["achieved"])
                     with (args.output / "training.jsonl").open("a", encoding="utf-8") as training_log:
                         training_log.write(json.dumps(metrics_row, sort_keys=True) + "\n")
                         training_log.flush()
                         os.fsync(training_log.fileno())
                     print(json.dumps(metrics_row, sort_keys=True), flush=True)
+
+            if args.parallel_envs == 1:
+                for episode in range(args.episodes):
+                    if not may_start_episode():
+                        break
+                    episode_seed = (args.seed + episode) & 0xFFFFFFFF
+                    alliance = "red" if episode % 2 == 0 else "blue"
+                    episode_started = time.monotonic()
+                    trajectory, result = run_episode(environment, model, episode_seed, alliance, device)
+                    finish_episode(episode, episode_seed, alliance, trajectory, result, time.monotonic() - episode_started)
+            else:
+                # Episodes keep their predeclared seeds (seed + episode index) and are numbered in the order they
+                # finish; the lockstep schedule makes that order deterministic.
+                environments += [NodeTacticalEnvironment(args.features) for _ in range(args.parallel_envs - 1)]
+                next_episode = 0
+
+                def start_slot(index):
+                    nonlocal next_episode
+                    if next_episode >= args.episodes or not may_start_episode():
+                        return None
+                    episode, next_episode = next_episode, next_episode + 1
+                    episode_seed = (args.seed + episode) & 0xFFFFFFFF
+                    alliance = "red" if episode % 2 == 0 else "blue"
+                    return {"episode": episode, "seed": episode_seed, "alliance": alliance, "started": time.monotonic(),
+                            "observation": environments[index].reset(episode_seed, alliance), "trajectory": [], "return": 0.0}
+
+                slots = [start_slot(index) for index in range(len(environments))]
+                while any(slot is not None for slot in slots):
+                    for index, slot in enumerate(slots):
+                        observation = slot and slot["observation"]
+                        if slot is not None and (observation["done"] or not observation["actions"] or len(slot["trajectory"]) >= 100):
+                            result = episode_result(observation, slot["seed"], slot["alliance"], slot["return"])
+                            finish_episode(slot["episode"], slot["seed"], slot["alliance"], slot["trajectory"], result,
+                                           time.monotonic() - slot["started"])
+                            slots[index] = start_slot(index)
+                    active = [index for index, slot in enumerate(slots) if slot is not None and not slot["observation"]["done"]
+                              and slot["observation"]["actions"] and len(slot["trajectory"]) < 100]
+                    if active:
+                        run_parallel_step(environments, slots, active, model, device)
             if trajectories:
                 update_metrics = learn()
                 checkpoint = {"schemaVersion": 1, "runId": run_id, "model": model_id, "architecture": model.architecture(),
@@ -731,8 +832,9 @@ def main():
             if seeds:
                 baselines[alliance] = environment.baselines(seeds, alliance)
         learned_mean = (sum(row["score"]["margin"] for row in evaluation) / len(evaluation)) if evaluation else None
+        baseline_names = ("loader-cycle", "field-greedy", "greedy-all", "random") + (("task-greedy",) if args.features == "v4" else ())
         baseline_means = {}
-        for name in ("loader-cycle", "field-greedy", "greedy-all", "random"):
+        for name in baseline_names:
             margins = [margin for alliance in baselines.values() for margin in alliance[name]["margins"]]
             baseline_means[name] = sum(margins) / len(margins) if margins else None
         evaluation_record = {"schemaVersion": 2, "runId": run_id, "episodes": evaluation,
@@ -742,11 +844,26 @@ def main():
                                                            and learned_mean > baseline_means["loader-cycle"]),
                              "scope": "randomized start-pose holdout in the abstract macro-action model only",
                              "learnedImprovementVerified": False, "independentQualificationPerformed": False}
+        if args.features == "v4":
+            def mean(values):
+                values = list(values)
+                return sum(values) / len(values) if values else None
+            task_means = {name: mean(value for side in baselines.values() for value in side[name]["taskReturns"])
+                          for name in baseline_names}
+            success = {name: mean(float(value) for side in baselines.values() for value in side[name]["achieved"])
+                       for name in baseline_names}
+            learned_task = mean(row["episodeReturn"] for row in evaluation)
+            evaluation_record.update({
+                "metric": "taskReturn", "meanTaskReturn": learned_task, "baselineMeanTaskReturn": task_means,
+                "successRate": mean(float(bool(row["task"]["achieved"])) for row in evaluation), "baselineSuccessRate": success,
+                "beatsLoaderCycleOnHoldout": learned_task is not None and learned_task > task_means["loader-cycle"],
+                "beatsTaskGreedyOnHoldout": learned_task is not None and learned_task > task_means["task-greedy"],
+                "taskScope": "one random task per held-out seed (roboproof/tactical_task_training.js); the same tasks for every tactic"})
         if ppo:
             evaluation_record["algorithm"] = PPO_ALGORITHM
         if warm_start is not None:
             # The learned policy started from imitating loader-cycle, so it is not a from-scratch comparison.
-            evaluation_record["warmStart"] = {"policy": WARM_START_POLICY,
+            evaluation_record["warmStart"] = {"policy": warm_start["policy"],
                                               "demonstrationEpisodes": warm_start.get("demonstrationEpisodesCompleted", 0)}
             warm_start["evaluationReserveSeconds"] = round(
                 EVALUATION_RESERVE_FACTOR * args.evaluation_episodes * slowest_episode_seconds, 3)
@@ -763,6 +880,8 @@ def main():
             write_json_atomic(args.output / "run.json", run)
         finally:
             run["bridgeShutdown"] = environment.close()
+            if len(environments) > 1:
+                run["parallelBridgeShutdown"] = [extra.close() for extra in environments[1:]]
         write_json_atomic(args.output / "run.json", run)
     print(json.dumps({"event": "finished", "runId": run_id, "status": status, "episodesCompleted": completed,
                       "elapsedSeconds": run["elapsedSeconds"], "bridgeShutdown": run["bridgeShutdown"]["method"],

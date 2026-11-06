@@ -25,6 +25,13 @@ from pathlib import Path
 EVALUATION_SEED_MASK = 0x5BD1E995  # train.py: evaluation seed = training seed ^ mask ^ offset
 BASELINE_NAMES = ("loader-cycle", "field-greedy", "greedy-all", "random")
 REFERENCE = "loader-cycle"
+# A multi-task (v4) campaign is judged on task return, first against the per-task greedy tactic (the stronger bar).
+BASELINE_NAMES_V4 = BASELINE_NAMES + ("task-greedy",)
+REFERENCE_V4 = "task-greedy"
+
+
+def baseline_names(features):
+    return BASELINE_NAMES_V4 if features == "v4" else BASELINE_NAMES
 BOOTSTRAP_RESAMPLES = 10000
 USABLE_STATUSES = ("completed", "time-budget-exhausted")
 
@@ -59,9 +66,11 @@ def choose_candidates(root: Path, campaign: dict, summary: dict, top: int) -> li
     usable = []
     for row in summary["runs"]:
         folder = root / Path(by_index[row["index"]]["output"]).name
-        if (row.get("status") in USABLE_STATUSES and isinstance(row.get("learnedMargin"), (int, float))
+        development = row.get("learned", row.get("learnedMargin"))  # task return for v4, score margin before
+        if (row.get("status") in USABLE_STATUSES and isinstance(development, (int, float))
                 and (folder / "latest.pt").exists()):
-            usable.append({"index": row["index"], "seed": row["seed"], "developmentMargin": row["learnedMargin"],
+            usable.append({"index": row["index"], "seed": row["seed"], "developmentMargin": development,
+                           "developmentMetric": row.get("metric", "scoreMargin"),
                            "developmentLoaderCycleMargin": row.get("loaderCycleMargin"),
                            "checkpoint": str(folder / "latest.pt"),
                            "checkpointSha256": hashlib.sha256((folder / "latest.pt").read_bytes()).hexdigest()})
@@ -112,30 +121,38 @@ def worker(candidate: dict, features: str, seeds, output: Path) -> None:
                 exposure.flush()
     finally:
         environment.close()
-    (output / f"candidate-run-{candidate['index']:02d}.json").write_text(json.dumps(
-        {"candidate": candidate, "episodes": episodes, "margins": [row["score"]["margin"] for row in episodes]},
-        indent=2) + "\n", encoding="utf-8")
+    record = {"candidate": candidate, "episodes": episodes, "margins": [row["score"]["margin"] for row in episodes]}
+    if features == "v4":
+        record.update(taskReturns=[row["episodeReturn"] for row in episodes],
+                      achieved=[bool(row["task"]["achieved"]) for row in episodes],
+                      tasks=[row["task"]["summary"] for row in episodes])
+    (output / f"candidate-run-{candidate['index']:02d}.json").write_text(json.dumps(record, indent=2) + "\n",
+                                                                         encoding="utf-8")
 
 
 def baseline_worker(features: str, seeds, output: Path) -> None:
     from .train import NodeTacticalEnvironment
 
     environment = NodeTacticalEnvironment(features)
+    names = baseline_names(features)
+    fields = ("margins", "taskReturns", "achieved", "tasks") if features == "v4" else ("margins",)
     try:
-        margins = {name: [None] * len(seeds) for name in BASELINE_NAMES}
+        values = {field: {name: [None] * len(seeds) for name in names} for field in fields}
         for alliance in ("red", "blue"):
             positions = [index for index in range(len(seeds)) if alliance_for(index) == alliance]
             results = environment.baselines([seeds[index] for index in positions], alliance)
-            for name in BASELINE_NAMES:
-                for position, margin in zip(positions, results[name]["margins"]):
-                    margins[name][position] = margin
+            for field in fields:
+                for name in names:
+                    for position, value in zip(positions, results[name][field]):
+                        values[field][name][position] = value
     finally:
         environment.close()
-    (output / "baselines.json").write_text(json.dumps({"seeds": seeds, "margins": margins}, indent=2) + "\n",
-                                           encoding="utf-8")
+    (output / "baselines.json").write_text(json.dumps({"seeds": seeds, **values}, indent=2) + "\n", encoding="utf-8")
 
 
 def aggregate(plan: dict, output: Path) -> dict:
+    if plan.get("features") == "v4":
+        return aggregate_tasks(plan, output)
     baselines = json.loads((output / "baselines.json").read_text(encoding="utf-8"))["margins"]
     rows = []
     for candidate in plan["candidates"]:
@@ -155,6 +172,40 @@ def aggregate(plan: dict, output: Path) -> dict:
             "rule": "primary = best development margin, fixed before these episodes; it passes when the lower end of the "
                     "95% bootstrap interval of its paired margin difference against loader-cycle is above 0",
             "scope": "fresh start poses in the abstract macro-action model only; not a physical tactics or scoring qualification",
+            "independentHoldoutPerformed": True, "learnedImprovementVerified": False, "humanApprovalRequired": True}
+
+
+def aggregate_tasks(plan: dict, output: Path) -> dict:
+    """Multi-task result: paired task-return differences against task-greedy and loader-cycle, and success rates."""
+    baselines = json.loads((output / "baselines.json").read_text(encoding="utf-8"))
+    rows = []
+    for candidate in plan["candidates"]:
+        record = json.loads((output / f"candidate-run-{candidate['index']:02d}.json").read_text(encoding="utf-8"))
+        if record["tasks"] != baselines["tasks"][REFERENCE_V4]:
+            raise RuntimeError("a candidate and the baselines did not play the same tasks")
+        returns = record["taskReturns"]
+        rows.append({**candidate, "independentMeanTaskReturn": statistics.fmean(returns),
+                     "successRate": statistics.fmean(float(value) for value in record["achieved"]),
+                     "independentMeanMargin": statistics.fmean(record["margins"]),
+                     "baselineMeanTaskReturn": {name: statistics.fmean(baselines["taskReturns"][name]) for name in BASELINE_NAMES_V4},
+                     "baselineSuccessRate": {name: statistics.fmean(float(value) for value in baselines["achieved"][name])
+                                             for name in BASELINE_NAMES_V4},
+                     "versusTaskGreedy": paired_statistics(returns, baselines["taskReturns"][REFERENCE_V4], seed=plan["baseSeed"]),
+                     "versusLoaderCycle": paired_statistics(returns, baselines["taskReturns"][REFERENCE], seed=plan["baseSeed"])})
+    primary = next(row for row in rows if row["index"] == plan["primaryRunIndex"])
+    return {"schemaVersion": 1, "kind": "tactical-independent-holdout", "metric": "taskReturn", "campaign": plan["campaign"],
+            "seeds": plan["seeds"], "episodes": len(plan["seeds"]["list"]), "candidates": rows,
+            "primary": {"index": primary["index"], "seed": primary["seed"],
+                        "independentMeanTaskReturn": primary["independentMeanTaskReturn"],
+                        "successRate": primary["successRate"],
+                        "taskGreedyMeanTaskReturn": primary["baselineMeanTaskReturn"][REFERENCE_V4],
+                        "taskGreedySuccessRate": primary["baselineSuccessRate"][REFERENCE_V4],
+                        "versusTaskGreedy": primary["versusTaskGreedy"], "versusLoaderCycle": primary["versusLoaderCycle"]},
+            "primaryBeatsTaskGreedy": primary["versusTaskGreedy"]["passes"],
+            "primaryBeatsLoaderCycle": primary["versusLoaderCycle"]["passes"],
+            "rule": "primary = best development task return, fixed before these episodes; it passes when the lower end of "
+                    "the 95% bootstrap interval of its paired task-return difference against task-greedy is above 0",
+            "scope": "one random task per fresh seed in the abstract macro-action model only; not a physical tactics or scoring qualification",
             "independentHoldoutPerformed": True, "learnedImprovementVerified": False, "humanApprovalRequired": True}
 
 
@@ -213,7 +264,9 @@ def main(argv=None):
     result = aggregate(plan, args.output)
     result["elapsedSeconds"] = round(time.monotonic() - started, 1)
     (args.output / "summary.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({key: result[key] for key in ("primary", "primaryBeatsLoaderCycle", "elapsedSeconds")}, indent=2))
+    keys = ("primary", "primaryBeatsTaskGreedy", "primaryBeatsLoaderCycle", "elapsedSeconds") if "primaryBeatsTaskGreedy" in result \
+        else ("primary", "primaryBeatsLoaderCycle", "elapsedSeconds")
+    print(json.dumps({key: result[key] for key in keys}, indent=2))
 
 
 if __name__ == "__main__":

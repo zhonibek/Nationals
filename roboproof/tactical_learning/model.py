@@ -9,6 +9,11 @@ MODEL_ID = "override-tactical-actor-critic-v2-loader"
 # v3 adds seven rules-engine preview features per candidate (see roboproof/tactical_environment.js).
 FEATURE_COUNT_V3 = 30
 MODEL_ID_V3 = "override-tactical-mlp-v3-preview"
+# v4 appends a 22-value task block (what the task asks for and how much is left; roboproof/tactical_task_environment.js),
+# so one multi-task policy can serve very different typed tasks.
+FEATURE_COUNT_V4 = 52
+MODEL_ID_V4 = "override-tactical-mlp-v4-task"
+FEATURE_COUNTS = {"v2": FEATURE_COUNT, "v3": FEATURE_COUNT_V3, "v4": FEATURE_COUNT_V4}
 MAX_WIDTH = 1024
 MAX_HIDDEN_LAYERS = 10
 
@@ -45,7 +50,7 @@ class TacticalActorCritic(nn.Module):
 
     def __init__(self, feature_count: int = FEATURE_COUNT, width: int = 128, hidden_layers: int = 2):
         super().__init__()
-        if (feature_count not in (FEATURE_COUNT, FEATURE_COUNT_V3) or not 16 <= width <= MAX_WIDTH
+        if (feature_count not in FEATURE_COUNTS.values() or not 16 <= width <= MAX_WIDTH
                 or not 2 <= hidden_layers <= MAX_HIDDEN_LAYERS):
             raise ValueError("Unsupported tactical model dimensions")
         self.feature_count = feature_count
