@@ -5,7 +5,7 @@ from pathlib import Path
 
 from roboproof.tactical_learning import campaign
 
-DEFAULTS = dict(runs=40, base_seed=1400001, seed_stride=5000, episodes=3000, warm_start=32, max_seconds=7200,
+DEFAULTS = dict(runs=40, base_seed=2200001, seed_stride=5000, episodes=3000, warm_start=32, max_seconds=7200,
                 evaluation_episodes=8, algorithm="ppo", features="v3", width=1024, hidden_layers=10,
                 hourly_rate_usd=1.99, approved_max_cost_usd=20.0)
 
