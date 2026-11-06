@@ -161,6 +161,19 @@ class TacticalPolicyExportV3Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Only a v4"):
             export_policy.build_policy_v3(checkpoint_bytes(v3_model(), model=MODEL_ID_V4))
 
+    def test_a_multi_task_independent_result_is_attached_by_task_return(self):
+        row = {"index": 6, "checkpointSha256": "ab" * 32, "independentMeanTaskReturn": 80.4, "successRate": 0.81,
+               "baselineMeanTaskReturn": {"task-greedy": 71.9}, "baselineSuccessRate": {"task-greedy": 0.8},
+               "versusTaskGreedy": {"passes": True}, "versusLoaderCycle": {"passes": True}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "summary.json"
+            path.write_text(json.dumps({"kind": "tactical-independent-holdout", "metric": "taskReturn", "episodes": 200,
+                                        "seeds": {"first": 2500001, "last": 2500200}, "candidates": [row],
+                                        "primary": {"index": 6}, "scope": "fresh tasks"}), encoding="utf-8")
+            attached = export_policy.independent_holdout_summary(path, "ab" * 32)
+        self.assertEqual((attached["metric"], attached["meanTaskReturn"], attached["primary"]), ("taskReturn", 80.4, True))
+        self.assertIs(attached["learnedImprovementVerified"], False)
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
     def test_the_javascript_v3_actor_matches_torch_and_the_cli_attaches_the_independent_result(self):
         model = v3_model(width=64, hidden_layers=10)

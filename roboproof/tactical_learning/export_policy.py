@@ -190,6 +190,14 @@ def independent_holdout_summary(path: Path, checkpoint_sha256: str) -> dict:
     row = next((row for row in summary.get("candidates", []) if row.get("checkpointSha256") == checkpoint_sha256), None)
     if row is None:
         raise RuntimeError("The independent held-out summary has no result for this checkpoint")
+    if summary.get("metric") == "taskReturn":  # multi-task (v4) check: task return against task-greedy
+        return {"episodes": summary.get("episodes"), "metric": "taskReturn",
+                "seeds": {key: summary["seeds"].get(key) for key in ("first", "last")},
+                "primary": summary["primary"]["index"] == row["index"], "meanTaskReturn": row["independentMeanTaskReturn"],
+                "successRate": row["successRate"], "baselineMeanTaskReturn": row["baselineMeanTaskReturn"],
+                "baselineSuccessRate": row["baselineSuccessRate"], "versusTaskGreedy": row["versusTaskGreedy"],
+                "versusLoaderCycle": row["versusLoaderCycle"], "scope": summary.get("scope"),
+                "learnedImprovementVerified": False}
     return {"episodes": summary.get("episodes"), "seeds": {key: summary["seeds"].get(key) for key in ("first", "last")},
             "primary": summary["primary"]["index"] == row["index"], "meanScoreMargin": row["independentMeanMargin"],
             "baselineMeanScoreMargin": row["baselineMeanMargin"], "versusLoaderCycle": row["versusLoaderCycle"],
