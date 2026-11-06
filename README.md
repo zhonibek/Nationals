@@ -51,7 +51,8 @@ Without a key the simulator, the controller and the trained tactical policy all 
 **What to try:**
 
 - **Simulator → Tactical AI match:** choose *Nemotron (Nebius Token Factory)* and run a match. Every decision is listed with Nemotron's reason; compare it with the *Loading-zone cycles* and *Field greedy* tactics.
-- **Simulator → Tactical PPO optimizer:** type a task such as "score 3 match loads into the neutral goals, then park"; the trained PPO policy bundled in [`roboproof/models/tactical-ppo-seed736001`](roboproof/models/tactical-ppo-seed736001/README.md) carries it out in the tactical model.
+- **Simulator → Tactical PPO optimizer:** type a task such as "score 3 match loads into the neutral goals, then park"; the trained policy carries it out in the tactical model. The app uses `roboproof/runs/tactical/policy.json` when it exists (for example the multi-task model below, exported as `policy.json` + `policy.weights.bin`), otherwise the small PPO policy bundled in [`roboproof/models/tactical-ppo-seed736001`](roboproof/models/tactical-ppo-seed736001/README.md).
+- **Tactical AI training page** (`/training.html`, also a portal tab): every training run replayed game by game, the best models' matches and typed tasks decision by decision, and their 10 hidden layers of 1024 neurons. See [the dashboard README](roboproof/dashboard/README.md).
 - **Simulator → AI Programming:** describe a motion in plain language and run the generated route on the WebAssembly controller.
 - **Simulator → Start game:** drive the robot yourself (WASD, arrows, E/Q lift, F take, G place).
 - **RoboProof (`/`):** Motion Lab replays, the Nemotron workspace and the evidence views.
@@ -95,8 +96,13 @@ That speed is what made per-decision match coordination possible, and switching 
 | --- | ---: | --- | --- | --- |
 | Residual GVF-TD3 actor, 36 → 10 × 512 → 3 | 2,384,387 | AMD Instinct MI300X, seed 50513, 564 episodes | research artifact, improvement not verified | [`roboproof/models/gvf-td3-mi300x-512x10-seed50513`](roboproof/models/gvf-td3-mi300x-512x10-seed50513/README.md) |
 | Tactical PPO policy, 23 → 2 × 128 | 28,034 | NVIDIA Tesla T4, seed 736001 | held-out margin 201.5 vs loading-zone tactic 244.5 | [`roboproof/models/tactical-ppo-seed736001`](roboproof/models/tactical-ppo-seed736001/README.md) |
+| Tactical PPO policy, single goal, 30 → 1024 + 9 residual blocks | 10,022,914 | AMD Instinct MI300X, 34 parallel runs; best run 08, seed 1440001 | 303.5 vs loading-zone tactic 244.5 on 200 fresh start poses (+59.0, 95 % interval 57.0–61.0, 200 of 200 won) | not in Git (38 MB): private Drive and `roboproof/runs/tactical/` |
+| Multi-task tactical PPO policy, 52 → 1024 × 10 | 10,045,442 | AMD Instinct MI300X, 16 runs × 3 rules engines; best run 06, seed 2372001 | task return 80.4 vs per-task greedy tactic 71.9 on 200 fresh typed tasks (+8.5, 95 % interval 6.4–10.6); tasks completed 81 % vs 80 % | not in Git (38 MB): private Drive and `roboproof/runs/tactical/` |
+| Residual GVF-TD3 actors, replacement cohort 50521–50523, 36 → 10 × 512 → 3 | 2,384,387 each | AMD Instinct MI300X, about 100,000 decisions each | failed the development gates; the existing controller is better | [docs/progress.md](docs/progress.md) |
 
-Full run records, including the failed and weaker runs, are in [docs/progress.md](docs/progress.md).
+**Scope of the tactical results.** They come from the Override rules engine with macro-actions and a travel-time estimate calibrated to our robot (about 2 s per loading-zone cycle, 4 s per field cycle). Robots do not drive real paths in this model, so the results show better plans in the game model, not yet better play on the field; `learnedImprovementVerified` stays false until a physics-simulator and robot check passes. The best runs were fixed before the fresh-case checks. The multi-task results were measured before the 2026-11-07 fix that counts a robot already standing in midfield as parked.
+
+Full run records, including the failed and weaker runs, are in [docs/progress.md](docs/progress.md) and [docs/AMD_TACTICAL_RUNBOOK.md](docs/AMD_TACTICAL_RUNBOOK.md).
 
 ## Project architecture
 
