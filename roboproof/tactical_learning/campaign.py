@@ -169,7 +169,7 @@ def main(argv=None):
     planner = commands.add_parser("plan")
     planner.add_argument("--output-root", type=Path, required=True)
     planner.add_argument("--runs", type=int, default=40)
-    planner.add_argument("--base-seed", type=int, default=960001)
+    planner.add_argument("--base-seed", type=int, default=1400001)
     planner.add_argument("--seed-stride", type=int, default=5000)
     planner.add_argument("--episodes", type=int, default=3000)
     planner.add_argument("--warm-start", type=int, default=32)

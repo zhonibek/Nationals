@@ -10,6 +10,8 @@
     {"first": 734001, "last": 734332, "note": "T4 warm-start fit seed 734001: training and demonstrations"},
     {"first": 735001, "last": 735332, "note": "lost PPO fit seed 735001: unresolved exposure-loss marker, never reuse"},
     {"first": 736001, "last": 736332, "note": "T4 PPO fit seed 736001: training and demonstrations"},
-    {"first": 750001, "last": 750024, "note": "MI300X smoke run seed 750001 (2026-11-06): 20 episodes + 4 demonstrations"}
+    {"first": 750001, "last": 750024, "note": "MI300X smoke run seed 750001 (2026-11-06): 20 episodes + 4 demonstrations"},
+    {"first": 960001, "last": 1278032, "note": "stopped MI300X campaign mi300x-campaign-64 (2026-11-06): 64 runs launched, 15 failed on GPU memory, 49 stopped during warm start; demonstrations exposed"},
+    {"first": 1300001, "last": 1300072, "note": "MI300X memory probe run seed 1300001 (2026-11-06): 40 episodes + 32 demonstrations"}
   ]
 }
