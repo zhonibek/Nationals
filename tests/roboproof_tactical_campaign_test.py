@@ -5,7 +5,7 @@ from pathlib import Path
 
 from roboproof.tactical_learning import campaign
 
-DEFAULTS = dict(runs=40, base_seed=750001, seed_stride=5000, episodes=3000, warm_start=32, max_seconds=7200,
+DEFAULTS = dict(runs=40, base_seed=960001, seed_stride=5000, episodes=3000, warm_start=32, max_seconds=7200,
                 evaluation_episodes=8, algorithm="ppo", features="v3", width=1024, hidden_layers=10,
                 hourly_rate_usd=1.99, approved_max_cost_usd=20.0)
 
@@ -70,6 +70,12 @@ class CampaignSummaryTests(unittest.TestCase):
         self.assertEqual(summary["bestRun"]["learnedMargin"], 251.5)
         self.assertEqual(summary["gpuBusyPercent"], {"samples": 2, "mean": 60.0, "max": 62.0})
         self.assertIs(summary["independentQualificationPerformed"], False)
+
+    def test_amd_smi_nested_values_are_read_and_memory_activity_is_ignored(self):
+        sample = {"gpu_data": [{"gpu": 0, "usage": {"gfx_activity": {"value": 37, "unit": "%"},
+                                                    "umc_activity": {"value": 90, "unit": "%"},
+                                                    "mm_activity": "N/A"}}]}
+        self.assertEqual(campaign.utilization_values(sample), [37.0])
 
 
 if __name__ == "__main__":

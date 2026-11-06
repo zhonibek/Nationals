@@ -60,8 +60,11 @@ WALL=$("$PYTHON" -c "import json,sys; print(json.load(open(sys.argv[1]))['wallCl
 SAMPLER=$!
 trap 'kill "$SAMPLER" 2>/dev/null || true' EXIT
 
-# One CPU thread per trainer: 40 trainers plus 40 Node rules engines already share the droplet's cores.
-export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+# One CPU thread per trainer: the trainers plus their Node rules engines already share the droplet's cores.
+# rocBLAS instead of hipBLASLt: measured 1.8 GB instead of 4.1 GB host memory per trainer on the MI300X droplet,
+# which is what lets 64 runs fit in RAM.
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 TORCH_BLAS_PREFER_HIPBLASLT=${TORCH_BLAS_PREFER_HIPBLASLT:-0}
+echo "env OMP_NUM_THREADS=$OMP_NUM_THREADS TORCH_BLAS_PREFER_HIPBLASLT=$TORCH_BLAS_PREFER_HIPBLASLT" >> "$OUTPUT_ROOT/host.txt"
 mapfile -t COMMANDS < <("$PYTHON" - "$OUTPUT_ROOT/campaign.json" <<'PY'
 import json, shlex, sys
 for run in json.load(open(sys.argv[1]))["runs"]:

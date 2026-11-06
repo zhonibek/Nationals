@@ -92,7 +92,8 @@ def utilization_values(sample) -> list[float]:
     def walk(node, key=""):
         if isinstance(node, dict):
             for child_key, child in node.items():
-                walk(child, str(child_key))
+                # amd-smi nests numbers as {"gfx_activity": {"value": 37, "unit": "%"}}: keep the parent's name.
+                walk(child, key if child_key in ("value", "unit") else str(child_key))
         elif isinstance(node, list):
             for child in node:
                 walk(child, key)
@@ -168,7 +169,7 @@ def main(argv=None):
     planner = commands.add_parser("plan")
     planner.add_argument("--output-root", type=Path, required=True)
     planner.add_argument("--runs", type=int, default=40)
-    planner.add_argument("--base-seed", type=int, default=750001)
+    planner.add_argument("--base-seed", type=int, default=960001)
     planner.add_argument("--seed-stride", type=int, default=5000)
     planner.add_argument("--episodes", type=int, default=3000)
     planner.add_argument("--warm-start", type=int, default=32)

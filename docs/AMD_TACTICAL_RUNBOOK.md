@@ -1,7 +1,7 @@
 # Tactical AI on an AMD Instinct MI300X — plan, runbook and progress
 
 Branch: `tactical-training` (the hackathon branch stays frozen until judging ends on 2026-12-15).
-Provider: AMD Developer Cloud, one MI300X droplet, paid from the free credit (USD 50). Nothing has been launched yet.
+Provider: AMD Developer Cloud, one MI300X droplet, paid only from the free credit (USD 57.06 on 2026-11-06, expiring 2026-11-16).
 
 ## Goal
 
@@ -19,7 +19,7 @@ Train the Tactical AI (the policy behind **Tactical PPO optimizer · give Tactic
 | Launcher: dry run by default; `--launch` checks the GPU, Node.js and a clean commit, starts all runs with a hard wall-clock kill, samples GPU use every 15 s, summarizes, hashes and packages | `tools/amd-tactical-campaign.sh` | done, dry-run checked locally |
 | Export of v3 / deep policies to the app | `export_policy.py`, `roboproof/tactical_policy.js` | **not yet**: today they accept only the 2-layer v2 policy; add after the campaign shows a better model |
 
-Default campaign: 40 parallel runs, PPO, v3 features, 1024 × 10, 32-episode loader-cycle warm start, up to 3,000 episodes or 2 h of training per run, then held-out evaluation (8 start poses) against loader-cycle, field greedy, greedy-all and random. Seeds 750001–948032 (stride 5,000). Wall-clock limit 3 h; worst case **5.97 USD** at 1.99 USD/h.
+Default campaign: 40 parallel runs (64 at launch, see Progress), PPO, v3 features, 1024 × 10, 32-episode loader-cycle warm start, up to 3,000 episodes or 2 h of training per run, then held-out evaluation (8 start poses) against loader-cycle, field greedy, greedy-all and random. Seeds from 960001 (stride 5,000); the launch used `--runs 64` (seeds 960001–1278032). Wall-clock limit 3 h; worst case **5.97 USD** at 1.99 USD/h.
 
 ## Honest expectations about GPU use
 
@@ -34,10 +34,10 @@ Each decision needs the Node.js rules engine on a CPU core; the GPU only scores 
    python3 -c "import torch; print(torch.__version__, torch.version.hip, torch.cuda.get_device_name(0))"
    nproc; free -g
    ```
-3. **Install Node.js 20** if `node --version` is missing or older (for example from nodejs.org binaries), and `tmux`.
+3. **Find PyTorch and add Node.js.** On the *PyTorch 2.14 (ROCm 10.1)* image, PyTorch runs inside a Docker container named `rocm`, not on the host, and the host folder `/shared-docker` is mounted into it. Clone onto `/shared-docker`, unpack the official Node.js binary there (check it against `SHASUMS256.txt`), link `node` into the container, install `git` inside it, and run every command below with `docker exec -w /shared-docker/Nationals rocm bash -lc "..."` from a host `tmux`. The container has `amd-smi`, not `rocm-smi`.
 4. **Get the code** at the pinned commit:
    ```bash
-   git clone --branch tactical-training https://github.com/zhonibek/Nationals.git && cd Nationals
+   cd /shared-docker && git clone --branch tactical-training https://github.com/zhonibek/Nationals.git && cd Nationals
    git log -1 --format=%H
    ```
 5. **Dry run** (plans and checks, starts nothing):
@@ -49,7 +49,7 @@ Each decision needs the Node.js rules engine on a CPU core; the GPU only scores 
    tools/amd-tactical-campaign.sh --launch --runs 1 --episodes 20 --max-seconds 300 --warm-start 4 \
      --hourly-rate-usd <price> --approved-max-cost-usd 2 --output-root roboproof/runs/tactical/mi300x-smoke
    ```
-   Check `run-00.log`, `run-00/run.json` (`status`, `runtime.gpu`), and that `gpu-utilization.jsonl` has samples. The smoke run uses its own seeds from 750001; give the full campaign `--base-seed 960001` afterwards so the two never share seeds.
+   Check `run-00.log`, `run-00/run.json` (`status`, `runtime.gpu`), and that `gpu-utilization.jsonl` has samples. The 2026-11-06 smoke run used seeds 750001–750024 (now in `consumed_seeds.json`); a new smoke run needs another `--base-seed`.
 7. **Full campaign** inside tmux, so a dropped SSH connection does not stop it:
    ```bash
    tmux new -s campaign
@@ -63,3 +63,4 @@ Each decision needs the Node.js rules engine on a CPU core; the GPU only scores 
 ## Progress
 
 - 2026-11-04 — Environment speed-up (6.9×, bit-identical), v3 preview features, configurable deep model (1024 × 10 = 10.0 M parameters), MI300X runtime guard, campaign planner/launcher, tests (Node 620 with 2 skipped, tactical Python 44). No training has run.
+- 2026-11-06 — Droplet `roboproof-tactical-mi300x` (ATL1, MI300X VF gfx942, 191.7 GB VRAM, 20 vCPU, 235 GB RAM, USD 1.99/h, free credit only) created about 11:20 UTC. Pinned commit ec9122d cloned; Node v24.22.1 (checksum OK). Smoke run seed 750001 (20 PPO episodes + 4 demonstrations, 1024 × 10, v3): completed in 85 s, exit 0, held-out margin 250.625 vs loader-cycle 244.5 (development comparison only), archive SHA-256 `f94054492c99f9ad8c6be452efd543a83a61f98ac230f103e30128045153d932`. Found and fixed: the summary ignored amd-smi's nested `gfx_activity` values. Measured host memory per trainer: 4.1 GB with hipBLASLt, 1.8 GB with rocBLAS (`TORCH_BLAS_PREFER_HIPBLASLT=0`, now the launcher default), plus 0.22 GB per Node rules engine, so 64 runs fit in RAM.

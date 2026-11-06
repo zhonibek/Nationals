@@ -9,6 +9,7 @@
     {"first": 732701, "last": 733900, "note": "T4 fit seed 732701, declared up to 1200 episodes"},
     {"first": 734001, "last": 734332, "note": "T4 warm-start fit seed 734001: training and demonstrations"},
     {"first": 735001, "last": 735332, "note": "lost PPO fit seed 735001: unresolved exposure-loss marker, never reuse"},
-    {"first": 736001, "last": 736332, "note": "T4 PPO fit seed 736001: training and demonstrations"}
+    {"first": 736001, "last": 736332, "note": "T4 PPO fit seed 736001: training and demonstrations"},
+    {"first": 750001, "last": 750024, "note": "MI300X smoke run seed 750001 (2026-11-06): 20 episodes + 4 demonstrations"}
   ]
 }
