@@ -168,7 +168,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     planner = commands.add_parser("plan")
     planner.add_argument("--output-root", type=Path, required=True)
-    planner.add_argument("--runs", type=int, default=40)
+    planner.add_argument("--runs", type=int, default=34)  # 34 x ~5 GB peak fits one MI300X with a 20 GB margin
     planner.add_argument("--base-seed", type=int, default=1400001)
     planner.add_argument("--seed-stride", type=int, default=5000)
     planner.add_argument("--episodes", type=int, default=3000)

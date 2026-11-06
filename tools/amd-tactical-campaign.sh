@@ -4,7 +4,7 @@
 #   tools/amd-tactical-campaign.sh --hourly-rate-usd 1.99 --approved-max-cost-usd 20            # dry run: plan + checks
 #   tools/amd-tactical-campaign.sh --launch --hourly-rate-usd 1.99 --approved-max-cost-usd 20   # start the runs
 #
-# Defaults: 40 runs, PPO, v3 features, 1024 x 10 model, loader-cycle warm start, 2 h of training per run plus a 1 h
+# Defaults: 34 runs (the most that fit in MI300X memory), PPO, v3 features, 1024 x 10 model, loader-cycle warm start, 2 h of training per run plus a 1 h
 # evaluation reserve. Every run is predeclared in campaign.json (seeds checked against consumed_seeds.json) before
 # anything starts, and each run is killed at the wall-clock limit so the cost ceiling holds. Run it inside tmux.
 # Other planner options (--runs, --episodes, --max-seconds, --width, --hidden-layers, ...) are passed through.

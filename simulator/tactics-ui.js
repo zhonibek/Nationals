@@ -59,7 +59,11 @@
     const evaluation = policy?.evaluation;
     const heldOut = evaluation && Number.isFinite(evaluation.meanScoreMargin)
       ? `, held-out margin ${evaluation.meanScoreMargin} vs loader-cycle ${evaluation.baselineMeanScoreMargin?.['loader-cycle'] ?? '?'}` : '';
-    return `${policy?.algorithm || 'trained policy'} (${run}, seed ${policy?.provenance?.trainingSeed ?? '?'}${heldOut})`;
+    const size = Number.isInteger(policy?.hiddenLayers) && policy.hiddenLayers > 2 ? `, ${policy.width} × ${policy.hiddenLayers} network` : '';
+    const holdout = policy?.independentHoldout;
+    const fresh = holdout && Number.isFinite(holdout.meanScoreMargin) && Number.isFinite(holdout.baselineMeanScoreMargin?.['loader-cycle'])
+      ? `, ${holdout.episodes} fresh start poses: ${holdout.meanScoreMargin.toFixed(1)} vs loader-cycle ${holdout.baselineMeanScoreMargin['loader-cycle'].toFixed(1)}` : '';
+    return `${policy?.algorithm || 'trained policy'} (${run}, seed ${policy?.provenance?.trainingSeed ?? '?'}${size}${heldOut}${fresh})`;
   }
 
   const DEFAULT_TASK = 'play the driver period for the best score';

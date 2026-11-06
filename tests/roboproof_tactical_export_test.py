@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 
 from roboproof.tactical_learning import export_policy
-from roboproof.tactical_learning.model import FEATURE_COUNT, MODEL_ID, TacticalActorCritic
+from roboproof.tactical_learning.model import FEATURE_COUNT, FEATURE_COUNT_V3, MODEL_ID, MODEL_ID_V3, TacticalActorCritic
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -118,6 +118,72 @@ class TacticalPolicyExportTests(unittest.TestCase):
         scores = json.loads(output)
         for expected, actual in zip(logits[0].tolist(), scores):
             self.assertAlmostEqual(expected, actual, places=5)
+        self.assertEqual(int(logits[0].argmax()), max(range(len(scores)), key=scores.__getitem__))
+
+
+def v3_model(width=32, hidden_layers=4):
+    torch.manual_seed(13)
+    model = TacticalActorCritic(feature_count=FEATURE_COUNT_V3, width=width, hidden_layers=hidden_layers)
+    with torch.no_grad():  # non-trivial LayerNorm parameters, so the JavaScript LayerNorm is really exercised
+        for name, parameter in model.named_parameters():
+            if ".norm." in name:
+                parameter.add_(torch.randn_like(parameter) * 0.2)
+    return model.eval()
+
+
+class TacticalPolicyExportV3Tests(unittest.TestCase):
+    def test_a_residual_v3_actor_is_exported_as_manifest_and_float32_weights(self):
+        model = v3_model()
+        raw = checkpoint_bytes(model, model=MODEL_ID_V3, algorithm="ppo-clip-v1")
+        manifest, weights = export_policy.build_policy_v3(raw)
+        self.assertEqual((manifest["schema"], manifest["featureSet"], manifest["width"], manifest["hiddenLayers"],
+                          manifest["residual"]), (export_policy.POLICY_SCHEMA_BINARY, "v3", 32, 4, True))
+        self.assertEqual([row["name"] for row in manifest["layout"]][:4],
+                         ["input.weight", "input.bias", "blocks.0.norm.weight", "blocks.0.norm.bias"])
+        self.assertEqual(manifest["weightsBytes"], len(weights))
+        self.assertEqual(manifest["actorParameters"] * 4, len(weights))
+        self.assertEqual(manifest["weightsSha256"], hashlib.sha256(weights).hexdigest())
+        actor = sum(parameter.numel() for name, parameter in model.named_parameters() if not name.startswith("value_head"))
+        self.assertEqual(manifest["actorParameters"], actor)
+        self.assertIs(manifest["learnedImprovementVerified"], False)
+        with self.assertRaisesRegex(RuntimeError, "schema-1"):
+            export_policy.build_policy_v3(checkpoint_bytes(tiny_model()))
+        with self.assertRaisesRegex(RuntimeError, "plain .bin"):
+            export_policy.build_policy_v3(raw, weights_file="../policy.bin")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
+    def test_the_javascript_v3_actor_matches_torch_and_the_cli_attaches_the_independent_result(self):
+        model = v3_model(width=64, hidden_layers=10)
+        raw = checkpoint_bytes(model, model=MODEL_ID_V3, algorithm="ppo-clip-v1")
+        torch.manual_seed(17)
+        features = torch.randn((1, 11, FEATURE_COUNT_V3))
+        with torch.no_grad():
+            logits, _ = model(features, torch.ones((1, 11), dtype=torch.bool))
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            (run / "latest.pt").write_bytes(raw)
+            holdout = run / "independent.json"
+            row = {"index": 3, "checkpointSha256": hashlib.sha256(raw).hexdigest(), "independentMeanMargin": 251.5,
+                   "baselineMeanMargin": {"loader-cycle": 244.0}, "versusLoaderCycle": {"passes": True}}
+            holdout.write_text(json.dumps({"kind": "tactical-independent-holdout", "episodes": 200, "candidates": [row],
+                                           "seeds": {"first": 2100001, "last": 2100200}, "primary": {"index": 3},
+                                           "scope": "fresh"}), encoding="utf-8")
+            output = run / "out" / "policy.json"
+            with contextlib.redirect_stdout(io.StringIO()):
+                export_policy.main(["--checkpoint", str(run / "latest.pt"), "--output", str(output),
+                                    "--independent-holdout", str(holdout)])
+            written = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(written["weightsFile"], "policy.weights.bin")
+            self.assertTrue((output.parent / "policy.weights.bin").exists())
+            self.assertEqual(written["independentHoldout"]["meanScoreMargin"], 251.5)
+            self.assertIs(written["independentHoldout"]["primary"], True)
+            script = ("const {loadPolicy} = require('./roboproof/tactical_policy');"
+                      "const policy = loadPolicy(process.argv[1]); const rows = JSON.parse(process.argv[2]);"
+                      "console.log(JSON.stringify(rows.map(row => policy.score(row))));")
+            scores = json.loads(subprocess.run(["node", "-e", script, str(output), json.dumps(features[0].tolist())],
+                                               cwd=ROOT, check=True, capture_output=True, text=True).stdout)
+        for expected, actual in zip(logits[0].tolist(), scores):
+            self.assertAlmostEqual(expected, actual, places=4)
         self.assertEqual(int(logits[0].argmax()), max(range(len(scores)), key=scores.__getitem__))
 
 

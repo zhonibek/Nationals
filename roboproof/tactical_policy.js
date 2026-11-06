@@ -2,14 +2,22 @@
 
 // Runs an exported tactical actor (roboproof/tactical_learning/export_policy.py) in plain JavaScript:
 // each candidate's features go through tanh(W1 x + b1) -> tanh(W2 h + b2) -> w·h + b, the same per-candidate
-// scoring as TacticalActorCritic's policy head. Inference only; nothing here trains.
+// scoring as TacticalActorCritic's policy head. A v3 export (JSON manifest + float32 weights file) runs the deeper
+// encoder instead: tanh(W0 x + b0), then h + tanh(W · LayerNorm(h) + b) per residual block. Inference only.
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
-const {FEATURE_COUNT} = require('./tactical_environment');
+const os = require('node:os');
+const path = require('node:path');
+const {FEATURE_COUNT, FEATURE_COUNT_V3} = require('./tactical_environment');
 
 const POLICY_SCHEMA = 'roboproof-tactical-policy-v1';
 const MODEL_ID = 'override-tactical-actor-critic-v2-loader';
 const MAX_POLICY_BYTES = 8 * 1024 * 1024;
+const BINARY_POLICY_SCHEMA = 'roboproof-tactical-policy-v3-binary';
+const MODEL_ID_V3 = 'override-tactical-mlp-v3-preview';
+const MAX_WEIGHTS_BYTES = 64 * 1024 * 1024;
+const LAYER_NORM_EPSILON = 1e-5;
 // Training updates an exported policy may declare; an older export without the field is the original actor-critic.
 const ALGORITHM_IDS = Object.freeze(['actor-critic', 'ppo-clip-v1']);
 
@@ -79,14 +87,141 @@ function createPolicy(record) {
     return best;
   }
 
-  return Object.freeze({score, choose, width, algorithmId, ppo: algorithmId.startsWith('ppo'), algorithm: String(record.algorithm || algorithmId),
-    provenance: record.provenance ?? null, evaluation: record.evaluation ?? null, scope: record.scope ?? null});
+  return Object.freeze({score, choose, width, hiddenLayers: 2, featureSet: 'v2', featureCount: FEATURE_COUNT, algorithmId,
+    ppo: algorithmId.startsWith('ppo'), algorithm: String(record.algorithm || algorithmId),
+    provenance: record.provenance ?? null, evaluation: record.evaluation ?? null, independentHoldout: null,
+    scope: record.scope ?? null});
+}
+
+// The tensors a v3 manifest must list, in the exporter's forward order.
+function binaryLayout({featureCount, width, hiddenLayers, residual}) {
+  const tensors = [['input.weight', [width, featureCount]], ['input.bias', [width]]];
+  if (residual) {
+    for (let block = 0; block < hiddenLayers - 1; block += 1) {
+      tensors.push([`blocks.${block}.norm.weight`, [width]], [`blocks.${block}.norm.bias`, [width]],
+        [`blocks.${block}.linear.weight`, [width, width]], [`blocks.${block}.linear.bias`, [width]]);
+    }
+  } else tensors.push(['hidden.weight', [width, width]], ['hidden.bias', [width]]);
+  tensors.push(['policy.weight', [width]], ['policy.bias', [1]]);
+  let offset = 0;
+  return tensors.map(([name, shape]) => {
+    const length = shape.reduce((product, size) => product * size, 1);
+    const entry = {name, shape, offset, length};
+    offset += length;
+    return entry;
+  });
+}
+
+function affine(weights, bias, input, output) {
+  const columns = input.length;
+  for (let row = 0; row < bias.length; row += 1) {
+    let sum = bias[row];
+    const base = row * columns;
+    for (let column = 0; column < columns; column += 1) sum += weights[base + column] * input[column];
+    output[row] = sum;
+  }
+  return output;
+}
+
+function createBinaryPolicy(record, weightsBuffer) {
+  if (!record || typeof record !== 'object' || record.schema !== BINARY_POLICY_SCHEMA || record.model !== MODEL_ID_V3) {
+    throw Error(`Expected an exported ${MODEL_ID_V3} policy (${BINARY_POLICY_SCHEMA})`);
+  }
+  const {featureSet, featureCount, width, hiddenLayers, residual} = record;
+  if (!((featureSet === 'v3' && featureCount === FEATURE_COUNT_V3) || (featureSet === 'v2' && featureCount === FEATURE_COUNT))
+      || !Number.isInteger(width) || width < 16 || width > 1024 || !Number.isInteger(hiddenLayers) || hiddenLayers < 2
+      || hiddenLayers > 10 || residual !== hiddenLayers > 2 || record.activation !== 'tanh'
+      || record.layerNormEpsilon !== LAYER_NORM_EPSILON || record.dtype !== 'float32-le') {
+    throw Error('Unsupported tactical policy dimensions');
+  }
+  if (record.learnedImprovementVerified !== false || record.independentQualificationPerformed !== false
+      || (record.independentHoldout && record.independentHoldout.learnedImprovementVerified !== false)) {
+    throw Error('A tactical policy file must not claim verified improvement or qualification');
+  }
+  const algorithmId = record.algorithmId ?? 'actor-critic';
+  if (!ALGORITHM_IDS.includes(algorithmId)) throw Error(`Unknown tactical policy algorithm ${algorithmId}`);
+  const layout = binaryLayout(record);
+  const total = layout.reduce((sum, entry) => sum + entry.length, 0);
+  if (JSON.stringify(record.layout) !== JSON.stringify(layout) || record.actorParameters !== total) {
+    throw Error('Tactical policy weight layout does not match its dimensions');
+  }
+  if (!Buffer.isBuffer(weightsBuffer) || weightsBuffer.length !== total * 4 || record.weightsBytes !== weightsBuffer.length) {
+    throw Error('Tactical policy weights file has the wrong size');
+  }
+  if (crypto.createHash('sha256').update(weightsBuffer).digest('hex') !== record.weightsSha256) {
+    throw Error('Tactical policy weights do not match the SHA-256 in the manifest');
+  }
+  if (os.endianness() !== 'LE') throw Error('Tactical policy weights are little-endian float32');
+  const aligned = new Uint8Array(weightsBuffer.length);
+  aligned.set(weightsBuffer);
+  const values = new Float32Array(aligned.buffer);
+  for (let index = 0; index < values.length; index += 1) {
+    if (!Number.isFinite(values[index])) throw Error('Tactical policy weights must be finite');
+  }
+  const tensor = Object.fromEntries(layout.map(entry => [entry.name, values.subarray(entry.offset, entry.offset + entry.length)]));
+  const blocks = residual ? Array.from({length: hiddenLayers - 1}, (_, block) => ({
+    gamma: tensor[`blocks.${block}.norm.weight`], beta: tensor[`blocks.${block}.norm.bias`],
+    weight: tensor[`blocks.${block}.linear.weight`], bias: tensor[`blocks.${block}.linear.bias`]})) : [];
+  const hidden = new Float64Array(width);
+  const scratch = new Float64Array(width);
+  const normalized = new Float64Array(width);
+
+  function score(features) {
+    if (!Array.isArray(features) || features.length !== featureCount || !features.every(Number.isFinite)) {
+      throw Error(`Tactical features must be ${featureCount} finite numbers`);
+    }
+    affine(tensor['input.weight'], tensor['input.bias'], features, hidden);
+    for (let index = 0; index < width; index += 1) hidden[index] = Math.tanh(hidden[index]);
+    if (residual) {
+      for (const {gamma, beta, weight, bias} of blocks) {
+        let mean = 0;
+        for (let index = 0; index < width; index += 1) mean += hidden[index];
+        mean /= width;
+        let variance = 0;
+        for (let index = 0; index < width; index += 1) variance += (hidden[index] - mean) ** 2;
+        const scale = 1 / Math.sqrt(variance / width + LAYER_NORM_EPSILON);
+        for (let index = 0; index < width; index += 1) normalized[index] = (hidden[index] - mean) * scale * gamma[index] + beta[index];
+        affine(weight, bias, normalized, scratch);
+        for (let index = 0; index < width; index += 1) hidden[index] += Math.tanh(scratch[index]);
+      }
+    } else {
+      affine(tensor['hidden.weight'], tensor['hidden.bias'], hidden, scratch);
+      for (let index = 0; index < width; index += 1) hidden[index] = Math.tanh(scratch[index]);
+    }
+    let sum = tensor['policy.bias'][0];
+    const head = tensor['policy.weight'];
+    for (let index = 0; index < width; index += 1) sum += head[index] * hidden[index];
+    return sum;
+  }
+
+  function choose(actions) {
+    let best = null;
+    for (const action of actions) {
+      const value = score(action.features);
+      if (!best || value > best.score) best = {action, score: value};
+    }
+    return best;
+  }
+
+  return Object.freeze({score, choose, width, hiddenLayers, featureSet, featureCount, algorithmId,
+    ppo: algorithmId.startsWith('ppo'), algorithm: String(record.algorithm || algorithmId),
+    provenance: record.provenance ?? null, evaluation: record.evaluation ?? null,
+    independentHoldout: record.independentHoldout ?? null, scope: record.scope ?? null});
 }
 
 function loadPolicy(file) {
   const stat = fs.statSync(file);
   if (!stat.isFile() || stat.size > MAX_POLICY_BYTES) throw Error('Tactical policy file is missing or too large');
-  return createPolicy(JSON.parse(fs.readFileSync(file, 'utf8')));
+  const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (record?.schema !== BINARY_POLICY_SCHEMA) return createPolicy(record);
+  if (typeof record.weightsFile !== 'string' || !/^[\w.-]+\.bin$/.test(record.weightsFile)) {
+    throw Error('Tactical policy weightsFile must be a plain .bin file name next to the manifest');
+  }
+  const weightsFile = path.join(path.dirname(file), record.weightsFile);
+  const weightsStat = fs.statSync(weightsFile);
+  if (!weightsStat.isFile() || weightsStat.size > MAX_WEIGHTS_BYTES) throw Error('Tactical policy weights file is missing or too large');
+  return createBinaryPolicy(record, fs.readFileSync(weightsFile));
 }
 
-module.exports = {POLICY_SCHEMA, MODEL_ID, ALGORITHM_IDS, createPolicy, loadPolicy};
+module.exports = {POLICY_SCHEMA, MODEL_ID, ALGORITHM_IDS, BINARY_POLICY_SCHEMA, MODEL_ID_V3, binaryLayout, createPolicy,
+  createBinaryPolicy, loadPolicy};

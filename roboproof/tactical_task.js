@@ -112,8 +112,13 @@ function allows(spec, phase, id, alliance) {
   return true;
 }
 
-function runTask({spec, policy, seed, alliance = 'red', environment = new TacticalEnvironment()}) {
+function runTask({spec, policy, seed, alliance = 'red',
+  environment = new TacticalEnvironment({featureSet: policy?.featureSet ?? 'v2'})}) {
   if (!policy || typeof policy.choose !== 'function') throw Error('A trained tactical policy is required');
+  // A v3 policy reads the rules-engine preview features; v2 features would be the wrong length for it.
+  if ((policy.featureSet ?? 'v2') !== (environment.featureSet ?? 'v2')) {
+    throw Error(`The tactical policy needs ${policy.featureSet} features, but the environment produces ${environment.featureSet}`);
+  }
   let observation = environment.reset(seed, alliance);
   const clockStart = observation.clock;
   const ownStart = observation.score[alliance];

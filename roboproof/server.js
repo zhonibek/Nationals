@@ -52,12 +52,13 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
     return tacticalPolicy.policy;
   }
   const describeTacticalPolicy = policy => ({algorithmId: policy.algorithmId, ppo: policy.ppo, algorithm: policy.algorithm,
-    width: policy.width, provenance: policy.provenance, evaluation: policy.evaluation});
+    width: policy.width, hiddenLayers: policy.hiddenLayers, featureSet: policy.featureSet, provenance: policy.provenance,
+    evaluation: policy.evaluation, independentHoldout: policy.independentHoldout});
   // The trained policy as a match coordinator: the "play the whole period" task with the baselines' decision limit.
   function playTrainedTacticalMatch(seed, alliance) {
     const policy = currentTacticalPolicy();
     const played = runTacticalTask({spec: parseTacticalTask('play the driver period for the best score'), policy, seed, alliance,
-      environment: new TacticalEnvironment({maximumDecisions: TACTICAL_MATCH_DECISIONS})});
+      environment: new TacticalEnvironment({maximumDecisions: TACTICAL_MATCH_DECISIONS, featureSet: policy.featureSet})});
     const log = played.log.map(row => ({decision: row.decision, clock: row.clock, id: row.id, kind: row.kind, robotId: row.robotId,
       points: row.points, seconds: row.seconds, rejected: row.rejected, score: row.score,
       reason: `${policy.ppo ? 'PPO' : 'policy'} score ${row.policyScore}`}));

@@ -17,13 +17,14 @@ Train the Tactical AI (the policy behind **Tactical PPO optimizer · give Tactic
 | Trainer options `--features`, `--width`, `--hidden-layers`, `--approved-amd-mi300x` (accepts only a real MI300X: ROCm build, gfx942, ≥180 GB; up to 6 h per fit) | `roboproof/tactical_learning/train.py` | done, tested with simulated runtimes |
 | Campaign planner: predeclares every run, refuses seed overlaps (with `consumed_seeds.json` and between runs) and cost above the approved ceiling; summary; GPU utilization sampler | `roboproof/tactical_learning/campaign.py`, `consumed_seeds.json` | done, tested |
 | Launcher: dry run by default; `--launch` checks the GPU, Node.js and a clean commit, starts all runs with a hard wall-clock kill, samples GPU use every 15 s, summarizes, hashes and packages | `tools/amd-tactical-campaign.sh` | done, dry-run checked locally |
-| Export of v3 / deep policies to the app | `export_policy.py`, `roboproof/tactical_policy.js` | **not yet**: today they accept only the 2-layer v2 policy; add after the campaign shows a better model |
+| Independent check on fresh start poses: fixes the candidates (top runs by development margin, primary = best) before playing, refuses any seed a run trained, imitated or evaluated on, reports the paired margin difference against loader-cycle with a bootstrap 95% interval | `roboproof/tactical_learning/evaluate.py` | done, tested; checked on the MI300X with the probe run |
+| Export of v3 / deep policies to the app: JSON manifest + float32 weights file (SHA-256 checked), residual forward pass in JavaScript, v3 features in the task runner and server | `export_policy.py`, `roboproof/tactical_policy.js`, `tactical_task.js`, `server.js` | done, tested against a separate reference; the PyTorch-vs-JavaScript check runs where PyTorch is |
 
-Default campaign: 40 parallel runs (34 at launch, see Progress), PPO, v3 features, 1024 × 10, 32-episode loader-cycle warm start, up to 3,000 episodes or 2 h of training per run, then held-out evaluation (8 start poses) against loader-cycle, field greedy, greedy-all and random. Seeds from 1400001 (stride 5,000); the completed launch used `--runs 34 --base-seed 1400001` (see Progress). Wall-clock limit 3 h; worst case **5.97 USD** at 1.99 USD/h.
+Default campaign: 34 parallel runs (the most that fit in GPU memory, see Progress), PPO, v3 features, 1024 × 10, 32-episode loader-cycle warm start, up to 3,000 episodes or 2 h of training per run, then held-out evaluation (8 start poses) against loader-cycle, field greedy, greedy-all and random. Seeds from 1400001 (stride 5,000); the completed launch used `--runs 34 --base-seed 1400001` (see Progress). Wall-clock limit 3 h; worst case **5.97 USD** at 1.99 USD/h.
 
 ## Honest expectations about GPU use
 
-Each decision needs the Node.js rules engine on a CPU core; the GPU only scores candidates and runs PPO updates. With 40 runs the GPU will be busy far more than with one, but how busy depends on the droplet's CPU cores. The campaign records `rocm-smi` GPU use every 15 s and reports the measured mean and maximum in `summary.json`. A bigger model is compared with the small one on the same held-out seeds; bigger is not assumed to be better.
+Each decision needs the Node.js rules engine on a CPU core; the GPU only scores candidates and runs PPO updates. With 40 runs the GPU will be busy far more than with one, but how busy depends on the droplet's CPU cores. The campaign records GPU use (`rocm-smi`, or `amd-smi` `gfx_activity`) every 15 s and reports the measured mean and maximum in `summary.json`. This is the share of time the GPU had work queued, not the share of its arithmetic capacity in use: many small network evaluations keep it busy without loading it. A bigger model is compared with the small one on the same held-out seeds; bigger is not assumed to be better.
 
 ## Runbook
 
@@ -53,12 +54,17 @@ Each decision needs the Node.js rules engine on a CPU core; the GPU only scores 
 7. **Full campaign** inside tmux, so a dropped SSH connection does not stop it:
    ```bash
    tmux new -s campaign
-   tools/amd-tactical-campaign.sh --launch --base-seed 960001 --hourly-rate-usd <price> --approved-max-cost-usd 20
+   tools/amd-tactical-campaign.sh --launch --hourly-rate-usd <price> --approved-max-cost-usd 20
    ```
-   Detach with `Ctrl+B D`; watch with `tail -f roboproof/runs/tactical/mi300x-campaign-*/run-00.log` and `rocm-smi`.
-8. **Collect**: when the script prints the archive and its SHA-256, copy both to the computer (`scp`), check `sha256sum -c`, and upload them to the private RoboProof Drive folder.
-9. **Destroy the droplet** in the console. A powered-off droplet can still be billed; only destroying it stops the charge.
-10. **Record**: add the campaign's seed range to `roboproof/tactical_learning/consumed_seeds.json`, write the results (summary, best run, measured GPU use, cost) to `docs/progress.md`, and keep `learnedImprovementVerified` false until an independent check passes.
+   Detach with `Ctrl+B D`; watch with `tail -f roboproof/runs/tactical/mi300x-campaign-*/run-00.log` and `amd-smi metric --mem-usage`. Each 1024 × 10 run peaks at about 5 GB of GPU memory during the warm start, so 34 runs is the safe maximum on one MI300X.
+8. **Independent check** on fresh start poses (minutes; pick a `--base-seed` outside `consumed_seeds.json`):
+   ```bash
+   python3 -m roboproof.tactical_learning.evaluate --approved-amd-mi300x --campaign roboproof/runs/tactical/mi300x-campaign-34 \n     --top 5 --base-seed 2100001 --episodes 200 --output roboproof/runs/tactical/mi300x-campaign-34-independent
+   ```
+   To use a passing primary candidate in the app, export it next to the check (`python3 -m roboproof.tactical_learning.export_policy --checkpoint <run>/latest.pt --independent-holdout <check>/summary.json --output <folder>/policy.json`) and copy `policy.json` with `policy.weights.bin` to `roboproof/runs/tactical/` on the computer.
+9. **Collect**: when the script prints the archive and its SHA-256, copy both to the computer (`scp`), check `sha256sum -c`, and upload them to the private RoboProof Drive folder.
+10. **Destroy the droplet** in the console. A powered-off droplet can still be billed; only destroying it stops the charge.
+11. **Record**: add the campaign's and the check's seed ranges to `roboproof/tactical_learning/consumed_seeds.json`, write the results (summary, best run, measured GPU use, cost) to `docs/progress.md`, and keep `learnedImprovementVerified` false until an independent check passes.
 
 ## Progress
 
