@@ -112,6 +112,17 @@ function binaryLayout({featureCount, width, hiddenLayers, residual}) {
   });
 }
 
+function affine(weights, bias, input, output) {
+  const columns = input.length;
+  for (let row = 0; row < bias.length; row += 1) {
+    let sum = bias[row];
+    const base = row * columns;
+    for (let column = 0; column < columns; column += 1) sum += weights[base + column] * input[column];
+    output[row] = sum;
+  }
+  return output;
+}
+
 function createBinaryPolicy(record, weightsBuffer) {
   if (!record || typeof record !== 'object' || record.schema !== BINARY_POLICY_SCHEMA || record.model !== MODEL_ID_V3) {
     throw Error(`Expected an exported ${MODEL_ID_V3} policy (${BINARY_POLICY_SCHEMA})`);
@@ -151,71 +162,45 @@ function createBinaryPolicy(record, weightsBuffer) {
   const blocks = residual ? Array.from({length: hiddenLayers - 1}, (_, block) => ({
     gamma: tensor[`blocks.${block}.norm.weight`], beta: tensor[`blocks.${block}.norm.bias`],
     weight: tensor[`blocks.${block}.linear.weight`], bias: tensor[`blocks.${block}.linear.bias`]})) : [];
-  // All candidates of one decision go through each layer together, so every weight row is read once per decision
-  // instead of once per candidate. Each candidate's sums keep the same order, so scores equal one-at-a-time scoring.
-  function denseAll(weights, bias, inputs, count, columns, outputs) {
-    for (let row = 0; row < bias.length; row += 1) {
-      const base = row * columns;
-      for (let candidate = 0; candidate < count; candidate += 1) {
-        let sum = bias[row];
-        const offset = candidate * columns;
-        for (let column = 0; column < columns; column += 1) sum += weights[base + column] * inputs[offset + column];
-        outputs[candidate * bias.length + row] = sum;
-      }
-    }
-  }
+  const hidden = new Float64Array(width);
+  const scratch = new Float64Array(width);
+  const normalized = new Float64Array(width);
 
-  function scoreAll(rows) {
-    const count = rows.length;
-    const inputs = new Float64Array(count * featureCount);
-    rows.forEach((features, candidate) => {
-      if (!Array.isArray(features) || features.length !== featureCount || !features.every(Number.isFinite)) {
-        throw Error(`Tactical features must be ${featureCount} finite numbers`);
-      }
-      inputs.set(features, candidate * featureCount);
-    });
-    const hidden = new Float64Array(count * width);
-    const scratch = new Float64Array(count * width);
-    denseAll(tensor['input.weight'], tensor['input.bias'], inputs, count, featureCount, hidden);
-    for (let index = 0; index < hidden.length; index += 1) hidden[index] = Math.tanh(hidden[index]);
+  function score(features) {
+    if (!Array.isArray(features) || features.length !== featureCount || !features.every(Number.isFinite)) {
+      throw Error(`Tactical features must be ${featureCount} finite numbers`);
+    }
+    affine(tensor['input.weight'], tensor['input.bias'], features, hidden);
+    for (let index = 0; index < width; index += 1) hidden[index] = Math.tanh(hidden[index]);
     if (residual) {
-      const normalized = new Float64Array(count * width);
       for (const {gamma, beta, weight, bias} of blocks) {
-        for (let candidate = 0; candidate < count; candidate += 1) {
-          const offset = candidate * width;
-          let mean = 0;
-          for (let index = 0; index < width; index += 1) mean += hidden[offset + index];
-          mean /= width;
-          let variance = 0;
-          for (let index = 0; index < width; index += 1) variance += (hidden[offset + index] - mean) ** 2;
-          const scale = 1 / Math.sqrt(variance / width + LAYER_NORM_EPSILON);
-          for (let index = 0; index < width; index += 1) {
-            normalized[offset + index] = (hidden[offset + index] - mean) * scale * gamma[index] + beta[index];
-          }
-        }
-        denseAll(weight, bias, normalized, count, width, scratch);
-        for (let index = 0; index < hidden.length; index += 1) hidden[index] += Math.tanh(scratch[index]);
+        let mean = 0;
+        for (let index = 0; index < width; index += 1) mean += hidden[index];
+        mean /= width;
+        let variance = 0;
+        for (let index = 0; index < width; index += 1) variance += (hidden[index] - mean) ** 2;
+        const scale = 1 / Math.sqrt(variance / width + LAYER_NORM_EPSILON);
+        for (let index = 0; index < width; index += 1) normalized[index] = (hidden[index] - mean) * scale * gamma[index] + beta[index];
+        affine(weight, bias, normalized, scratch);
+        for (let index = 0; index < width; index += 1) hidden[index] += Math.tanh(scratch[index]);
       }
     } else {
-      denseAll(tensor['hidden.weight'], tensor['hidden.bias'], hidden, count, width, scratch);
-      for (let index = 0; index < hidden.length; index += 1) hidden[index] = Math.tanh(scratch[index]);
+      affine(tensor['hidden.weight'], tensor['hidden.bias'], hidden, scratch);
+      for (let index = 0; index < width; index += 1) hidden[index] = Math.tanh(scratch[index]);
     }
+    let sum = tensor['policy.bias'][0];
     const head = tensor['policy.weight'];
-    return Array.from({length: count}, (_, candidate) => {
-      let sum = tensor['policy.bias'][0];
-      for (let index = 0; index < width; index += 1) sum += head[index] * hidden[candidate * width + index];
-      return sum;
-    });
+    for (let index = 0; index < width; index += 1) sum += head[index] * hidden[index];
+    return sum;
   }
 
-  const score = features => scoreAll([features])[0];
-
   function choose(actions) {
-    if (!actions.length) return null;
-    const scores = scoreAll(actions.map(action => action.features));
-    let best = 0;
-    for (let index = 1; index < scores.length; index += 1) if (scores[index] > scores[best]) best = index;
-    return {action: actions[best], score: scores[best]};
+    let best = null;
+    for (const action of actions) {
+      const value = score(action.features);
+      if (!best || value > best.score) best = {action, score: value};
+    }
+    return best;
   }
 
   return Object.freeze({score, choose, width, hiddenLayers, featureSet, featureCount, algorithmId,
