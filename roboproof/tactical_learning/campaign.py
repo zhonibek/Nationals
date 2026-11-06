@@ -72,6 +72,7 @@ def plan(*, output_root: Path, runs: int, base_seed: int, seed_stride: int, epis
             command += ["--warm-start-demonstration-episodes", str(warm_start)]
         if parallel_envs > 1:
             command += ["--parallel-envs", str(parallel_envs)]
+        command += ["--model-only-copy"]  # model-final.pt: weights without optimizer state, small enough to preserve
         command += ["--output", str(output)]
         planned.append({"index": index, "seed": seed, "trainingSeeds": [first, first + episodes - 1],
                         "demonstrationSeeds": [first + episodes, last] if warm_start else None,

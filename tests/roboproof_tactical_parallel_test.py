@@ -89,5 +89,23 @@ class ParallelFitTests(unittest.TestCase):
         self.assertFalse(recorded.calls and any(call["event"] == "episode" for call in recorded.calls))
 
 
+class ModelOnlyCopyTests(unittest.TestCase):
+    def fit(self, *extra):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "run"
+            with fake_fit(output, ScriptedBridge(), *extra, episodes=8) as recorded:
+                train.main()
+            return recorded.saved
+
+    def test_the_final_model_is_saved_without_optimizer_state_only_when_asked(self):
+        self.assertEqual([name for name, _ in self.fit()], ["latest.pt"])
+        saved = self.fit("--model-only-copy")
+        self.assertEqual([name for name, _ in saved], ["latest.pt", "model-final.pt"])
+        final = dict(saved)["model-final.pt"]
+        self.assertNotIn("optimizerState", final)
+        self.assertEqual((final["stage"], final["episodesCompleted"], final["learnedImprovementVerified"]),
+                         ("final-model-only", 8, False))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -248,6 +248,8 @@ def parse_args():
     parser.add_argument("--features", choices=("v2", "v3", "v4"), default="v2",
                         help="candidate features: v2 (23, the original), v3 (30, adds rules-engine previews) or v4 "
                              "(52, adds the task: one random task per episode seed, rewards and baselines follow it)")
+    parser.add_argument("--model-only-copy", action="store_true",
+                        help="also write model-final.pt: the final network without optimizer state (about a third of latest.pt)")
     parser.add_argument("--parallel-envs", type=int, default=1,
                         help=f"rules engines played in lockstep with one batched network call (1..{MAX_PARALLEL_ENVIRONMENTS})")
     parser.add_argument("--width", type=int, default=128, help=f"hidden width, 16..{MAX_WIDTH}")
@@ -813,6 +815,15 @@ def main():
                 atomic_torch_save(checkpoint, args.output / "latest.pt")
                 with (args.output / "training.jsonl").open("a", encoding="utf-8") as training_log:
                     training_log.write(json.dumps({"event": "checkpoint", "episodes": completed, **update_metrics}, sort_keys=True) + "\n")
+            if args.model_only_copy:
+                # The final network without optimizer state: about a third of latest.pt, so every run's model can be
+                # preserved even when the full checkpoints are too large to copy. The exporter reads it like latest.pt.
+                atomic_torch_save({"schemaVersion": 1, "runId": run_id, "model": model_id, "architecture": model.architecture(),
+                                   "stage": "final-model-only", "modelState": model.state_dict(), "episodesCompleted": completed,
+                                   "trainingSeed": args.seed, "sourceSha256": source_hashes, "runtime": runtime,
+                                   "learnedImprovementVerified": False, "independentQualificationPerformed": False,
+                                   **({"warmStart": warm_start} if warm_start is not None else {}),
+                                   **({"algorithm": PPO_ALGORITHM} if ppo else {})}, args.output / "model-final.pt")
             if completed == args.episodes:
                 status = "completed"
             else:

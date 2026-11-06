@@ -90,4 +90,18 @@ echo "finished $(date -u +%FT%TZ)" >> "$OUTPUT_ROOT/host.txt"
 (cd "$OUTPUT_ROOT" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 tar -czf "$OUTPUT_ROOT.tar.gz" -C "$(dirname "$OUTPUT_ROOT")" "$(basename "$OUTPUT_ROOT")"
 sha256sum "$OUTPUT_ROOT.tar.gz" | tee "$OUTPUT_ROOT.tar.gz.sha256"
-echo "Next: copy $OUTPUT_ROOT.tar.gz and its .sha256 to the computer, verify, upload to the private RoboProof Drive folder, then DESTROY the droplet to stop billing."
+# Two small archives that are realistic to preserve when the full one (all checkpoints) is too large to copy:
+# every log, record and evaluation without checkpoints, and every run's final model without optimizer state.
+NAME=$(basename "$OUTPUT_ROOT")
+(
+  cd "$(dirname "$OUTPUT_ROOT")"
+  tar -czf "$NAME.results.tar.gz" --exclude="*.pt" "$NAME"
+  sha256sum "$NAME.results.tar.gz" > "$NAME.results.tar.gz.sha256"
+  models=("$NAME"/run-*/model-final.pt)
+  if [ -e "${models[0]}" ]; then
+    tar -czf "$NAME.models.tar.gz" "${models[@]}" "$NAME"/run-*/run.json "$NAME"/campaign.json "$NAME"/summary.json "$NAME"/SHA256SUMS
+    sha256sum "$NAME.models.tar.gz" > "$NAME.models.tar.gz.sha256"
+  fi
+)
+ls -la "$OUTPUT_ROOT".*tar.gz
+echo "Next: copy the .results and .models archives (and the full one if possible) with their .sha256 files, verify, upload to the private RoboProof Drive folder, then DESTROY the droplet to stop billing."
