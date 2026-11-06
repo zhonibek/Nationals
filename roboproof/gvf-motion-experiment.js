@@ -18,8 +18,12 @@ const DEFAULT_HOLDOUT = path.join(__dirname, 'runs/motion/holdout');
 const REQUIRED_SEEDS = Object.freeze([50512, 50513, 50514]);
 const T4_V1_SEEDS = Object.freeze([50515, 50516, 50517]);
 const T4_V2_SEEDS = Object.freeze([50518, 50519, 50520]);
+// Replacement MI300X cohort, declared 2026-11-06 before any of its runs: the primary cohort cannot be completed
+// (seed 50512 has no initial actor or host receipt, 50514 never ran), and its seeds are not reused.
+const MI300X_V2_SEEDS = Object.freeze([50521, 50522, 50523]);
 const COHORTS = Object.freeze([
   Object.freeze({id: 'primary-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: REQUIRED_SEEDS, hardware: 'MI300X'}),
+  Object.freeze({id: 'mi300x-gvf512x10-v2', width: 512, hiddenLayers: 10, seeds: MI300X_V2_SEEDS, hardware: 'MI300X'}),
   Object.freeze({id: 't4-gvf512x10-v1', width: 512, hiddenLayers: 10, seeds: T4_V1_SEEDS, hardware: 'Tesla T4'}),
   Object.freeze({id: 't4-gvf512x10-v2', width: 512, hiddenLayers: 10, seeds: T4_V2_SEEDS, hardware: 'Tesla T4'}),
   Object.freeze({id: 'historical-gvf64x2-v1', width: 64, hiddenLayers: 2, seeds: Object.freeze([50101, 50102, 50103]), hardware: 'MI300X'})

@@ -121,6 +121,17 @@ test('fresh free T4 512x10 cohort excludes unresolved v1 seeds and preserves its
     /predeclared/);
 });
 
+test('replacement MI300X 512x10 cohort uses fresh seeds and never relabels the incomplete primary cohort', () => {
+  const amd = [50521, 50522, 50523].map(seed => ({config: {
+    algorithm: 'td3-tanh-gvf-residual-v1', seed, networkWidth: 512, hiddenLayers: 10}}));
+  assert.equal(selectCohort(amd).id, 'mi300x-gvf512x10-v2');
+  assert.equal(selectCohort(amd).hardware, 'MI300X');
+  assert.deepEqual(COHORTS.find(row => row.id === 'primary-gvf512x10-v1').seeds, [50512, 50513, 50514]);
+  for (const reused of [50512, 50513, 50514, 50518]) {
+    assert.throws(() => selectCohort([...amd.slice(0, 2), {...amd[2], config: {...amd[2].config, seed: reused}}]), /predeclared/);
+  }
+});
+
 test('hardware receipts require a real CUDA T4 and explicitly free Colab execution', () => {
   const device = {name: 'Tesla T4', totalMemoryBytes: 15 * 1024 ** 3, hip: null, torch: '2.11.0+cu130',
     cudaBuild: '13.0', device: 'cuda:0', deviceIndex: 0, capability: [7, 5], precision: 'float32',
