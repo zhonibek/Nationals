@@ -247,6 +247,7 @@ This is a verification build and does not flash the robot. For the normal PROS w
 | `tests/` | Controller, simulator, RoboProof, and learning tests |
 | `tools/` | Configuration, simulator, WASM, packaging, and validation scripts |
 | `docs/` | Architecture, experiments, recovery notes, plans, and operating procedures |
+| `lab/` | AI Engineering Lab MVP outline for Imagine Cup 2027 (proposal only, no app code yet) |
 | `assets/` | Project assets |
 
 ## Further documentation
@@ -263,6 +264,8 @@ This is a verification build and does not flash the robot. For the normal PROS w
 - [Recovery report and verification evidence](docs/recovery/REPORT.md)
 - [Development progress and experiment history](docs/progress.md)
 - [Hackathon plan and progress](docs/HACKATHON_PLAN.md)
+- [Microsoft Imagine Cup 2027 plan and checklist](docs/MICROSOFT_IMAGINE_CUP_PLAN.md)
+- [AI Engineering Lab startup plan](docs/AI_ENGINEERING_LAB_STARTUP_PLAN.md)
 
 ## License, attribution and originality
 
