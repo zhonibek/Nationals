@@ -12,6 +12,9 @@
     {"first": 736001, "last": 736332, "note": "T4 PPO fit seed 736001: training and demonstrations"},
     {"first": 750001, "last": 750024, "note": "MI300X smoke run seed 750001 (2026-11-06): 20 episodes + 4 demonstrations"},
     {"first": 960001, "last": 1278032, "note": "stopped MI300X campaign mi300x-campaign-64 (2026-11-06): 64 runs launched, 15 failed on GPU memory, 49 stopped during warm start; demonstrations exposed"},
-    {"first": 1300001, "last": 1300072, "note": "MI300X memory probe run seed 1300001 (2026-11-06): 40 episodes + 32 demonstrations"}
+    {"first": 1300001, "last": 1300072, "note": "MI300X memory probe run seed 1300001 (2026-11-06): 40 episodes + 32 demonstrations"},
+    {"first": 1400001, "last": 1568032, "note": "MI300X campaign mi300x-campaign-34 (2026-11-06): 34 PPO runs, training and demonstrations"},
+    {"first": 2090001, "last": 2090004, "note": "independent-check test on the memory probe run (2026-11-06): 4 fresh start poses"},
+    {"first": 2100001, "last": 2100200, "note": "independent check of mi300x-campaign-34 top 5 runs (2026-11-06): 200 fresh start poses"}
   ]
 }
