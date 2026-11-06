@@ -1,4 +1,24 @@
-# Failure explorer
+# RoboProof dashboard
+
+## Tactical AI training page
+
+`/training.html` (also the **Tactical AI training** tab in the portal) shows how the Tactical AI was trained on the AMD MI300X and how good it got, from saved data only:
+
+- **Best score in simulation:** the predeclared best models' results on fresh start poses and tasks from the independent checks.
+- **Training, game by game:** every run's learning curve (moving average of training games) replayed with a slider or *Play training*, the best run highlighted against the team tactic, its PPO critic loss and entropy, and the warm start that first imitated the team tactic.
+- **Best match:** the best single-goal model's full driver period, decision by decision, against loader-cycle on the same start pose.
+- **Neuron layers:** for each decision, the chosen move's 30 inputs, all 10 hidden layers of 1024 neurons (64 cells of 16 neurons each), each last-layer cell's push on the score, and the candidate move scores.
+
+The page reads `training-data.json` and `training-replay.json`. Rebuild them from preserved bundles (inference only, nothing trains):
+
+```bash
+py -3 tools/build_training_dashboard.py
+node tools/build-training-replay.js roboproof/runs/tactical/mi300x-2026-11-06/export-run08/policy.json 2100002 blue
+```
+
+The builder reads only bundles whose `.sha256` sidecar matches. All scores are from the abstract Override macro-action model, not physical motion; `learnedImprovementVerified` stays false.
+
+## Failure explorer
 
 The **Vision** section reports LocateAnything preparation only: native parsing, reviewed calibration gates and the shared task contract. Its status request never invokes a model. No model weights, camera connection or perception execution endpoint are enabled. See [future perception integration](../perception/README.md).
 

@@ -171,12 +171,14 @@ function createBinaryPolicy(record, weightsBuffer) {
   const scratch = new Float64Array(width);
   const normalized = new Float64Array(width);
 
-  function score(features) {
+  // `onLayer(hidden)`, when given, sees the activations after the input layer and after every hidden block.
+  function score(features, onLayer) {
     if (!Array.isArray(features) || features.length !== featureCount || !features.every(Number.isFinite)) {
       throw Error(`Tactical features must be ${featureCount} finite numbers`);
     }
     affine(tensor['input.weight'], tensor['input.bias'], features, hidden);
     for (let index = 0; index < width; index += 1) hidden[index] = Math.tanh(hidden[index]);
+    onLayer?.(hidden);
     if (residual) {
       for (const {gamma, beta, weight, bias} of blocks) {
         let mean = 0;
@@ -188,15 +190,49 @@ function createBinaryPolicy(record, weightsBuffer) {
         for (let index = 0; index < width; index += 1) normalized[index] = (hidden[index] - mean) * scale * gamma[index] + beta[index];
         affine(weight, bias, normalized, scratch);
         for (let index = 0; index < width; index += 1) hidden[index] += Math.tanh(scratch[index]);
+        onLayer?.(hidden);
       }
     } else {
       affine(tensor['hidden.weight'], tensor['hidden.bias'], hidden, scratch);
       for (let index = 0; index < width; index += 1) hidden[index] = Math.tanh(scratch[index]);
+      onLayer?.(hidden);
     }
     let sum = tensor['policy.bias'][0];
     const head = tensor['policy.weight'];
     for (let index = 0; index < width; index += 1) sum += head[index] * hidden[index];
     return sum;
+  }
+
+  // The same forward pass for the training page's neuron view: every hidden layer summarized into `bins` averaged
+  // cells (plus mean, spread and the most active neuron), and each cell's push towards the final score.
+  function trace(features, bins = 64) {
+    if (!Number.isInteger(bins) || bins < 1 || width % bins !== 0) throw Error(`Trace bins must divide the width ${width}`);
+    const size = width / bins;
+    const head = tensor['policy.weight'];
+    const layers = [];
+    const value = score(features, activations => {
+      const cells = [];
+      const contribution = [];
+      let mean = 0;
+      let peak = 0;
+      for (let cell = 0; cell < bins; cell += 1) {
+        let sum = 0;
+        let push = 0;
+        for (let index = cell * size; index < (cell + 1) * size; index += 1) {
+          sum += activations[index];
+          push += head[index] * activations[index];
+          if (Math.abs(activations[index]) > Math.abs(activations[peak])) peak = index;
+        }
+        cells.push(sum / size);
+        contribution.push(push);
+        mean += sum;
+      }
+      mean /= width;
+      let variance = 0;
+      for (let index = 0; index < width; index += 1) variance += (activations[index] - mean) ** 2;
+      layers.push({cells, contribution, mean, spread: Math.sqrt(variance / width), peakNeuron: peak, peakValue: activations[peak]});
+    });
+    return {score: value, layers, width, hiddenLayers, bins};
   }
 
   function choose(actions) {
@@ -208,8 +244,8 @@ function createBinaryPolicy(record, weightsBuffer) {
     return best;
   }
 
-  return Object.freeze({score, choose, width, hiddenLayers, featureSet, featureCount, algorithmId,
-    ppo: algorithmId.startsWith('ppo'), algorithm: String(record.algorithm || algorithmId),
+  return Object.freeze({score: features => score(features), trace, choose, width, hiddenLayers, featureSet, featureCount,
+    algorithmId, ppo: algorithmId.startsWith('ppo'), algorithm: String(record.algorithm || algorithmId),
     provenance: record.provenance ?? null, evaluation: record.evaluation ?? null,
     independentHoldout: record.independentHoldout ?? null, scope: record.scope ?? null});
 }

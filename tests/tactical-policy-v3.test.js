@@ -77,6 +77,22 @@ test('a binary v3 policy scores candidates exactly like the reference residual f
   assert.throws(() => policy.score(featureRow(FEATURE_COUNT, 0)), /30 finite numbers/);
 });
 
+test('the neuron trace follows the same forward pass, one summary per hidden layer', () => {
+  for (const options of [{hiddenLayers: 4, width: 32}, {hiddenLayers: 2, width: 16}]) {
+    const built = fixture(options);
+    const policy = createBinaryPolicy(built.record, built.weights);
+    const features = featureRow(FEATURE_COUNT_V3, 0.3);
+    const traced = policy.trace(features, 8);
+    assert.equal(traced.score, policy.score(features));
+    assert.equal(traced.layers.length, options.hiddenLayers);
+    assert.ok(traced.layers.every(layer => layer.cells.length === 8 && layer.contribution.length === 8 && layer.spread >= 0));
+    const bias = built.values[built.layout.find(row => row.name === 'policy.bias').offset];
+    const pushed = traced.layers.at(-1).contribution.reduce((sum, value) => sum + value, bias);
+    assert.ok(Math.abs(pushed - traced.score) < 1e-6);
+    assert.throws(() => policy.trace(features, 5), /must divide the width/);
+  }
+});
+
 test('binary policies with a wrong hash, layout, size, value or claim are refused', () => {
   const {record, weights} = fixture();
   const flipped = Buffer.from(weights);

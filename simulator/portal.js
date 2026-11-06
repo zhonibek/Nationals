@@ -8,9 +8,11 @@
   const roboproofUrl = standalone ? 'http://127.0.0.1:8766/' : '/';
   const apiBase = standalone ? 'http://127.0.0.1:8766' : '';
   const simulatorUrl = 'index.html';
+  const trainingUrl = standalone ? 'http://127.0.0.1:8766/training.html' : '/training.html';
 
   const frameContainer = document.getElementById('frameContainer');
-  const tabs = {app1: document.getElementById('tabApp1'), app2: document.getElementById('tabApp2'), split: document.getElementById('tabSplit')};
+  const tabs = {app1: document.getElementById('tabApp1'), app2: document.getElementById('tabApp2'),
+    training: document.getElementById('tabTraining'), split: document.getElementById('tabSplit')};
   const toast = document.getElementById('toast');
   let currentMode = 'app1';
 
@@ -33,7 +35,8 @@
       split.append(frame(simulatorUrl, 'App 1 Simulator'), frame(roboproofUrl, 'App 2 RoboProof'));
       frameContainer.append(split);
     } else {
-      const element = mode === 'app2' ? frame(roboproofUrl, 'App 2 RoboProof') : frame(simulatorUrl, 'App 1 Simulator');
+      const element = mode === 'app2' ? frame(roboproofUrl, 'App 2 RoboProof')
+        : mode === 'training' ? frame(trainingUrl, 'Tactical AI training') : frame(simulatorUrl, 'App 1 Simulator');
       element.id = 'mainFrame';
       frameContainer.append(element);
     }
@@ -44,6 +47,7 @@
   }
 
   document.getElementById('btnOpenCurrentTab')?.addEventListener('click', () => {
+    if (currentMode === 'training') { window.open(trainingUrl, '_blank', 'noopener'); return; }
     if (currentMode !== 'app2') window.open(simulatorUrl, '_blank', 'noopener');
     if (currentMode !== 'app1') window.open(roboproofUrl, '_blank', 'noopener');
   });

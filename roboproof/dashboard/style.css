@@ -214,3 +214,23 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12
   .nemotron-chat-message { max-width: 96%; padding: 12px; }
   .nemotron-composer .nemotron-actions button { flex: 1; }
 }
+
+/* Tactical AI training page (training.html) */
+.training-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 18px 0 6px; }
+.training-card { background: var(--bg); border: 1px solid var(--line); border-top: 2px solid var(--teal); border-radius: 8px; padding: 18px 20px; }
+.training-card p { font-size: .88rem; }
+.training-big { font-size: 2rem !important; font-weight: 750; letter-spacing: -.03em; color: var(--text); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.training-chart, .training-small-chart, .training-network { width: 100%; height: auto; display: block; }
+.training-network-wrap { overflow-x: auto; }
+.training-network { min-width: 760px; }
+.training-input-name { font-size: 10px; }
+.training-readout { color: var(--muted); font-size: .88rem; font-variant-numeric: tabular-nums; margin: 8px 0 12px; }
+.training-readout p { margin: 0 0 6px; }
+.training-slider { flex: 1 1 320px; min-width: 200px; }
+.training-switch { display: flex; gap: 8px; flex-wrap: wrap; }
+.training-key-best::before, .training-key-run::before, .training-key-ref::before, .training-key-ai::before, .training-key-baseline::before,
+.training-key-critic::before, .training-key-entropy::before { content: ""; display: inline-block; width: 18px; height: 3px; margin-right: 8px; vertical-align: middle; }
+.training-key-best::before, .training-key-ai::before { background: var(--teal); }
+.training-key-run::before, .training-key-entropy::before { background: var(--blue); }
+.training-key-ref::before, .training-key-baseline::before { background: var(--orange); }
+.training-key-critic::before { background: var(--purple); }

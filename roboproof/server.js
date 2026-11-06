@@ -69,6 +69,11 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
   }
   const assets = new Map([['/', ['index.html', 'text/html']], ['/index.html', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/nemotron.js', ['nemotron.js', 'text/javascript']], ['/motion.js', ['motion.js', 'text/javascript']], ['/learning-summary.js', ['learning-summary.js', 'text/javascript']], ['/perception.js', ['perception.js', 'text/javascript']], ['/player.js', ['player.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
   assets.set('/cosmos.js', ['cosmos.js', 'text/javascript']);
+  // Tactical AI training page: saved training data and one recorded match (inference only; see tools/build_training_dashboard.py).
+  assets.set('/training.html', ['training.html', 'text/html']);
+  assets.set('/training.js', ['training.js', 'text/javascript']);
+  assets.set('/training-data.json', ['training-data.json', 'application/json']);
+  assets.set('/training-replay.json', ['training-replay.json', 'application/json']);
   const simulatorFiles = new Set(['index.html', 'portal.html', 'portal.js', 'simulator.css', 'simulator.js', 'engine.js', 'motion.js', 'policy.js', 'gvf-policy.js', 'motion-replay.js',
     'control-runtime.js', 'control.wasm', 'robot-config.js', 'override.js', 'override-view.js', 'override-ui.js', 'override-geometry.js',
     'override-dynamics.js', 'override-autonomy.js', 'nemotron-task.js', 'cad-runtime.js', 'tactics-snapshot.js', 'tactics-ui.js', 'models/robot.stl', 'models/robot.preview.glb', 'models/robot.preview.json']);

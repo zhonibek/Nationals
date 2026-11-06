@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Tactical AI training</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="training.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to results</a>
+  <header class="masthead">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">R/</span> RoboProof <span class="brand-detail">TACTICAL AI TRAINING</span></a>
+    <nav aria-label="Sections"><a href="/">Dashboard</a><a href="#best">Best score</a><a href="#training">Training</a><a href="#match">Best match</a><a href="#network">Neuron layers</a></nav>
+  </header>
+  <main id="main">
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">AMD INSTINCT MI300X · PPO · 1024 × 10 NETWORK</p>
+        <h1 id="page-title">How the Tactical AI learned.<br><span>From imitation to beating the team tactic.</span></h1>
+        <p class="lede">Every number on this page comes from saved training logs and from the Override rules engine. The AI first imitates the team's loading-zone tactic, then improves by trial and error with PPO. Its best version is then checked on start poses and tasks it never saw.</p>
+      </div>
+      <div class="mode-card"><span class="status-dot" aria-hidden="true"></span><strong id="data-status">Loading saved training data…</strong><p id="data-source">training-data.json · training-replay.json</p><p class="muted">Inference only. Nothing on this page trains a model.</p></div>
+    </section>
+
+    <section id="best" class="panel" aria-labelledby="best-title">
+      <div class="section-heading"><div><p class="eyebrow">VERIFIED ON FRESH CASES</p><h2 id="best-title">Best score in simulation</h2></div><span class="badge">ABSTRACT GAME MODEL</span></div>
+      <div id="best-cards" class="training-cards"></div>
+      <p class="caveat">Scored by the Override rules engine with macro-actions and an estimated travel time; robots do not drive real paths here. Not yet checked in physics or on the robot, so the result is not marked verified.</p>
+    </section>
+
+    <section id="training" class="panel" aria-labelledby="training-title">
+      <div class="section-heading"><div><p class="eyebrow">WARM START → PPO → END OF TRAINING</p><h2 id="training-title">Training, game by game</h2></div>
+        <div class="training-switch" role="group" aria-label="Campaign"><button id="campaign-single" type="button" aria-pressed="true">Single goal · 34 runs</button><button id="campaign-multi" class="secondary" type="button" aria-pressed="false">Multi-task · 16 runs</button></div></div>
+      <p id="training-explainer" class="muted"></p>
+      <div class="plot"><svg id="training-chart" class="training-chart" viewBox="0 0 960 360" role="img" aria-labelledby="training-chart-title"><title id="training-chart-title">Learning curves of every run</title></svg>
+        <ul id="training-legend" class="legend"></ul></div>
+      <div class="sim-controls">
+        <button id="training-play" type="button">Play training</button>
+        <div class="training-slider"><label for="training-cursor">Training game</label><input id="training-cursor" type="range" min="1" max="100" value="100"></div>
+        <button id="training-end" class="secondary" type="button">Jump to end</button>
+      </div>
+      <div id="training-readout" class="training-readout" aria-live="polite"></div>
+      <div class="plot-grid">
+        <div class="plot"><h3>Learning signals of the best run</h3><svg id="ppo-chart" class="training-small-chart" viewBox="0 0 460 200" role="img" aria-label="PPO critic loss and entropy over training"></svg><ul class="legend"><li class="training-key-critic">Critic loss (falls as it learns to predict the score)</li><li class="training-key-entropy">Entropy (how much it still explores)</li></ul></div>
+        <div class="plot"><h3>Warm start: imitating the team tactic</h3><svg id="warm-chart" class="training-small-chart" viewBox="0 0 460 200" role="img" aria-label="Imitation loss over warm-start epochs"></svg><p id="warm-readout" class="hint"></p></div>
+      </div>
+    </section>
+
+    <section id="match" class="panel" aria-labelledby="match-title">
+      <div class="section-heading"><div><p class="eyebrow">THE BEST MODEL PLAYS ONE FULL DRIVER PERIOD</p><h2 id="match-title">Best match, decision by decision</h2></div><span id="match-badge" class="badge"></span></div>
+      <div class="plot"><svg id="match-chart" class="training-chart" viewBox="0 0 960 300" role="img" aria-label="Score margin over the match: AI versus loader-cycle"></svg>
+        <ul class="legend"><li class="training-key-ai">Tactical AI</li><li class="training-key-baseline">Loader-cycle team tactic, same start pose</li></ul></div>
+      <div class="sim-controls">
+        <button id="match-play" type="button">Play match</button>
+        <button id="match-prev" class="secondary" type="button" aria-label="Previous decision">◀</button>
+        <div class="training-slider"><label for="match-cursor">Decision</label><input id="match-cursor" type="range" min="1" max="1" value="1"></div>
+        <button id="match-next" class="secondary" type="button" aria-label="Next decision">▶</button>
+      </div>
+      <div id="match-readout" class="training-readout" aria-live="polite"></div>
+    </section>
+
+    <section id="network" class="panel" aria-labelledby="network-title">
+      <div class="section-heading"><div><p class="eyebrow">INPUTS → 10 LAYERS × 1024 NEURONS → ONE SCORE PER MOVE</p><h2 id="network-title">Inside the network for this decision</h2></div>
+        <button id="network-replay" class="secondary" type="button">Replay forward pass</button></div>
+      <p class="muted">Left: the 30 numbers the network reads about the chosen move. Middle: each column is one hidden layer of 1024 neurons, drawn as 64 cells of 16 neurons (blue below its layer's average, orange above; brighter = stronger). The thin strip after layer 10 shows how much each cell pushes the move's score up (orange) or down (blue). Right: the scores of the best candidate moves; the highest one is played.</p>
+      <div class="plot training-network-wrap"><svg id="network-chart" class="training-network" viewBox="0 0 960 470" role="img" aria-label="Neuron activations of every layer for the chosen move"></svg></div>
+      <div id="network-readout" class="training-readout"></div>
+    </section>
+    <p class="caveat">Training curves show moving averages of training games, which pick moves with some randomness; the verified scores above come from separate deterministic games on fresh cases. learnedImprovementVerified stays false until the user approves a physical check.</p>
+  </main>
+</body>
+</html>
