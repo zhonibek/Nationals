@@ -153,3 +153,21 @@ test('a multi-task (v4) policy reads the task block and plays typed tasks throug
   assert.throws(() => runTask({spec: parseTask('park the robots'), policy, seed: 4, environment: new TacticalEnvironment()}),
     /needs v4 features, but the environment produces v2/);
 });
+
+test('the app plays a whole match with an installed multi-task (v4) policy as coordinator', async t => {
+  const {record, weights} = fixture({featureSet: 'v4', hiddenLayers: 3});
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tactical-v4-server-'));
+  t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
+  fs.writeFileSync(path.join(directory, 'policy.json'), JSON.stringify(record));
+  fs.writeFileSync(path.join(directory, 'policy.weights.bin'), weights);
+  const {createServer} = require('../roboproof/server');
+  const server = createServer({reportPath: 'does-not-exist.json', tacticalPolicyPath: path.join(directory, 'policy.json')});
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/tactics/match`, {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({coordinator: 'tactical-policy', seed: 101, alliance: 'red'})});
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  assert.equal(result.policy.featureSet, 'v4');
+  assert.ok(result.decisions > 0 && result.log.every(row => /^PPO score -?\d/.test(row.reason)));
+});

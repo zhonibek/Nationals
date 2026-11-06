@@ -59,8 +59,10 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
   // The trained policy as a match coordinator: the "play the whole period" task with the baselines' decision limit.
   function playTrainedTacticalMatch(seed, alliance) {
     const policy = currentTacticalPolicy();
+    // A multi-task (v4) policy reads v3 candidates plus the task block that runTask adds.
+    const featureSet = policy.featureSet === 'v4' ? 'v3' : policy.featureSet;
     const played = runTacticalTask({spec: parseTacticalTask('play the driver period for the best score'), policy, seed, alliance,
-      environment: new TacticalEnvironment({maximumDecisions: TACTICAL_MATCH_DECISIONS, featureSet: policy.featureSet})});
+      environment: new TacticalEnvironment({maximumDecisions: TACTICAL_MATCH_DECISIONS, featureSet})});
     const log = played.log.map(row => ({decision: row.decision, clock: row.clock, id: row.id, kind: row.kind, robotId: row.robotId,
       points: row.points, seconds: row.seconds, rejected: row.rejected, score: row.score,
       reason: `${policy.ppo ? 'PPO' : 'policy'} score ${row.policyScore}`}));
