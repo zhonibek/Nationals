@@ -6,9 +6,15 @@
 //
 //   node tools/build-training-replay.js <policy.json> <seed> <red|blue> [output.json]
 
+//   node tools/build-training-replay.js <v4 policy.json> <seed> <red|blue> <output.json> --task "<typed task>"
+// records a multi-task policy carrying out one typed task, against the per-task greedy tactic on the same task.
+
 const fs = require('node:fs');
 const path = require('node:path');
 const {TacticalEnvironment} = require('../roboproof/tactical_environment');
+const {TaskEnvironment} = require('../roboproof/tactical_task_environment');
+const {parseTask} = require('../roboproof/tactical_task');
+const {chooseForTask} = require('../roboproof/tactical_task_training');
 const {loadPolicy} = require('../roboproof/tactical_policy');
 const {playMatch, policyChooser} = require('../roboproof/tactical_baselines');
 
@@ -18,6 +24,10 @@ const BASE_FEATURES = ['score Pin', 'score Cup', 'Toggle', 'park', 'alliance sid
   'from loader'];
 const PREVIEW_FEATURES = ['legal', 'previewed points', 'previewed seconds', 'points per second', 'rank', 'best move',
   'best loader move'];
+const TASK_FEATURES = ['task: play', 'task: score', 'task: park', 'objects: any', 'objects: Pin', 'objects: Cup',
+  'source: any', 'source: loader', 'source: field', 'goals: any', 'goals: neutral', 'goals: alliance', 'goals: tall',
+  'has count target', 'count left', 'has points target', 'points left', 'has time limit', 'task time left',
+  'park afterwards', 'parking phase', 'robots parked'];
 const TOP_CANDIDATES = 8;
 const round = value => Number(value.toPrecision(4));
 
@@ -56,14 +66,67 @@ async function record(policyFile, seed, alliance) {
     scope: 'Abstract Override macro-action model scored by the rules engine; not physical motion.'};
 }
 
-async function main() {
-  const [policyFile, seedText, alliance, output = path.join(__dirname, '../roboproof/dashboard/training-replay.json')] =
-    process.argv.slice(2);
-  const seed = Number(seedText);
-  if (!policyFile || !Number.isInteger(seed) || !['red', 'blue'].includes(alliance)) {
-    throw Error('Usage: node tools/build-training-replay.js <policy.json> <seed> <red|blue> [output.json]');
+function traceRow(policy, chosen, scored) {
+  const trace = policy.trace(chosen.action.features, 64);
+  return {score: round(chosen.score), candidateCount: scored.length,
+    candidates: scored.slice(0, TOP_CANDIDATES).map(row => ({id: row.action.id, kind: kindOf(row.action.id), score: round(row.score)})),
+    inputs: chosen.action.features.map(round),
+    layers: trace.layers.map(layer => ({cells: layer.cells.map(round), contribution: layer.contribution.map(round),
+      mean: round(layer.mean), spread: round(layer.spread), peakNeuron: layer.peakNeuron, peakValue: round(layer.peakValue)}))};
+}
+
+// A multi-task policy carrying out one typed task through the app's TaskEnvironment, and task-greedy on the same task.
+function recordTask(policyFile, seed, alliance, text) {
+  const policy = loadPolicy(policyFile);
+  if (policy.featureSet !== 'v4') throw Error('A typed-task replay needs a multi-task v4 policy');
+  const spec = parseTask(text);
+  const task = new TaskEnvironment({spec, environment: new TacticalEnvironment({featureSet: 'v3'}), featureSet: 'v4'});
+  let observation = task.reset(seed, alliance);
+  const decisions = [];
+  const started = Date.now();
+  while (!observation.done) {
+    const scored = observation.actions.map(action => ({action, score: policy.score(action.features)}))
+      .sort((first, second) => second.score - first.score);
+    const chosen = scored[0];
+    const clock = observation.clock;
+    const {row, observation: next} = task.step(chosen.action.id);
+    decisions.push({decision: row.decision, clock: round(clock), id: row.id, kind: row.kind, phase: row.phase, points: row.points,
+      ownPoints: row.ownPoints, taskReward: row.taskReward, seconds: row.seconds, scoreAfter: row.score, rejected: row.rejected,
+      ...traceRow(policy, chosen, scored)});
+    observation = next;
   }
-  const replay = await record(policyFile, seed, alliance);
+  const result = task.summary();
+  const greedy = new TaskEnvironment({spec, environment: new TacticalEnvironment({featureSet: 'v3'}), featureSet: 'v4'});
+  let greedyObservation = greedy.reset(seed, alliance);
+  while (!greedyObservation.done) {
+    const pick = chooseForTask('task-greedy', greedy, greedy.previewAllowed(), null);
+    greedyObservation = greedy.step(pick ? pick.id : greedyObservation.actions[0].id).observation;
+  }
+  const baseline = greedy.summary();
+  return {schemaVersion: 1, kind: 'tactical-training-replay', mode: 'task', task: {text, summary: spec.summary},
+    seed, alliance, featureNames: [...BASE_FEATURES, ...PREVIEW_FEATURES, ...TASK_FEATURES],
+    policy: {width: policy.width, hiddenLayers: policy.hiddenLayers, featureSet: policy.featureSet, algorithm: policy.algorithm,
+      provenance: policy.provenance, independentHoldout: policy.independentHoldout},
+    finalScore: result.finalScore, result: {achieved: result.achieved, stopReason: result.stopReason, taskReturn: round(result.taskReturn),
+      secondsUsed: round(result.clockEnd - result.clockStart), scoringActions: result.scoringActions, parkedRobots: result.parkedRobots},
+    decisions, inferenceSeconds: (Date.now() - started) / 1000,
+    baseline: {policy: 'task-greedy', finalScore: baseline.finalScore,
+      result: {achieved: baseline.achieved, stopReason: baseline.stopReason, taskReturn: round(baseline.taskReturn),
+        secondsUsed: round(baseline.clockEnd - baseline.clockStart), scoringActions: baseline.scoringActions},
+      timeline: greedy.log.map(row => ({clock: row.clock, kind: row.kind, points: row.points, scoreAfter: row.score}))},
+    scope: 'Abstract Override macro-action model scored by the rules engine; not physical motion.'};
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const taskIndex = args.indexOf('--task');
+  const text = taskIndex >= 0 ? args.splice(taskIndex, 2)[1] : null;
+  const [policyFile, seedText, alliance, output = path.join(__dirname, '../roboproof/dashboard/training-replay.json')] = args;
+  const seed = Number(seedText);
+  if (!policyFile || !Number.isInteger(seed) || !['red', 'blue'].includes(alliance) || (taskIndex >= 0 && !text)) {
+    throw Error('Usage: node tools/build-training-replay.js <policy.json> <seed> <red|blue> [output.json] [--task "<typed task>"]');
+  }
+  const replay = text ? recordTask(policyFile, seed, alliance, text) : await record(policyFile, seed, alliance);
   fs.writeFileSync(output, JSON.stringify(replay) + '\n');
   console.log(JSON.stringify({output, bytes: fs.statSync(output).size, decisions: replay.decisions.length,
     finalMargin: replay.finalScore.margin, loaderCycleMargin: replay.baseline.finalScore.margin, inferenceSeconds: replay.inferenceSeconds}));

@@ -28,5 +28,12 @@ test('the Tactical AI training page, its script and its saved data are served re
   assert.equal(replay.featureNames.length, replay.decisions[0].inputs.length);
   assert.ok(replay.decisions.every(row => row.layers.length === replay.policy.hiddenLayers && row.layers[0].cells.length === 64));
   assert.equal(replay.decisions.at(-1).scoreAfter.margin, replay.finalScore.margin);
+  const task = await (await fetch(`${base}/training-replay-task.json`)).json();
+  assert.equal(task.mode, 'task');
+  assert.equal(task.policy.featureSet, 'v4');
+  assert.equal(task.featureNames.length, 52);
+  assert.ok(task.decisions.every(row => row.inputs.length === 52 && row.layers.length === task.policy.hiddenLayers));
+  assert.equal(typeof task.result.achieved, 'boolean');
+  assert.equal(task.baseline.policy, 'task-greedy');
   assert.equal((await fetch(`${base}/training-data.json`, {method: 'POST', body: '{}'})).status, 404);
 });

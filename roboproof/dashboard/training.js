@@ -238,7 +238,7 @@
   }
 
   // ---------- best match ----------
-  const match = {index: 0, timer: null};
+  const match = {index: 0, timer: null, replay: null, replays: {}};
 
   function humanMove(id) {
     const [kind, robot, target, goal] = id.split(':');
@@ -257,12 +257,15 @@
     const start = replay.decisions[0].clock;
     const base = [[start, 0]];
     const timeline = replay.baseline.timeline;
-    timeline.forEach((row, index) => base.push([timeline[index + 1]?.clock ?? 120, row.scoreAfter.margin]));
+    // A typed task can end long before the match does, so its chart ends shortly after both sides finished.
+    const baselineEnd = replay.mode === 'task' ? start + (replay.baseline.result?.secondsUsed ?? 0) : 120;
+    timeline.forEach((row, index) => base.push([timeline[index + 1]?.clock ?? baselineEnd, row.scoreAfter.margin]));
+    const end = replay.mode === 'task' ? Math.max(ai.at(-1)[0], baselineEnd) + 1 : 120;
     const startMargin = 0;
     const offsetAi = ai.map(point => point);
     const values = [...offsetAi, ...base].map(point => point[1]);
     const box = {left: 64, right: 940, top: 24, bottom: 250};
-    const {x, y} = axes(svg, box, [start, 120], [Math.min(startMargin, ...values) - 10, Math.max(...values) + 20],
+    const {x, y} = axes(svg, box, [start, end], [Math.min(startMargin, ...values) - 10, Math.max(...values) + 20],
       {xLabel: 'match clock · seconds', yLabel: 'score margin'});
     const steps = points => points.map(([px, py], index) => index ? `L${x(px).toFixed(1)} ${y(points[index - 1][1]).toFixed(1)} L${x(px).toFixed(1)} ${y(py).toFixed(1)}` : `M${x(px).toFixed(1)} ${y(py).toFixed(1)}`).join(' ');
     el('path', {d: steps(base), fill: 'none', stroke: COLORS.baseline, 'stroke-width': 2, 'stroke-dasharray': '5 4'}, svg);
@@ -276,8 +279,14 @@
     const row = replay.decisions[match.index];
     const readout = $('match-readout');
     clear(readout);
-    html('p', {}, readout, `Decision ${row.decision} of ${replay.decisions.length} · clock ${fmt(row.clock)} s · ${humanMove(row.id)} · ${signed(row.points, 0)} points in ${fmt(row.seconds, 2)} s · margin now ${signed(row.scoreAfter.margin, 0)}`);
-    html('p', {class: 'hint'}, readout, `The network scored ${row.candidateCount} legal candidate moves and played the highest (score ${fmt(row.score, 2)}).`);
+    const task = replay.mode === 'task' ? ` · ${row.phase === 'park' ? 'parking' : 'scoring'} phase · task reward ${signed(row.taskReward, 2)}` : '';
+    html('p', {}, readout, `Decision ${row.decision} of ${replay.decisions.length} · clock ${fmt(row.clock)} s · ${humanMove(row.id)} · ${signed(row.points, 0)} points in ${fmt(row.seconds, 2)} s · margin now ${signed(row.scoreAfter.margin, 0)}${task}`);
+    html('p', {class: 'hint'}, readout, `The network scored ${row.candidateCount} ${replay.mode === 'task' ? 'allowed' : 'legal'} candidate moves and played the highest (score ${fmt(row.score, 2)}).`);
+    if (replay.mode === 'task' && match.index === replay.decisions.length - 1) {
+      const ai = replay.result;
+      const greedy = replay.baseline.result;
+      html('p', {class: 'hint'}, readout, `Task ${ai.achieved ? 'completed' : 'not completed'} in ${fmt(ai.secondsUsed)} s, task return ${fmt(ai.taskReturn, 2)}; task-greedy ${greedy.achieved ? 'completed it' : 'did not complete it'} in ${fmt(greedy.secondsUsed)} s, task return ${fmt(greedy.taskReturn, 2)}.`);
+    }
   }
 
   function setDecision(replay, index, animate = true) {
@@ -317,7 +326,9 @@
     const top = 36;
     const cellHeight = 6;
     const names = replay.featureNames;
-    const inputHeight = row.layers[0].cells.length * cellHeight / row.inputs.length;
+    const inputHeight = Math.max(11, row.layers[0].cells.length * cellHeight / row.inputs.length);
+    const contentBottom = top + Math.max(row.layers[0].cells.length * cellHeight + 24, row.inputs.length * inputHeight);
+    svg.setAttribute('viewBox', `0 0 960 ${Math.ceil(contentBottom + 20)}`);
     el('text', {x: 8, y: 18, class: 'chart-axis'}, svg, 'Inputs for this move');
     row.inputs.forEach((value, index) => {
       const yTop = top + index * inputHeight;
@@ -381,7 +392,8 @@
   }
 
   async function start() {
-    const [data, replay] = await Promise.all([load('training-data.json'), load('training-replay.json')]);
+    const [data, replay, taskReplay] = await Promise.all([load('training-data.json'), load('training-replay.json'),
+      load('training-replay-task.json')]);
     $('data-status').textContent = data ? 'Saved training data loaded' : 'training-data.json is missing';
     $('data-source').textContent = data
       ? `Single goal: ${data.singleGoal ? data.singleGoal.campaign : 'missing'} · Multi-task: ${data.multiTask ? data.multiTask.campaign : 'not copied yet'}`
@@ -395,15 +407,35 @@
       $('training-end').addEventListener('click', () => { stopTraining(); training.cursor = training.max; $('training-cursor').value = String(training.max); drawTraining(data); });
       $('training-cursor').addEventListener('input', event => { stopTraining(); training.cursor = Number(event.target.value); drawTraining(data); });
     }
-    if (replay) {
-      $('match-badge').textContent = `${replay.alliance.toUpperCase()} · START POSE ${replay.seed}`;
-      $('match-cursor').max = String(replay.decisions.length);
-      $('match-play').addEventListener('click', () => playMatch(replay));
-      $('match-prev').addEventListener('click', () => setDecision(replay, match.index - 1));
-      $('match-next').addEventListener('click', () => setDecision(replay, match.index + 1));
-      $('match-cursor').addEventListener('input', event => setDecision(replay, Number(event.target.value) - 1));
-      $('network-replay').addEventListener('click', () => drawNetwork(replay, true));
-      setDecision(replay, 0, false);
+    match.replays = {match: replay, task: taskReplay};
+    if (replay || taskReplay) {
+      const choose = key => {
+        if (!match.replays[key]) return;
+        if (match.timer) { clearInterval(match.timer); match.timer = null; $('match-play').textContent = 'Play match'; }
+        match.replay = match.replays[key];
+        for (const [id, name] of [['replay-match', 'match'], ['replay-task', 'task']]) {
+          $(id).setAttribute('aria-pressed', String(name === key));
+          $(id).classList.toggle('secondary', name !== key);
+        }
+        const current = match.replay;
+        $('match-badge').textContent = `${current.alliance.toUpperCase()} · START POSE ${current.seed}`;
+        $('match-baseline-key').textContent = current.mode === 'task' ? 'Task-greedy tactic, same task and start pose' : 'Loader-cycle team tactic, same start pose';
+        $('match-explainer').textContent = current.mode === 'task'
+          ? `The multi-task model (${current.policy.width} × ${current.policy.hiddenLayers}, task features) carries out the typed task "${current.task.text}" (${current.task.summary}). Only moves the task allows are offered; it plays the highest-scoring one.`
+          : `The single-goal model (${current.policy.width} × ${current.policy.hiddenLayers}) plays a full driver period for the best score margin.`;
+        $('match-cursor').max = String(current.decisions.length);
+        setDecision(current, 0, false);
+      };
+      $('replay-match').disabled = !replay;
+      $('replay-task').disabled = !taskReplay;
+      $('replay-match').addEventListener('click', () => choose('match'));
+      $('replay-task').addEventListener('click', () => choose('task'));
+      $('match-play').addEventListener('click', () => playMatch(match.replay));
+      $('match-prev').addEventListener('click', () => setDecision(match.replay, match.index - 1));
+      $('match-next').addEventListener('click', () => setDecision(match.replay, match.index + 1));
+      $('match-cursor').addEventListener('input', event => setDecision(match.replay, Number(event.target.value) - 1));
+      $('network-replay').addEventListener('click', () => drawNetwork(match.replay, true));
+      choose(replay ? 'match' : 'task');
     } else {
       $('match-readout').textContent = 'training-replay.json is missing. Run: node tools/build-training-replay.js <policy.json> <seed> <red|blue>';
     }

@@ -49,9 +49,12 @@
     </section>
 
     <section id="match" class="panel" aria-labelledby="match-title">
-      <div class="section-heading"><div><p class="eyebrow">THE BEST MODEL PLAYS ONE FULL DRIVER PERIOD</p><h2 id="match-title">Best match, decision by decision</h2></div><span id="match-badge" class="badge"></span></div>
-      <div class="plot"><svg id="match-chart" class="training-chart" viewBox="0 0 960 300" role="img" aria-label="Score margin over the match: AI versus loader-cycle"></svg>
-        <ul class="legend"><li class="training-key-ai">Tactical AI</li><li class="training-key-baseline">Loader-cycle team tactic, same start pose</li></ul></div>
+      <div class="section-heading"><div><p class="eyebrow">THE BEST MODELS AT WORK</p><h2 id="match-title">Best match, decision by decision</h2></div>
+        <div class="training-switch" role="group" aria-label="Replay"><button id="replay-match" type="button" aria-pressed="true">Full match · single goal</button><button id="replay-task" class="secondary" type="button" aria-pressed="false">Typed task · multi-task</button></div></div>
+      <p id="match-explainer" class="muted"></p>
+      <span id="match-badge" class="badge"></span>
+      <div class="plot"><svg id="match-chart" class="training-chart" viewBox="0 0 960 300" role="img" aria-label="Score margin over the match: AI versus the comparison tactic"></svg>
+        <ul class="legend"><li class="training-key-ai">Tactical AI</li><li id="match-baseline-key" class="training-key-baseline">Loader-cycle team tactic, same start pose</li></ul></div>
       <div class="sim-controls">
         <button id="match-play" type="button">Play match</button>
         <button id="match-prev" class="secondary" type="button" aria-label="Previous decision">◀</button>
