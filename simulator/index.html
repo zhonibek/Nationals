@@ -323,6 +323,7 @@
           <label style="flex:1 1 280px">Task <input id="tacticalTaskText" type="text" maxlength="300" style="width:100%" placeholder="e.g. score 3 match loads into the neutral goals, then park"></label>
           <label>Seed <input id="tacticalTaskSeed" type="number" min="0" max="4294967295" step="1" value="101"></label>
           <label>Alliance <select id="tacticalTaskAlliance"><option value="red">red</option><option value="blue">blue</option></select></label>
+          <label>Understand with <select id="tacticalTaskParser"><option value="patterns">Pattern parser (offline)</option><option value="nemotron">Nemotron (any wording)</option></select></label>
           <button id="runTacticalTask" class="btn btn-primary" type="button">Run task</button>
         </div>
         <p id="tacticalTaskStatus" role="status" aria-live="polite">Examples: “score 3 match loads into the neutral goals, then park” · “забей 2 кубка с поля за 30 секунд” · “набери 50 очков” · “припаркуй роботов”.</p>

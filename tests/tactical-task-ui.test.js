@@ -39,7 +39,7 @@ test('the task panel sends the typed task once and lists decisions as plain text
   await ui.element('runTacticalTask').listeners.click();
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, '/api/tactics/task');
-  assert.deepEqual(JSON.parse(calls[0].options.body), {task: 'score 2 match loads into the neutral goals, then park', seed: 101, alliance: 'red'});
+  assert.deepEqual(JSON.parse(calls[0].options.body), {task: 'score 2 match loads into the neutral goals, then park', seed: 101, alliance: 'red', parser: 'patterns'});
   const rows = ui.element('tacticalTaskLog').children;
   assert.equal(rows.length, 1);
   assert.equal(rows[0].children[2].textContent, '<b>load-score-cup:red-2:loader-red-n:g-neutral-e</b>');
@@ -48,6 +48,26 @@ test('the task panel sends the typed task once and lists decisions as plain text
   assert.match(status, /actor-critic \(not PPO\) \(run 157410e7, seed 734001, held-out margin 191.5 vs loader-cycle 244.5\)/);
   assert.match(status, /no robot was driven/);
   assert.equal(ui.element('runTacticalTask').disabled, false);
+});
+
+test('the task panel can ask Nemotron to read any wording and says so', async () => {
+  const calls = [];
+  const ui = fixture(async (url, options) => {
+    calls.push({url, options});
+    return {ok: true, json: async () => ({...reply, understanding: {parser: 'nemotron', note: '<i>two loads</i>, then park'}})};
+  });
+  ui.element('tacticalTaskText').value = 'кинь пару лоадов в центр и встань на парковку';
+  ui.element('tacticalTaskSeed').value = '7';
+  ui.element('tacticalTaskAlliance').value = 'red';
+  ui.element('tacticalTaskParser').value = 'nemotron';
+  await ui.element('runTacticalTask').listeners.click();
+  assert.deepEqual(JSON.parse(calls[0].options.body),
+    {task: 'кинь пару лоадов в центр и встань на парковку', seed: 7, alliance: 'red', parser: 'nemotron'});
+  assert.match(ui.element('tacticalTaskStatus').textContent,
+    /^Understood \(by Nemotron: <i>two loads<\/i>, then park\): Place 2 match loads in neutral goals, then park\. Done/);
+  ui.element('tacticalTaskParser').value = 'shell';
+  await ui.element('runTacticalTask').listeners.click();
+  assert.equal(JSON.parse(calls[1].options.body).parser, 'patterns', 'an unknown option falls back to the offline parser');
 });
 
 const ppoPolicy = {algorithm: 'PPO: clipped surrogate objective', provenance: {runId: 'abcdef123456', trainingSeed: 735001},
@@ -72,7 +92,7 @@ test('"Run with the Tactical PPO optimizer" runs the trained policy, and the pan
   await ui.element('btnTacticsToPpo').listeners.click();
   assert.equal(ui.element('tacticalTaskPanel').open, true);
   assert.deepEqual([calls[1].method, calls[1].url], ['POST', 'http://127.0.0.1:8766/api/tactics/task']);
-  assert.deepEqual(JSON.parse(calls[1].body), {task: 'play the driver period for the best score', seed: 101, alliance: 'blue'});
+  assert.deepEqual(JSON.parse(calls[1].body), {task: 'play the driver period for the best score', seed: 101, alliance: 'blue', parser: 'patterns'});
   assert.match(ui.element('tacticalTaskStatus').textContent, /Policy: PPO: clipped surrogate objective \(run abcdef12/);
 });
 

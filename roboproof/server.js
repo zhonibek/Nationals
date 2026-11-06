@@ -22,6 +22,7 @@ const {POLICIES: TACTICAL_POLICIES, MATCH_DECISIONS: TACTICAL_MATCH_DECISIONS, p
 const {TacticalEnvironment} = require('./tactical_environment');
 const {playNemotronMatch} = require('./tactical-coordinator');
 const tacticalRecordings = require('./tactical-recording');
+const {parseTaskWithNemotron} = require('./tactical-task-nemotron');
 const {loadPolicy: loadTacticalPolicy} = require('./tactical_policy');
 const {parseTask: parseTacticalTask, runTask: runTacticalTask} = require('./tactical_task');
 
@@ -274,16 +275,39 @@ function createServer({reportPath = path.join(__dirname, 'runs/latest/report.jso
       }
       if (pathname === '/api/tactics/task') {
         // A typed task carried out by the trained tactical policy in the abstract macro-action model; inference only.
-        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['task', 'seed', 'alliance'].includes(key))) {
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['task', 'seed', 'alliance', 'parser'].includes(key))) {
           throw Error('Unsupported tactical task fields');
         }
         if (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > 0xffffffff) throw Error('Tactical task seed must be a uint32');
         const alliance = body.alliance ?? 'red';
         if (!['red', 'blue'].includes(alliance)) throw Error('Tactical alliance must be red or blue');
-        const spec = parseTacticalTask(body.task);
+        const parser = body.parser ?? 'patterns';
+        if (!['patterns', 'nemotron'].includes(parser)) throw Error('Task parser must be patterns or nemotron');
+        let spec;
+        let understanding = {parser: 'patterns'};
+        if (parser === 'nemotron') {
+          // Nemotron only turns the wording into an allowlisted task spec (fail closed); the trained policy plays it.
+          const controller = new AbortController();
+          activeAgent = controller;
+          const timer = setTimeout(() => controller.abort(), agentTimeout);
+          const cancelled = () => { if (!response.writableEnded) controller.abort(); };
+          response.once('close', cancelled);
+          try {
+            const parsed = await parseTaskWithNemotron(body.task, nemotronClient, {signal: controller.signal});
+            controller.signal.throwIfAborted();
+            spec = parsed.spec;
+            understanding = {parser: 'nemotron', note: parsed.note, provider: parsed.provider, usage: parsed.usage};
+          } finally {
+            clearTimeout(timer);
+            response.removeListener('close', cancelled);
+            if (activeAgent === controller) activeAgent = null;
+          }
+        } else {
+          spec = parseTacticalTask(body.task);
+        }
         const policy = currentTacticalPolicy();
         const result = runTacticalTask({spec, policy, seed: body.seed, alliance});
-        reply(200, {schemaVersion: 1, summary: spec.summary, ...result,
+        reply(200, {schemaVersion: 1, summary: spec.summary, understanding, ...result,
           policy: describeTacticalPolicy(policy),
           learnedImprovementVerified: false, independentQualificationPerformed: false,
           scope: 'abstract macro-action model scored by the Override rules engine; no robot, motion or physics simulation was driven'});

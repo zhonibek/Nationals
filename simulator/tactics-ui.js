@@ -81,6 +81,7 @@
     const seedInput = document.getElementById('tacticalTaskSeed');
     const allianceInput = document.getElementById('tacticalTaskAlliance');
     if (!run || !text || !status || !log || !seedInput || !allianceInput) return null;
+    const parserInput = document.getElementById('tacticalTaskParser');
     const info = document.getElementById('tacticalPolicyInfo');
     run.disabled = !local;
     if (!local) status.textContent = 'Open the Simulator through RoboProof to give Tactical AI a task.';
@@ -107,10 +108,13 @@
       busy = true;
       run.disabled = true;
       log.replaceChildren();
-      status.textContent = 'Tactical AI is carrying out the task in the abstract tactical model…';
+      const parser = parserInput?.value === 'nemotron' ? 'nemotron' : 'patterns';
+      status.textContent = parser === 'nemotron'
+        ? 'Nemotron is reading the task; then Tactical AI carries it out in the abstract tactical model…'
+        : 'Tactical AI is carrying out the task in the abstract tactical model…';
       try {
         const response = await fetch(`${apiBase()}/api/tactics/task`, {method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({task, seed, alliance: allianceInput.value})});
+          body: JSON.stringify({task, seed, alliance: allianceInput.value, parser})});
         const result = await response.json();
         if (!response.ok) throw Error(result.error || `HTTP ${response.status}`);
         for (const row of result.log || []) {
@@ -125,7 +129,9 @@
         }
         const parked = result.parkedRobots?.length ? `, parked ${result.parkedRobots.join(' and ')}` : '';
         if (info) info.textContent = `Loaded policy: ${policyLabel(result.policy)}.`;
-        status.textContent = `Understood: ${result.summary}. ${result.achieved ? 'Done' : 'Not completed'} (${result.stopReason}): ` +
+        const how = result.understanding?.parser === 'nemotron'
+          ? ` (by Nemotron${result.understanding.note ? `: ${result.understanding.note}` : ''})` : '';
+        status.textContent = `Understood${how}: ${result.summary}. ${result.achieved ? 'Done' : 'Not completed'} (${result.stopReason}): ` +
           `${result.scoringActions} placements${parked}, ${result.ownPointsGained >= 0 ? '+' : ''}${result.ownPointsGained} own points, ` +
           `final margin ${result.finalScore.margin}, game clock ${result.clockStart}–${result.clockEnd} s. ` +
           `Policy: ${policyLabel(result.policy)}. Abstract tactical model; no robot was driven.`;
