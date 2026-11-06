@@ -137,9 +137,17 @@ test('file growth cannot turn the actor reader into an unbounded read', () => {
 test('stdlib Python and JavaScript agree on exact scales and actual tagged feature cases', () => {
   const cases = [observation(), {...observation(), pose: [0, 0, 0]}, {...observation(), pose: [-0.4, 0.1, -Math.PI + 1e-8]},
     {...observation(), pose: [0.8, -0.2, Math.PI - 1e-8]}];
-  const python = process.env.ROBOPROOF_PYTHON || process.env.PYTHON || 'python';
+  // The first interpreter that really runs Python 3: an explicit setting, python3, python, or the Windows py launcher
+  // (on Windows a bare `python` can be the Microsoft Store stub, which only prints an install hint).
+  const candidates = [process.env.ROBOPROOF_PYTHON, process.env.PYTHON].filter(Boolean).map(command => [command, []]);
+  candidates.push(['python3', []], ['python', []]);
+  if (process.platform === 'win32') candidates.push(['py', ['-3']]);
+  const [python, prefix] = candidates.find(([command, args]) => {
+    const probe = spawnSync(command, [...args, '-c', 'import sys; print(sys.version_info[0])'], {encoding: 'utf8', timeout: 10000});
+    return probe.status === 0 && probe.stdout.trim() === '3';
+  }) || candidates[0];
   const program = 'import json,sys; from roboproof.motion_learning.gvf_contract import SCALES,encode_observation; print(json.dumps({"scales":SCALES,"features":[encode_observation(item) for item in json.load(sys.stdin)]}))';
-  const result = spawnSync(python, ['-c', program], {cwd: path.resolve(__dirname, '..'), input: JSON.stringify(cases), encoding: 'utf8', timeout: 15000});
+  const result = spawnSync(python, [...prefix, '-c', program], {cwd: path.resolve(__dirname, '..'), input: JSON.stringify(cases), encoding: 'utf8', timeout: 15000});
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   const actual = JSON.parse(result.stdout);
   assert.deepEqual(actual.scales, [...Model.SCALES]);
