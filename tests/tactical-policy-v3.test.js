@@ -72,7 +72,10 @@ test('a binary v3 policy scores candidates exactly like the reference residual f
   const policy = createBinaryPolicy(built.record, built.weights);
   const actions = [0, 0.4, -1.3, 2].map(shift => ({id: `a${shift}`, features: featureRow(FEATURE_COUNT_V3, shift)}));
   const best = actions.reduce((top, action) => referenceScore(built, action.features) > referenceScore(built, top.features) ? action : top);
-  assert.equal(policy.choose(actions).action.id, best.id);
+  const chosen = policy.choose(actions);
+  assert.equal(chosen.action.id, best.id);
+  assert.equal(chosen.score, policy.score(best.features));  // batched scoring equals one-at-a-time scoring exactly
+  assert.equal(policy.choose([]), null);
   assert.throws(() => policy.score(featureRow(FEATURE_COUNT, 0)), /30 finite numbers/);
 });
 
