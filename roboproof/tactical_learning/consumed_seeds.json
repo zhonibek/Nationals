@@ -15,6 +15,8 @@
     {"first": 1300001, "last": 1300072, "note": "MI300X memory probe run seed 1300001 (2026-11-06): 40 episodes + 32 demonstrations"},
     {"first": 1400001, "last": 1568032, "note": "MI300X campaign mi300x-campaign-34 (2026-11-06): 34 PPO runs, training and demonstrations"},
     {"first": 2090001, "last": 2090004, "note": "independent-check test on the memory probe run (2026-11-06): 4 fresh start poses"},
-    {"first": 2100001, "last": 2100200, "note": "independent check of mi300x-campaign-34 top 5 runs (2026-11-06): 200 fresh start poses"}
+    {"first": 2100001, "last": 2100200, "note": "independent check of mi300x-campaign-34 top 5 runs (2026-11-06): 200 fresh start poses"},
+    {"first": 2200001, "last": 2200508, "note": "v4 multi-task smoke run, 1 rules engine (2026-11-06): 500 episodes + 8 demonstrations"},
+    {"first": 2210001, "last": 2210508, "note": "v4 multi-task smoke run, 3 parallel rules engines (2026-11-06): 500 episodes + 8 demonstrations"}
   ]
 }
